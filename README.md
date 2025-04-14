@@ -1,4 +1,4 @@
-# Simulation de Fusée 🚀 - Version 1.0
+# Pocket Cosmos : Simulation de Fusée 🚀 - Version 1.0
 
 Une simulation interactive et physique d'une fusée utilisant Matter.js, avec des missions, de la gestion de cargo et une IA optionnelle. 🌌
 
@@ -6,7 +6,7 @@ Une simulation interactive et physique d'une fusée utilisant Matter.js, avec de
 
 Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-système solaire, d'accomplir des missions, de gérer votre cargaison, et de maîtriser les subtilités de la gravité et des atterrissages (plus ou moins) réussis. 🌍🌕🛰️
 
-- [Lancer la Simulation](https://habib256.github.io/gistphysis/rocket/index.html)
+- [Lancer la Simulation](https://habib256.github.io/pocketcosmos/index.html)
   _(Cliquez pour essayer !)_ ✨
 
 ### Captures d'écran 📸
@@ -67,8 +67,8 @@ _(Le code est structuré de manière modulaire (inspiration MVC étendue + Event
 
 ## 🚀 Installation
 
-1.  Clonez ce dépôt : `git clone https://github.com/Habib256/gistphysis.git` 📥
-2.  Naviguez dans le dossier `rocket`.
+1.  Clonez ce dépôt : `git clone https://github.com/habib256/pocketcosmos.git` 📥
+2.  Naviguez dans le dossier `pocketcosmos`.
 3.  Ouvrez le fichier `index.html` dans votre navigateur web moderne. 🎉
 
 ## 📝 Personnalisation
@@ -92,4 +92,4 @@ Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu 
 
 ## 📜 Licence
 
-Ce projet est sous licence MIT. 👍 
+Ce projet est sous licence GPL3. 👍 
