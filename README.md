@@ -14,9 +14,6 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 ![Écran de démarrage](assets/screenshots/Startup.png)
 *Écran de démarrage de la simulation*
 
-![Visualisation des vecteurs](assets/screenshots/Vectors.png)
-*Visualisation des forces en action* 🧐
-
 ![Simulation lunaire](assets/screenshots/Lune.png)
 *La fusée près de la lune en orbite*
 
