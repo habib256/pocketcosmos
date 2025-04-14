@@ -73,6 +73,16 @@ class GameController {
         this.eventBus.subscribe('ROCKET_STATE_UPDATED', (data) => this.handleRocketStateUpdated(data));
         // Événement lorsque la fusée atterrit
         this.eventBus.subscribe('ROCKET_LANDED', (data) => this.handleRocketLanded(data));
+
+        // --- Abonnements Joystick ---
+        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_CHANGED', (data) => this.handleJoystickAxisChanged(data));
+        this.eventBus.subscribe('INPUT_JOYSTICK_BUTTON_DOWN', (data) => this.handleJoystickButtonDown(data));
+        this.eventBus.subscribe('INPUT_JOYSTICK_BUTTON_UP', (data) => this.handleJoystickButtonUp(data));
+        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_HELD', (data) => this.handleJoystickAxisHeld(data));
+        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_RELEASED', (data) => this.handleJoystickAxisReleased(data));
+        this.eventBus.subscribe('INPUT_GAMEPAD_CONNECTED', () => { /* On pourrait afficher un message */ });
+        this.eventBus.subscribe('INPUT_GAMEPAD_DISCONNECTED', () => { /* On pourrait afficher un message */ });
+        // --- Fin Abonnements Joystick ---
     }
     
     // Gérer les événements d'entrée
@@ -1194,4 +1204,163 @@ class GameController {
             console.log(`%c[GameController] Aucune mission active au départ de ${location} trouvée. Pas de chargement automatique de cargo.`, 'color: gray;');
         }
     }
+
+    // --- Gestionnaires d'événements Joystick ---
+
+    handleJoystickAxisChanged(data) {
+        // Cet événement n'est déclenché qu'une fois lorsque l'axe change d'état (0 -> valeur ou valeur -> 0)
+        if (!this.rocketModel || this.isPaused) return;
+
+        const axisThreshold = this.inputController ? this.inputController.axisThreshold : 0.1;
+
+        switch (data.action) {
+            case 'rotate': // Mappé à l'axe horizontal (0) dans InputController
+                 // La logique de rotation est bonne ici, car elle doit réagir au changement
+                 // et s'arrêter quand l'axe revient à 0.
+                const rotateValue = data.value;
+                const power = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.RIGHT; // Utilise la puissance DROITE
+                console.log(`%c[GC Joystick Rotate - CHANGED] Axe 0: ${rotateValue.toFixed(2)}`, 'color: purple');
+                if (rotateValue < 0) { 
+                    this.rocketModel.setThrusterPower('right', power); 
+                    this.rocketModel.setThrusterPower('left', 0);
+                    this.particleSystemModel.setEmitterActive('right', power > 0.1);
+                    this.particleSystemModel.setEmitterActive('left', false);
+                } else if (rotateValue > 0) { 
+                    const powerLeft = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.LEFT; // Utilise la puissance GAUCHE
+                    this.rocketModel.setThrusterPower('left', powerLeft); 
+                    this.rocketModel.setThrusterPower('right', 0);
+                    this.particleSystemModel.setEmitterActive('left', powerLeft > 0.1);
+                    this.particleSystemModel.setEmitterActive('right', false);
+                } else { 
+                    this.rocketModel.setThrusterPower('left', 0);
+                    this.rocketModel.setThrusterPower('right', 0);
+                    this.particleSystemModel.setEmitterActive('left', false);
+                    this.particleSystemModel.setEmitterActive('right', false);
+                }
+                break;
+
+            // RETRAIT de la logique de zoom ici, elle est gérée par AXIS_HELD
+            /*
+            case 'zoomAxis': 
+                // ... ancienne logique ...
+                break;
+            */
+        }
+        // Pas besoin d'emitUpdatedStates ici car AXIS_HELD le fera si nécessaire
+        // this.emitUpdatedStates(); 
+    }
+    
+    // NOUVELLE MÉTHODE : Gère les axes maintenus
+    handleJoystickAxisHeld(data) {
+         if (!this.cameraModel || this.isPaused) return;
+         
+         switch(data.action) {
+             case 'zoomAxis': // Mappé à l'axe 3
+                 const zoomValue = data.value; // Valeur ajustée (-1 à 1)
+                 const zoomSpeedFactor = Math.abs(zoomValue) * RENDER.ZOOM_SPEED * 1.5; // Ajuster le *1.5 si besoin
+                 
+                 if (zoomValue < 0) { // Zoom In
+                      // console.log(`%c[GC Joystick Zoom - HELD] Axe 3: ${zoomValue.toFixed(2)} -> Zoom In`, 'color: cyan'); // Spam
+                      this.cameraModel.setZoom(this.cameraModel.zoom * (1 + zoomSpeedFactor * (60/1000))); // Appliquer proportionnellement au framerate (approx)
+                 } else if (zoomValue > 0) { // Zoom Out
+                     // console.log(`%c[GC Joystick Zoom - HELD] Axe 3: ${zoomValue.toFixed(2)} -> Zoom Out`, 'color: cyan'); // Spam
+                     this.cameraModel.setZoom(this.cameraModel.zoom / (1 + zoomSpeedFactor * (60/1000))); // Appliquer proportionnellement au framerate (approx)
+                 }
+                 // Mettre à jour l'état ici car le zoom a changé
+                 this.emitUpdatedStates(); 
+                 break;
+            // Gérer d'autres axes maintenus si nécessaire (ex: poussée analogique)
+            /*
+             case 'thrustAxis': // Si on avait un axe pour la poussée principale
+                  const thrustPower = Math.abs(data.value) * ROCKET.THRUSTER_POWER.MAIN;
+                  this.rocketModel.setThrusterPower('main', thrustPower);
+                  this.particleSystemModel.setEmitterActive('main', thrustPower > 0.1);
+                  this.emitUpdatedStates();
+                  break;
+            */
+         }
+    }
+    
+    // NOUVELLE MÉTHODE : Gère le relâchement d'un axe (optionnel)
+    handleJoystickAxisReleased(data) {
+        // Utile si on doit arrêter une action spécifique au relâchement
+        // console.log(`%c[GC Joystick Axis Released] Action: ${data.action}, Axe: ${data.axis}`, 'color: brown;');
+        switch(data.action) {
+            case 'rotate': // Quand on relâche l'axe de rotation
+                 // Normalement géré par AXIS_CHANGED avec valeur 0, mais sécurité supplémentaire
+                 // this.rocketModel.setThrusterPower('left', 0);
+                 // this.rocketModel.setThrusterPower('right', 0);
+                 // this.particleSystemModel.setEmitterActive('left', false);
+                 // this.particleSystemModel.setEmitterActive('right', false);
+                 break;
+             // Pas besoin de gérer 'zoomAxis' ici, s'arrête naturellement
+        }
+    }
+
+    handleJoystickButtonDown(data) {
+        if (!this.rocketModel || this.isPaused) return;
+
+        switch (data.action) {
+            case 'boost': 
+            case 'thrustMain': 
+                 this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
+                 this.particleSystemModel.setEmitterActive('main', true);
+                break;
+            case 'thrustBackward': 
+                this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
+                this.particleSystemModel.setEmitterActive('rear', true);
+                break;
+            case 'zoomInButton':
+                console.log('%c[GC Joystick Zoom] Bouton 7 -> Zoom In', 'color: cyan');
+                this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
+                break;
+            case 'zoomOutButton':
+                console.log('%c[GC Joystick Zoom] Bouton 6 -> Zoom Out', 'color: cyan');
+                this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
+                break;
+            case 'resetRocket': 
+                 console.log('%c[GC Joystick Action] Bouton 10 -> Reset Rocket', 'color: red');
+                 this.resetRocket();
+                 break;
+             case 'centerCamera': 
+                 if (this.cameraModel && this.rocketModel) {
+                     this.cameraModel.setTarget(this.rocketModel, 'rocket');
+                 }
+                 break;
+             case 'pauseGame': 
+                 this.togglePause();
+                 break;
+             // AJOUT : Gestion du bouton pour les vecteurs
+             case 'toggleVectors':
+                 console.log('%c[GC Joystick Action] Bouton 12 -> Toggle Vectors', 'color: orange');
+                 this.toggleVectors(); // Appel de la méthode existante
+                 break;
+        }
+        this.emitUpdatedStates();
+    }
+
+    handleJoystickButtonUp(data) {
+        if (!this.rocketModel) return; 
+
+        switch (data.action) {
+            case 'boost':
+            case 'thrustMain':
+                 // Correction: Vérifier la source d'input pour éviter conflit si axe ET bouton contrôlent 'main'
+                 // Si seul le bouton contrôle 'main', on coupe toujours.
+                 // Si un axe analogique (ex: gachette) contrôle aussi 'main', il faudrait une logique plus fine.
+                 // Pour l'instant, on suppose que seul le bouton contrôle.
+                 this.rocketModel.setThrusterPower('main', 0);
+                 this.particleSystemModel.setEmitterActive('main', false);
+                // Gérer l'arrêt du son si nécessaire (similaire à handleKeyUp)
+                break;
+             // AJOUT : Gérer le relâchement du bouton pour le propulseur arrière
+             case 'thrustBackward':
+                 this.rocketModel.setThrusterPower('rear', 0);
+                 this.particleSystemModel.setEmitterActive('rear', false);
+                 break;
+        }
+        this.emitUpdatedStates();
+    }
+
+    // --- Fin Gestionnaires Joystick ---
 } 

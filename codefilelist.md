@@ -67,7 +67,7 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 
 ### Contrôleurs
 - `GameController.js` (1197 lignes) : Orchestre principal, boucle de jeu, gestion état global, initialisation.
-- `InputController.js` (226 lignes) : Capture les entrées clavier/souris et les publie sur l'EventBus.
+- `InputController.js` (226 lignes -> ~300 lignes) : Capture les entrées clavier/souris/tactile **et joystick (Gamepad API)** et les publie sur l'EventBus.
 - `RenderingController.js` (204 lignes) : Reçoit les états des modèles via EventBus et coordonne les différentes vues pour le rendu final.
 - `PhysicsController.js` (237 lignes) : Gère le moteur Matter.js, la création des corps, et la mise à jour de la simulation physique. Délégué la logique spécifique à d'autres contrôleurs (BodyFactory, CollisionHandler, ThrusterPhysics, SynchronizationManager).
 - `SynchronizationManager.js` (286 lignes) : ** essentiel ** Synchronise l'état entre les modèles logiques et les corps physiques Matter.js. Gère la stabilisation de la fusée posée/attachée.
@@ -111,3 +111,4 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 -   **EventBus** : Comprendre les événements émis et écoutés par chaque composant est essentiel pour déboguer ou ajouter des fonctionnalités.
 -   **Doublons**: Il serait judicieux de vérifier la présence éventuelle de fichiers dupliqués ou redondants afin de nettoyer la base de code.
 -   **Code commenté**: Le code contient des commentaires et des `console.log` utiles pour le débogage.
+ - Utilise https://hardwaretester.com/gamepad pour aider à l'identification des axes et des boutons du gamepad.
