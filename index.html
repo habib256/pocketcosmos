@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation de Fusée</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0a0a0a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        canvas {
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #instructions {
+            position: fixed;
+            bottom: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+        }
+        #audioControls {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            z-index: 100;
+        }
+        #audioControls button {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        #audioControls button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .cargo-icons img {
+            width: 16px;
+            height: 16px;
+            margin: 1px;
+            vertical-align: middle;
+        }
+    </style>
+    
+    <!-- Bibliothèques externes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- Plugin Matter Attractors (ignorer le warning de compatibilité, il fonctionne quand même) -->
+    <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+</head>
+<body> 
+    <!-- Élément audio pour la musique d'ambiance -->
+    <audio id="ambientAudio" loop></audio>
+    
+    <!-- Contrôles audio -->
+    <div id="audioControls">
+        <button id="toggleAudio">🔇</button>
+        <span id="audioTitle" style="cursor: pointer;" title="Cliquer pour changer de musique">Musique spatiale</span>
+    </div>
+    
+    <!-- Script d'initialisation du plugin Matter Attractors -->
+    <script>
+        // Note: Ignorer le warning "Plugin.use: matter-attractors est pour matter-js@^0.12.0"
+        // car ça fonctionne parfaitement avec matter-js@0.19.0
+        try {
+            Matter.use(MatterAttractors);
+        } catch (e) {
+            console.error("Erreur lors de l'initialisation du plugin Matter Attractors:", e);
+        }
+    </script>
+    
+    <!-- Gestion de l'audio d'ambiance -->
+    <script>
+        // Liste des fichiers audio disponibles
+        const ambientSounds = [
+            'assets/sound/ambiant/Wave Ganymede flyby_Juno.wav',
+            'assets/sound/ambiant/Enceladus Hiss audio 256 kbps.mp3',
+            'assets/sound/ambiant/whistlerWaves.mp3',
+            'assets/sound/ambiant/plasmawaves-chorus.mp3',
+            'assets/sound/ambiant/plasmatic_hiss.wav',
+            'assets/sound/ambiant/voyager1-TsunamiWaves.mp3',
+            'assets/sound/ambiant/cassini_saturn_radio_waves1.mp3',
+            'assets/sound/ambiant/kepler_star_KIC7671081B.mp3',
+            'assets/sound/ambiant/kepler_star_KIC12268220C.mp3',
+            'assets/sound/ambiant/cassini_saturn_radio_waves2.mp3',
+            'assets/sound/ambiant/sun_sonification.wav',
+            'assets/sound/ambiant/Voyager: Interstellar Plasma Sounds.mp3',
+            'assets/sound/ambiant/Chorus Radio Waves within Earth\'s Atmosphere.mp3'
+        ];
+        
+        // Index du son actuel (pour parcours séquentiel)
+        let currentSoundIndex = 0;
+        
+        // Fonction pour charger le son suivant (parcours circulaire)
+        function loadNextSound() {
+            // Passer au son suivant (parcours circulaire)
+            currentSoundIndex = (currentSoundIndex + 1) % ambientSounds.length;
+            const nextSound = ambientSounds[currentSoundIndex];
+            
+            // Extraction du nom du fichier pour l'affichage
+            const soundName = nextSound.split('/').pop().replace('.mp3', '').replace('.wav', '');
+            audioTitle.textContent = soundName;
+            
+            // Sauvegarde du niveau de volume actuel
+            const currentVolume = audioElement.volume || 0.3;
+            const wasPlaying = !audioElement.paused;
+            
+            // Définir la source audio
+            audioElement.src = nextSound;
+            audioElement.volume = currentVolume;
+            
+            // Reprendre la lecture si elle était en cours
+            if (wasPlaying) {
+                audioElement.play().catch(e => {
+                    console.log('Erreur lors de la lecture:', e);
+                });
+            }
+            
+            return nextSound;
+        }
+        
+        // Configuration de l'audio
+        const audioElement = document.getElementById('ambientAudio');
+        const toggleButton = document.getElementById('toggleAudio');
+        const audioTitle = document.getElementById('audioTitle');
+        
+        // Tri alphabétique des sons pour une meilleure organisation (optionnel)
+        ambientSounds.sort();
+        
+        // Chargement initial d'un son
+        window.addEventListener('DOMContentLoaded', () => {
+            // Choisir un son aléatoire pour commencer
+            currentSoundIndex = Math.floor(Math.random() * ambientSounds.length) - 1;
+            loadNextSound();
+            
+            // Définir un volume initial raisonnable
+            audioElement.volume = 0.3;
+        });
+        
+        // Gestion du bouton mute/unmute
+        toggleButton.addEventListener('click', () => {
+            if (audioElement.paused) {
+                audioElement.play();
+                toggleButton.textContent = '🔊';
+            } else {
+                audioElement.pause();
+                toggleButton.textContent = '🔇';
+            }
+        });
+        
+        // Gestion du clic sur le titre pour changer de musique
+        audioTitle.addEventListener('click', () => {
+            loadNextSound();
+            // Notification visuelle du changement
+            audioTitle.style.opacity = 0.5;
+            setTimeout(() => {
+                audioTitle.style.opacity = 1;
+            }, 300);
+        });
+    </script>
+    
+    <!-- Constantes globales -->
+    <script src="constants.js"></script>
+    
+    <!-- Scripts: Modèles -->
+    <script src="models/UniverseModel.js"></script>
+    <script src="models/CelestialBodyModel.js"></script>
+    <script src="models/RocketModel.js"></script>
+    <script src="models/CameraModel.js"></script>
+    <script src="models/ParticleModel.js"></script>
+    <script src="models/ParticleSystemModel.js"></script>
+
+    <!-- Scripts: Contrôleurs -->
+    <script src="controllers/EventBus.js"></script>
+    <!-- Nouveaux handlers de physique -->
+    <script src="controllers/BodyFactory.js"></script>
+    <script src="controllers/CollisionHandler.js"></script>
+    <script src="controllers/ThrusterPhysics.js"></script>
+    <script src="controllers/SynchronizationManager.js"></script>
+    <script src="controllers/PhysicsVectors.js"></script>
+    <!-- Contrôleur physique principal (maintenant réorganisé) -->
+    <script src="controllers/PhysicsController.js"></script>
+    <script src="controllers/InputController.js"></script>
+    <script src="controllers/RenderingController.js"></script>
+    <script src="controllers/ParticleController.js"></script>
+    <script src="controllers/RocketAgent.js"></script>
+    <script src="controllers/MissionManager.js"></script>
+    <script src="controllers/RocketCargo.js"></script>
+    <script src="controllers/GameController.js"></script>
+
+    <!-- Scripts: Vues -->
+    <script src="views/RocketView.js"></script>
+    <script src="views/UniverseView.js"></script>
+    <script src="views/CelestialBodyView.js"></script>
+    <script src="views/ParticleView.js"></script>
+    <script src="views/UIView.js"></script>
+    <script src="views/TraceView.js"></script>
+    
+    <!-- Point d'entrée -->
+    <script src="main.js"></script>
+
+    <div class="info-item">
+        <p>Altitude: <span id="altitude">--</span> m</p>
+    </div>
+    <!-- Ajout de la section Cargo -->
+    <div class="info-item">
+        <p>Cargo:</p>
+        <div id="cargo-display" class="cargo-icons"></div> <!-- Conteneur pour les icônes -->
+    </div>
+</body>
+</html> 
