@@ -609,7 +609,7 @@ class RocketView {
             ctx.moveTo(0, 0);
             ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = "#A020F0"; // Violet
+            ctx.strokeStyle = "gold"; // Jaune/or pour la flèche de destination
             ctx.stroke();
             // Flèche
             const arrowSize = 10;
@@ -619,9 +619,9 @@ class RocketView {
             ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle - Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle - Math.PI/6));
             ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle + Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6));
             ctx.closePath();
-            ctx.fillStyle = "#A020F0";
+            ctx.fillStyle = "gold";
             ctx.fill();
-            ctx.fillStyle = "#A020F0";
+            ctx.fillStyle = "gold";
             ctx.font = "12px Arial";
             ctx.textAlign = "center";
             const label = rocketState.missionTargetVector.name + ' ' + Math.floor(rocketState.missionTargetVector.distance);

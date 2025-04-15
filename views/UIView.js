@@ -355,8 +355,24 @@ class UIView {
             if (missionToShow) {
                 // ... (dessin Origine -> Dest)
                 ctx.font = '14px ' + this.fontFamily;
-                const locationText = `${missionToShow.from} -> ${missionToShow.to}`;
-                ctx.fillText(locationText, boxX + boxPadding, currentY);
+                // Affichage coloré : point de départ en bleu, point d'arrivée en or
+                const fromColor = '#00BFFF'; // Bleu clair (même que la flèche)
+                const toColor = 'gold';      // Or (même que les crédits)
+                const arrow = ' -> ';
+                const fromText = missionToShow.from;
+                const toText = missionToShow.to;
+                let x = boxX + boxPadding;
+                // Point de départ
+                ctx.fillStyle = fromColor;
+                ctx.fillText(fromText, x, currentY);
+                x += ctx.measureText(fromText).width;
+                // Flèche
+                ctx.fillStyle = this.colors.white;
+                ctx.fillText(arrow, x, currentY);
+                x += ctx.measureText(arrow).width;
+                // Point d'arrivée
+                ctx.fillStyle = toColor;
+                ctx.fillText(toText, x, currentY);
                 currentY += lineHeight * 1.2;
                 // ... (dessin détails cargo mission)
                 const detailItems = missionToShow.requiredCargo.map(item => {
