@@ -34,12 +34,36 @@ class CelestialBodyView {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
 
-        // Dessiner le cercle principal du corps céleste
-        ctx.beginPath();
-        ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
-        ctx.fillStyle = body.color || '#3399FF'; // Utiliser la couleur du modèle ou une couleur par défaut
-        ctx.fill();
-        
+        // Effet spécial pour le Soleil : dégradé radial animé du orange au jaune
+        if (body.name === 'Soleil') {
+            // Utiliser le temps pour animer la couleur
+            const now = Date.now() / 1000;
+            // Oscille entre 0 et 1
+            const t = (Math.sin(now * 1.2) + 1) / 2;
+            // Interpolation entre orange et jaune
+            const color1 = `rgb(${Math.round(255)},${Math.round(180 + 75 * t)},0)`; // orange -> jaune
+            const color2 = `rgb(${Math.round(255)},${Math.round(220 + 35 * t)},${Math.round(40 * t)})`;
+            const gradient = ctx.createRadialGradient(
+                screenPos.x, screenPos.y, screenRadius * 0.2,
+                screenPos.x, screenPos.y, screenRadius
+            );
+            gradient.addColorStop(0, color2);
+            gradient.addColorStop(0.5, color1);
+            gradient.addColorStop(1, '#FFB300');
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.shadowColor = color2;
+            ctx.shadowBlur = 60 * camera.zoom;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        } else {
+            // Dessiner le cercle principal du corps céleste
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
+            ctx.fillStyle = body.color || '#3399FF'; // Utiliser la couleur du modèle ou une couleur par défaut
+            ctx.fill();
+        }
         // Ajouter un contour
         ctx.strokeStyle = this.getLighterColor(body.color || '#3399FF');
         ctx.lineWidth = 2;

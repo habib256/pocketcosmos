@@ -102,6 +102,13 @@ class ParticleSystemModel {
             }
             return;
         }
+        // AJOUT : Si plus d'essence, désactiver l'émetteur
+        if (isActive && rocketModel && rocketModel.fuel !== undefined && rocketModel.fuel <= 0) {
+            if (this.emitters[emitterName]) {
+                this.emitters[emitterName].isActive = false;
+            }
+            return;
+        }
         if (this.emitters[emitterName]) {
             this.emitters[emitterName].isActive = isActive;
         }

@@ -1203,40 +1203,36 @@ class GameController {
 
         console.log(`%c[GameController] Événement ROCKET_LANDED reçu pour: ${data.landedOn} (isLanded=${this.rocketModel.isLanded})`, 'color: #ADD8E6');
         
-        // ----- Différer la logique de mission et cargo -----
-        setTimeout(() => {
-             console.log(`%c[GameController] Exécution différée de la logique post-atterrissage sur: ${data.landedOn}`, 'color: #FFD700');
-            
-             // Re-vérifier rocketModel juste avant d'agir (sécurité pour setTimeout)
-             if (!this.rocketModel) return;
+        // ----- Logique de mission et cargo exécutée IMMÉDIATEMENT -----
+        // Re-vérifier rocketModel juste avant d'agir (sécurité)
+        if (!this.rocketModel) return;
 
-            // Vérifier et gérer la complétion de mission
-            if (this.missionManager && this.rocketModel.cargo) {
-                const completedMissions = this.missionManager.checkMissionCompletion(this.rocketModel.cargo, data.landedOn);
-                
-                // MODIFICATION: Traiter les conséquences du succès ICI
-                if (completedMissions.length > 0) {
-                    console.log(`%c[GameController] ${completedMissions.length} mission(s) complétée(s) !`, 'color: lightgreen;');
-                    completedMissions.forEach(mission => {
-                        // Ajouter les récompenses au total
-                        this.totalCreditsEarned += mission.reward;
-                        console.log(`%c[GameController] +${mission.reward} crédits gagnés ! Total: ${this.totalCreditsEarned}`, 'color: gold;');
-                        // Log déchargement du cargo
-                        console.log(`%c[GameController] Cargo déchargé pour la mission ${mission.id}`, 'color: orange;');
-                        // Émettre les événements de succès (si nécessaire pour l'UI ou autre)
-                        this.eventBus.emit('UI_UPDATE_CREDITS', { reward: mission.reward }); 
-                        this.eventBus.emit('MISSION_COMPLETED', { mission: mission }); // Passer la mission complétée
-                    });
-                }
-                // FIN MODIFICATION
-                
-                // TENTER DE CHARGER LE CARGO POUR LA PROCHAINE MISSION
-                // S'assurer que rocketModel existe toujours (au cas où setTimeout est lent)
-                if (this.rocketModel) { 
-                   this.loadCargoForCurrentLocationMission(data.landedOn);
-                }
+        // Vérifier et gérer la complétion de mission
+        if (this.missionManager && this.rocketModel.cargo) {
+            const completedMissions = this.missionManager.checkMissionCompletion(this.rocketModel.cargo, data.landedOn);
+            
+            // Traiter les conséquences du succès ICI
+            if (completedMissions.length > 0) {
+                console.log(`%c[GameController] ${completedMissions.length} mission(s) complétée(s) !`, 'color: lightgreen;');
+                completedMissions.forEach(mission => {
+                    // Ajouter les récompenses au total
+                    this.totalCreditsEarned += mission.reward;
+                    console.log(`%c[GameController] +${mission.reward} crédits gagnés ! Total: ${this.totalCreditsEarned}`, 'color: gold;');
+                    // Log déchargement du cargo
+                    console.log(`%c[GameController] Cargo déchargé pour la mission ${mission.id}`, 'color: orange;');
+                    // Émettre les événements de succès (si nécessaire pour l'UI ou autre)
+                    this.eventBus.emit('UI_UPDATE_CREDITS', { reward: mission.reward }); 
+                    this.eventBus.emit('MISSION_COMPLETED', { mission: mission }); // Passer la mission complétée
+                });
             }
-        }, 0); // Délai de 0ms pour passer à la prochaine tick
+            // FIN MODIFICATION
+            
+            // TENTER DE CHARGER LE CARGO POUR LA PROCHAINE MISSION
+            // S'assurer que rocketModel existe toujours
+            if (this.rocketModel) { 
+               this.loadCargoForCurrentLocationMission(data.landedOn);
+            }
+        }
         // -------------------------------------------------
     }
 
