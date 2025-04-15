@@ -6,23 +6,21 @@ class ParticleView {
     }
     
     // Méthode principale pour le rendu des particules avec la caméra
-    renderParticles(ctx, particleSystemModel, camera) {
+    renderParticles(ctx, particleSystemModel, camera, rocketModel) {
         ctx.save();
-        
         // Appliquer la transformation de la caméra
         ctx.translate(camera.offsetX, camera.offsetY);
         ctx.scale(camera.zoom, camera.zoom);
         ctx.translate(-camera.x, -camera.y);
-        
-        // Dessiner les particules d'émetteurs
-        for (const emitterName in particleSystemModel.emitters) {
-            const emitter = particleSystemModel.emitters[emitterName];
-            this.render(ctx, emitter.particles);
+        // Afficher les particules d'émetteurs seulement si la fusée n'est pas détruite
+        if (!rocketModel || !rocketModel.isDestroyed) {
+            for (const emitterName in particleSystemModel.emitters) {
+                const emitter = particleSystemModel.emitters[emitterName];
+                this.render(ctx, emitter.particles);
+            }
         }
-        
-        // Dessiner les particules de débris
+        // Toujours afficher les particules de débris (explosions)
         this.render(ctx, particleSystemModel.debrisParticles);
-        
         ctx.restore();
     }
     

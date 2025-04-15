@@ -26,6 +26,50 @@ class RocketView {
     
     // Nouveau rendu avec support de la caméra et prise en charge de l'état
     render(ctx, rocketState, camera) {
+        if (rocketState.isDestroyed) {
+            // Afficher uniquement la carcasse de la fusée, pas les thrusters
+            ctx.save();
+            ctx.translate(camera.offsetX, camera.offsetY);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+            ctx.translate(rocketState.position.x, rocketState.position.y);
+            ctx.save();
+            ctx.rotate(rocketState.angle);
+            const currentImage = this.rocketCrashedImage;
+            if (currentImage.complete && currentImage.naturalWidth > 0) {
+                try {
+                    const minScreenSize = 10;
+                    const minDrawDim = minScreenSize / camera.zoom;
+                    let drawWidth = this.width;
+                    let drawHeight = this.height;
+                    const aspectRatio = this.width / this.height;
+                    if (drawWidth < minDrawDim || drawHeight < minDrawDim) {
+                        if (aspectRatio >= 1) {
+                            drawWidth = Math.max(drawWidth, minDrawDim);
+                            drawHeight = drawWidth / aspectRatio;
+                        } else {
+                            drawHeight = Math.max(drawHeight, minDrawDim);
+                            drawWidth = drawHeight * aspectRatio;
+                        }
+                    }
+                    ctx.drawImage(
+                        currentImage,
+                        -drawWidth / 2,
+                        -drawHeight / 2,
+                        drawWidth,
+                        drawHeight
+                    );
+                } catch (e) {
+                    console.error("Erreur de chargement d'image:", e);
+                    this.drawRocketShape(ctx, rocketState);
+                }
+            } else {
+                this.drawRocketShape(ctx, rocketState);
+            }
+            ctx.restore();
+            ctx.restore();
+            return;
+        }
         if (!rocketState || !rocketState.position) return;
         
         ctx.save();

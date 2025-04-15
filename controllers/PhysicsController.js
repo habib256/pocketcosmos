@@ -109,6 +109,9 @@ class PhysicsController {
             this.collisionHandler.setupCollisionEvents();
             console.log("Gestionnaire de collisions configuré.");
 
+            // Correction : forcer le calcul de l'accélération dès l'init
+            this.calculateGravityForceForDebug();
+
         } catch (error) {
             console.error("Erreur majeure lors de l'initialisation de la physique:", error);
         }
@@ -119,6 +122,9 @@ class PhysicsController {
         this.clearCacheIfNeeded();
 
         if (!this.rocketModel || !this.rocketBody || !this.universeModel) return;
+
+        // Calculer et stocker l'accélération gravitationnelle de la fusée (pour le rendering et l'IA)
+        this.lastRocketAcceleration = this.calculateGravityAccelerationAt(this.rocketBody.position, this.universeModel);
 
         // 1. Mettre à jour les positions des corps célestes (orbites calculées dans UniverseModel.update)
         //    On synchronise maintenant le moteur physique AVANT son update.
@@ -171,6 +177,13 @@ class PhysicsController {
 
     // Calculer la force gravitationnelle totale pour la visualisation (debug)
     calculateGravityForceForDebug() {
+        // Ajout log de debug
+        if (!this.rocketBody) {
+            console.warn('[PhysicsController] Pas de rocketBody pour calculer l\'accélération.');
+        }
+        if (!this.celestialBodies || this.celestialBodies.length === 0) {
+            console.warn('[PhysicsController] Pas de corps célestes pour calculer l\'accélération.');
+        }
         let totalForceX = 0;
         let totalForceY = 0;
 
@@ -257,5 +270,22 @@ class PhysicsController {
             ay += a * dy / r;
         }
         return { ax, ay };
+    }
+
+    // Fonction pure : accélération gravitationnelle à une position donnée
+    calculateGravityAccelerationAt(position, universeModel) {
+        let ax = 0, ay = 0;
+        if (!position || !universeModel || !universeModel.celestialBodies) return { x: 0, y: 0 };
+        for (const body of universeModel.celestialBodies) {
+            const dx = body.position.x - position.x;
+            const dy = body.position.y - position.y;
+            const r2 = dx * dx + dy * dy;
+            if (r2 < 1e-6) continue;
+            const r = Math.sqrt(r2);
+            const a = this.gravitationalConstant * body.mass / r2;
+            ax += a * dx / r;
+            ay += a * dy / r;
+        }
+        return { x: ax, y: ay };
     }
 } 

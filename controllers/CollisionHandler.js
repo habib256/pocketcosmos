@@ -9,6 +9,7 @@ class CollisionHandler {
 
         this.collisionsEnabled = false;
         this.initTime = Date.now();
+        this._lastLandedState = {};
     }
 
     setupCollisionEvents() {
@@ -62,7 +63,10 @@ class CollisionHandler {
                         // La synchro est gérée par SynchronizationManager
                         // this.physicsController.synchronizationManager.syncPhysicsWithModel(rocketModel); // Supprimé, géré ailleurs
 
-                        console.log(`Atterrissage réussi sur ${otherBody.label}`);
+                        if (!this._lastLandedState[otherBody.label] && rocketModel.isLanded) {
+                            console.log(`Atterrissage réussi sur ${otherBody.label}`);
+                        }
+                        this._lastLandedState[otherBody.label] = !!rocketModel.isLanded;
                     } else {
                         // Collision normale
                         const impactDamage = impactVelocity * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
@@ -155,18 +159,11 @@ class CollisionHandler {
                 if (pair.bodyA === rocketBody || pair.bodyB === rocketBody) {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
                     if ((otherBody.label !== 'rocket') && rocketModel.isLanded) {
-                         // Vérifier avec une méthode plus robuste si on est *vraiment* plus posé
-                         // Peut-être appeler isRocketLanded ici aussi?
-                         // Pour l'instant, on garde la logique simple:
-                         // Si on était posé et qu'on quitte le contact, on n'est plus posé.
-                         // La vérification périodique dans SynchronizationManager peut confirmer.
-                         // --- SUPPRESSION DE LA LOGIQUE DE MISE A FALSE DE isLanded ICI ---
-                         // if (!this.isRocketLanded(rocketModel, otherBody)) { // Logique plus complexe potentielle
-                         //    rocketModel.isLanded = false;
-                         //    rocketModel.landedOn = null;
-                         //    console.log(`Décollage de ${otherBody.label} détecté par collisionEnd`);
-                         //}
-                         console.log(`CollisionEnd avec ${otherBody.label} alors que isLanded=${rocketModel.isLanded}. La confirmation du décollage est gérée par SynchronizationManager.`);
+                        if (this._lastLandedState[otherBody.label]) {
+                            console.log(`Décollage de ${otherBody.label} détecté`);
+                        }
+                        this._lastLandedState[otherBody.label] = false;
+                        console.log(`CollisionEnd avec ${otherBody.label} alors que isLanded=${rocketModel.isLanded}. La confirmation du décollage est gérée par SynchronizationManager.`);
                     }
                 }
             }
@@ -267,6 +264,15 @@ class CollisionHandler {
                 rocketModel.attachedTo = otherBody.label;
                 rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1);
                 this.playCollisionSound(50); // Son de gros impact
+                // Déclencher l'explosion de particules
+                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
+                        detail: {
+                            x: rocketBody.position.x,
+                            y: rocketBody.position.y
+                        }
+                    }));
+                }
                 return false; // CRASH
             }
         }

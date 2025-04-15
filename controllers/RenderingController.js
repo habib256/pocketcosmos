@@ -141,21 +141,14 @@ class RenderingController {
         
         // Rendre les particules
         if (this.particleView) {
-            this.particleView.renderParticles(ctx, particleSystemModel, camera);
+            this.particleView.renderParticles(ctx, particleSystemModel, camera, rocketModel);
         }
         
         // Calculs des vecteurs pour l'affichage
         // 1. Vecteur d'accélération totale (somme des forces)
-        let accelerationVector = null;
-        if (this.physicsController && this.physicsController.physicsVectors) {
-            // On prend l'accélération totale (somme des forces divisée par la masse)
-            const f = this.physicsController.physicsVectors.totalAcceleration;
-            if (f && (f.x !== 0 || f.y !== 0)) {
-                accelerationVector = { x: f.x, y: f.y };
-                // Log de la norme du vecteur d'accélération
-                const norm = Math.sqrt(f.x * f.x + f.y * f.y);
-                console.log('[DEBUG] Norme du vecteur accélération:', norm, 'Valeur:', f);
-            }
+        let accelerationVector = {x:0, y:0};
+        if (this.physicsController && this.physicsController.lastRocketAcceleration) {
+            accelerationVector = this.physicsController.lastRocketAcceleration;
         }
 
         // 2. Vecteurs de mission (départ et arrivée)

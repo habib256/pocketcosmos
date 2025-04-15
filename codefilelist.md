@@ -117,3 +117,5 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 -   **Doublons**: Il serait judicieux de vérifier la présence éventuelle de fichiers dupliqués ou redondants afin de nettoyer la base de code.
 -   **Code commenté**: Le code contient des commentaires et des `console.log` utiles pour le débogage.
  - Utilise https://hardwaretester.com/gamepad pour aider à l'identification des axes et des boutons du gamepad.
+§ 
+C'est une bien meilleure idée, parce que tu peux calculer cette accélération indépendamment de matter.js. Tu te rappelles de toute façon qu'on utilise Matter.js avec Matter Attractor ! @codefilelist.md  Lorsqu'on calcule l'accélération, on l'envoie après à mateur attractor pour mateur JS. Donc effectivement, le calcul se fait en extérieur, puis est donné à mateur attractor. 

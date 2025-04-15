@@ -94,6 +94,8 @@ class GameController {
                 }
             });
         }
+
+        this._lastRocketDestroyed = false;
     }
     
     // S'abonner aux événements de l'EventBus
@@ -985,6 +987,7 @@ class GameController {
         // -------------
 
         console.log("Fusée réinitialisée.");
+        this._lastRocketDestroyed = false;
     }
     
     // Nettoyer les ressources
@@ -1062,13 +1065,10 @@ class GameController {
 
     // Gérer les mises à jour d'état de la fusée
     handleRocketStateUpdated(data) {
-        // Vérifier si la fusée vient d'être détruite
-        if (data.isDestroyed && this.rocketModel && !this.crashResetTimer) {
+        if (data.isDestroyed && !this._lastRocketDestroyed) {
             console.log("Fusée détruite - Appuyez sur R pour réinitialiser");
-            
-            // Ne pas programmer de réinitialisation automatique
-            // pour permettre à l'utilisateur de voir la trace du crash
         }
+        this._lastRocketDestroyed = !!data.isDestroyed;
     }
 
     // Mettre à jour la trace de la fusée
@@ -1209,7 +1209,8 @@ class GameController {
                         // Ajouter les récompenses au total
                         this.totalCreditsEarned += mission.reward;
                         console.log(`%c[GameController] +${mission.reward} crédits gagnés ! Total: ${this.totalCreditsEarned}`, 'color: gold;');
-                        
+                        // Log déchargement du cargo
+                        console.log(`%c[GameController] Cargo déchargé pour la mission ${mission.id}`, 'color: orange;');
                         // Émettre les événements de succès (si nécessaire pour l'UI ou autre)
                         this.eventBus.emit('UI_UPDATE_CREDITS', { reward: mission.reward }); 
                         this.eventBus.emit('MISSION_COMPLETED', { mission: mission }); // Passer la mission complétée
