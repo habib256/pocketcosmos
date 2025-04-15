@@ -290,7 +290,7 @@ class CollisionHandler {
         const crashAngleThresholdRad = this.PHYSICS.CRASH_ANGLE_DEG * (Math.PI / 180);
 
         // --- Log de débogage --- 
-        if (isCloseToSurface) {
+        if (isCloseToSurface && !rocketModel.isDestroyed) {
             console.log(`isRocketLanded Check (${otherBody.label}): ` +
                         `Close=${isCloseToSurface}, Speed=${speed.toFixed(2)}, ` +
                         `Angle=${angleDiffDeg.toFixed(1)}°, AngVel=${angularVelocity.toFixed(3)}`);
