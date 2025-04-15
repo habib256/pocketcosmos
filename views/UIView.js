@@ -528,6 +528,23 @@ class UIView {
     }
 
     render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions = [], totalCreditsEarned = 0) {
+        // --- Affichage du texte Mission Réussie (overlay UI) ---
+        if (window._missionSuccessTextTime && Date.now() - window._missionSuccessTextTime < 2500) {
+            ctx.save();
+            const elapsed = Date.now() - window._missionSuccessTextTime;
+            ctx.globalAlpha = 1 - (elapsed / 2500) * 0.5;
+            ctx.font = 'bold 54px Impact, Arial, sans-serif';
+            ctx.fillStyle = '#FFD700';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = '#FFEC80';
+            ctx.shadowBlur = 32;
+            ctx.strokeStyle = '#B8860B';
+            ctx.lineWidth = 5;
+            ctx.strokeText('Mission réussie', canvas.width / 2, 150);
+            ctx.fillText('Mission réussie', canvas.width / 2, 150);
+            ctx.restore();
+        }
         if (isPaused) {
             this.renderPause(ctx, canvas);
         } else {

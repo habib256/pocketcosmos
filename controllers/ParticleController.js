@@ -182,4 +182,121 @@ class ParticleController {
             this.particleSystemModel.updateEmitterAngle('right', angle);
         }
     }
+
+    // --- Effet Mission Réussie (particules texte qui tombent) ---
+    createMissionSuccessParticles(x, y, message) {
+        // Nombre de lettres à émettre (une particule par lettre, plusieurs vagues)
+        const chars = message.split('');
+        const waves = 5; // Nombre de vagues
+        const delayBetweenWaves = 350; // ms
+        const baseY = y - 80; // Décaler un peu au-dessus de la fusée
+        for (let w = 0; w < waves; w++) {
+            setTimeout(() => {
+                chars.forEach((char, i) => {
+                    // Position de départ aléatoire autour de x
+                    const startX = x - (chars.length * 16) / 2 + i * 16 + (Math.random() - 0.5) * 20;
+                    const startY = baseY + (Math.random() - 0.5) * 20;
+                    // Vitesse de chute aléatoire
+                    const vy = 1.5 + Math.random() * 1.5;
+                    const vx = (Math.random() - 0.5) * 0.7;
+                    // Durée de vie
+                    const lifetime = 2.5 + Math.random() * 1.2;
+                    // Couleur festive
+                    const colors = ['#FFD700', '#FF69B4', '#00E5FF', '#FF3300', '#00FF66', '#FF00CC'];
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    // Créer une particule texte personnalisée
+                    this.createTextParticle(startX, startY, vx, vy, char, color, lifetime);
+                });
+            }, w * delayBetweenWaves);
+        }
+    }
+
+    // Créer une particule texte personnalisée
+    createTextParticle(x, y, vx, vy, char, color, lifetime) {
+        // On suppose que la vue de particules sait dessiner ce type de particule (sinon il faudra l'ajouter)
+        const particle = {
+            x,
+            y,
+            vx,
+            vy,
+            char,
+            color,
+            size: 28 + Math.random() * 8,
+            alpha: 1,
+            age: 0,
+            lifetime: lifetime * 60, // en frames
+            isActive: true,
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.age++;
+                // Fondu progressif
+                this.alpha = 1 - this.age / this.lifetime;
+                if (this.alpha < 0) this.alpha = 0;
+                return this.age < this.lifetime;
+            }
+        };
+        // On stocke dans un tableau spécial pour les particules texte
+        if (!this.particleSystemModel.textParticles) {
+            this.particleSystemModel.textParticles = [];
+        }
+        this.particleSystemModel.textParticles.push(particle);
+    }
+
+    // --- Effet Mission Réussie : texte doré + explosion de particules festives ---
+    createMissionSuccessCelebration(canvasWidth, canvasHeight) {
+        // 1. Afficher le texte "Mission réussie" en haut du canvas
+        this.particleSystemModel.missionSuccessText = {
+            visible: true,
+            time: Date.now(),
+            duration: 2500, // ms
+            x: canvasWidth / 2,
+            y: 80,
+            color: '#FFD700',
+            font: 'bold 48px Impact, Arial, sans-serif',
+            shadow: true
+        };
+        // 2. Explosion de particules festives autour du texte
+        const centerX = canvasWidth / 2;
+        const centerY = 80;
+        const count = 120;
+        const colors = ['#FFD700', '#FF69B4', '#00E5FF', '#FF3300', '#00FF66', '#FF00CC', '#FFFACD', '#FFA500'];
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            // Vitesse pour remplir le canvas
+            const speed = 4 + Math.random() * 7;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            const size = 6 + Math.random() * 10;
+            const lifetime = 1.8 + Math.random() * 1.5; // en secondes
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            // Utiliser le même modèle que les thrusters/crash (cercle plein)
+            const particle = {
+                x: centerX,
+                y: centerY,
+                vx,
+                vy,
+                size,
+                color,
+                alpha: 1,
+                age: 0,
+                lifetime: lifetime * 60, // en frames
+                isActive: true,
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    this.vx *= 0.98; // Légère friction
+                    this.vy *= 0.98;
+                    this.age++;
+                    this.alpha = 1 - this.age / this.lifetime;
+                    if (this.alpha < 0) this.alpha = 0;
+                    return this.age < this.lifetime;
+                }
+            };
+            if (!this.particleSystemModel.celebrationParticles) {
+                this.particleSystemModel.celebrationParticles = [];
+            }
+            this.particleSystemModel.celebrationParticles.push(particle);
+        }
+    }
 } 

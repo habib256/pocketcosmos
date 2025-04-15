@@ -21,6 +21,68 @@ class ParticleView {
         }
         // Toujours afficher les particules de débris (explosions)
         this.render(ctx, particleSystemModel.debrisParticles);
+
+        // --- Affichage des particules texte (Mission Réussie) ---
+        if (particleSystemModel.textParticles && particleSystemModel.textParticles.length > 0) {
+            for (const p of particleSystemModel.textParticles) {
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.font = `${p.size || 32}px Impact, Arial, sans-serif`;
+                ctx.fillStyle = p.color || '#FFD700';
+                ctx.strokeStyle = '#222';
+                ctx.lineWidth = 2;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeText(p.char, p.x, p.y);
+                ctx.fillText(p.char, p.x, p.y);
+                ctx.restore();
+            }
+        }
+
+        // --- Affichage du texte Mission Réussie (overlay doré) ---
+        if (particleSystemModel.missionSuccessText && particleSystemModel.missionSuccessText.visible) {
+            const t = particleSystemModel.missionSuccessText;
+            const elapsed = Date.now() - t.time;
+            if (elapsed < t.duration) {
+                ctx.save();
+                ctx.globalAlpha = 1 - (elapsed / t.duration) * 0.5;
+                ctx.font = t.font;
+                ctx.fillStyle = t.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (t.shadow) {
+                    ctx.shadowColor = '#FFEC80';
+                    ctx.shadowBlur = 24;
+                }
+                ctx.strokeStyle = '#B8860B';
+                ctx.lineWidth = 4;
+                ctx.strokeText('Mission réussie', t.x, t.y);
+                ctx.fillText('Mission réussie', t.x, t.y);
+                ctx.restore();
+            } else {
+                t.visible = false;
+            }
+        }
+
+        // --- Affichage des particules de célébration (explosion festive) ---
+        if (particleSystemModel.celebrationParticles && particleSystemModel.celebrationParticles.length > 0) {
+            for (let i = particleSystemModel.celebrationParticles.length - 1; i >= 0; i--) {
+                const p = particleSystemModel.celebrationParticles[i];
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 16;
+                ctx.fill();
+                ctx.restore();
+                // Nettoyage automatique si la particule est morte
+                if (!p.update()) {
+                    particleSystemModel.celebrationParticles.splice(i, 1);
+                }
+            }
+        }
         ctx.restore();
     }
     
