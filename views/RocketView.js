@@ -13,13 +13,15 @@ class RocketView {
         this.height = ROCKET.HEIGHT * 1.6; // Hauteur proportionnelle
         
         // Affichage des vecteurs
-        this.showGravityVector = false; // Option pour activer/désactiver l'affichage
         this.showThrustVector = false;  // Option pour afficher les vecteurs de poussée
         this.showTotalThrustVector = false; // Option pour afficher le vecteur de poussée totale
         this.showVelocityVector = false; // Option pour afficher le vecteur de vitesse
         this.showLunarAttractionVector = false; // Option pour afficher le vecteur d'attraction lunaire
         this.showEarthAttractionVector = false; // Option pour afficher le vecteur d'attraction terrestre
         this.showThrusterPositions = false; // Option pour afficher la position des propulseurs
+        this.showAccelerationVector = false;
+        this.showMissionStartVector = false;
+        this.showMissionTargetVector = false;
     }
     
     // Nouveau rendu avec support de la caméra et prise en charge de l'état
@@ -87,10 +89,6 @@ class RocketView {
         
         // Dessiner les vecteurs si activés (APRÈS la fusée) et si la fusée n'est pas détruite
         if (!rocketState.isDestroyed) {
-            if (this.showGravityVector && rocketState.gravityVector) {
-                this.renderGravityVector(ctx, rocketState);
-            }
-            
             // Dessiner le vecteur de poussée des propulseurs
             if (this.showThrustVector && rocketState.thrustVectors) {
                 this.renderThrustVectors(ctx, rocketState);
@@ -115,64 +113,18 @@ class RocketView {
             if (this.showEarthAttractionVector && rocketState.earthAttractionVector) {
                 this.renderEarthAttractionVector(ctx, rocketState);
             }
-        }
-        
-        ctx.restore();
-    }
-    
-    // Affiche le vecteur de gravité agissant sur la fusée (somme des attractions)
-    renderGravityVector(ctx, rocketState) {
-        if (!rocketState.gravityVector) return;
-        
-        // Sauvegarder le contexte avant rotation
-        ctx.save();
-        
-        const gravityVector = rocketState.gravityVector;
-        
-        // Calculer la magnitude de la gravité totale
-        const gravityMagnitude = Math.sqrt(gravityVector.x * gravityVector.x + gravityVector.y * gravityVector.y);
-        
-        if (gravityMagnitude > 0.0000001) { // Vérifier si la gravité est significative
-            // Normaliser la direction
-            const dirX = gravityVector.x / gravityMagnitude;
-            const dirY = gravityVector.y / gravityMagnitude;
             
-            // Échelle de visualisation (la gravité est très petite, donc nous multiplions)
-            const scale = RENDER.GRAVITY_SCALE_FACTOR; // Utiliser la constante définie
-            const vectorLength = Math.min(gravityMagnitude * scale, RENDER.GRAVITY_MAX_LENGTH); // Utiliser la constante définie
+            if (this.showAccelerationVector && rocketState.accelerationVector) {
+                this.renderAccelerationVector(ctx, rocketState);
+            }
             
-            // Dessiner le vecteur
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
+            if (this.showMissionStartVector && rocketState.missionStartVector) {
+                this.renderMissionStartVector(ctx, rocketState);
+            }
             
-            // Style de ligne
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#FFFF00"; // Jaune pour la gravité
-            ctx.stroke();
-            
-            // Dessiner la flèche
-            const arrowSize = RENDER.GRAVITY_ARROW_SIZE;
-            const angle = Math.atan2(dirY, dirX);
-            ctx.beginPath();
-            ctx.moveTo(dirX * vectorLength, dirY * vectorLength);
-            ctx.lineTo(
-                dirX * vectorLength - arrowSize * Math.cos(angle - Math.PI/6),
-                dirY * vectorLength - arrowSize * Math.sin(angle - Math.PI/6)
-            );
-            ctx.lineTo(
-                dirX * vectorLength - arrowSize * Math.cos(angle + Math.PI/6),
-                dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6)
-            );
-            ctx.closePath();
-            ctx.fillStyle = "#FFFF00";
-            ctx.fill();
-            
-            // Ajouter un texte explicatif
-            ctx.fillStyle = "#FFFF00";
-            ctx.font = "12px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("a", dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
+            if (this.showMissionTargetVector && rocketState.missionTargetVector) {
+                this.renderMissionTargetVector(ctx, rocketState);
+            }
         }
         
         ctx.restore();
@@ -181,30 +133,20 @@ class RocketView {
     // Affiche le vecteur de vitesse de la fusée
     renderVelocityVector(ctx, rocketState) {
         if (!rocketState.velocity) return;
-        
         const velocityX = rocketState.velocity.x;
         const velocityY = rocketState.velocity.y;
         const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
-        
         if (velocityMagnitude > 0.00001) {
-            // Normaliser
             const dirX = velocityX / velocityMagnitude;
             const dirY = velocityY / velocityMagnitude;
-            
-            // Calculer l'échelle pour le vecteur de vitesse
-            const vectorLength = Math.min(velocityMagnitude * RENDER.VELOCITY_SCALE_FACTOR, RENDER.VELOCITY_MAX_LENGTH);
-            
-            // Dessiner le vecteur
+            const vectorLength = 100; // Longueur fixe
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
-            
-            // Style de ligne
             ctx.lineWidth = 2;
             ctx.strokeStyle = "#00FFFF"; // Cyan pour la vitesse
             ctx.stroke();
-            
-            // Dessiner la flèche
+            // Flèche
             const arrowSize = RENDER.GRAVITY_ARROW_SIZE * 0.8;
             const angle = Math.atan2(dirY, dirX);
             ctx.beginPath();
@@ -220,14 +162,10 @@ class RocketView {
             ctx.closePath();
             ctx.fillStyle = "#00FFFF";
             ctx.fill();
-            
-            // Ajouter un texte explicatif
             ctx.fillStyle = "#00FFFF";
             ctx.font = "12px Arial";
             ctx.textAlign = "center";
             ctx.fillText("V", dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
-            
-            // Ne plus afficher la valeur de la vitesse
         }
     }
     
@@ -544,6 +482,107 @@ class RocketView {
             ctx.fillText("Poussée", dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
         }
         
+        ctx.restore();
+    }
+
+    renderAccelerationVector(ctx, rocketState) {
+        if (!rocketState.accelerationVector) return;
+        ctx.save();
+        const acc = rocketState.accelerationVector;
+        const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y);
+        if (magnitude > 0.00001) {
+            const dirX = acc.x / magnitude;
+            const dirY = acc.y / magnitude;
+            const vectorLength = 100; // Longueur fixe
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#FFA500"; // Orange
+            ctx.stroke();
+            // Flèche
+            const arrowSize = 10;
+            const angle = Math.atan2(dirY, dirX);
+            ctx.beginPath();
+            ctx.moveTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle - Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle - Math.PI/6));
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle + Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6));
+            ctx.closePath();
+            ctx.fillStyle = "#FFA500";
+            ctx.fill();
+            ctx.fillStyle = "#FFA500";
+            ctx.font = "12px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("a", dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
+        }
+        ctx.restore();
+    }
+
+    renderMissionStartVector(ctx, rocketState) {
+        if (!rocketState.missionStartVector) return;
+        ctx.save();
+        const vec = rocketState.missionStartVector.vector;
+        const magnitude = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
+        if (magnitude > 0.00001) {
+            const dirX = vec.x / magnitude;
+            const dirY = vec.y / magnitude;
+            const vectorLength = 100; // Longueur fixe
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#00BFFF"; // Bleu clair
+            ctx.stroke();
+            // Flèche
+            const arrowSize = 10;
+            const angle = Math.atan2(dirY, dirX);
+            ctx.beginPath();
+            ctx.moveTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle - Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle - Math.PI/6));
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle + Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6));
+            ctx.closePath();
+            ctx.fillStyle = "#00BFFF";
+            ctx.fill();
+            ctx.fillStyle = "#00BFFF";
+            ctx.font = "12px Arial";
+            ctx.textAlign = "center";
+            const label = rocketState.missionStartVector.name + ' ' + Math.floor(rocketState.missionStartVector.distance) + ' m';
+            ctx.fillText(label, dirX * vectorLength + dirX * 20, dirY * vectorLength + dirY * 15);
+        }
+        ctx.restore();
+    }
+
+    renderMissionTargetVector(ctx, rocketState) {
+        if (!rocketState.missionTargetVector) return;
+        ctx.save();
+        const vec = rocketState.missionTargetVector.vector;
+        const magnitude = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
+        if (magnitude > 0.00001) {
+            const dirX = vec.x / magnitude;
+            const dirY = vec.y / magnitude;
+            const vectorLength = 100; // Longueur fixe
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#A020F0"; // Violet
+            ctx.stroke();
+            // Flèche
+            const arrowSize = 10;
+            const angle = Math.atan2(dirY, dirX);
+            ctx.beginPath();
+            ctx.moveTo(dirX * vectorLength, dirY * vectorLength);
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle - Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle - Math.PI/6));
+            ctx.lineTo(dirX * vectorLength - arrowSize * Math.cos(angle + Math.PI/6), dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6));
+            ctx.closePath();
+            ctx.fillStyle = "#A020F0";
+            ctx.fill();
+            ctx.fillStyle = "#A020F0";
+            ctx.font = "12px Arial";
+            ctx.textAlign = "center";
+            const label = rocketState.missionTargetVector.name + ' ' + Math.floor(rocketState.missionTargetVector.distance) + ' m';
+            ctx.fillText(label, dirX * vectorLength + dirX * 20, dirY * vectorLength + dirY * 15);
+        }
         ctx.restore();
     }
 } 

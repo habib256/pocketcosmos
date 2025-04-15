@@ -983,19 +983,28 @@ class GameController {
     // Activer/désactiver tous les vecteurs (gravité, poussée et vitesse)
     toggleVectors() {
         if (this.rocketView) {
-            // Définir une valeur commune pour tous les vecteurs
-            const newValue = !(this.rocketView.showGravityVector || this.rocketView.showThrustVector || 
-                              this.rocketView.showVelocityVector || this.rocketView.showLunarAttractionVector ||
-                              this.rocketView.showEarthAttractionVector || this.rocketView.showTotalThrustVector);
-            
+            // Définir une valeur commune pour tous les vecteurs (anciens + nouveaux)
+            const newValue = !(
+                this.rocketView.showVelocityVector ||
+                this.rocketView.showLunarAttractionVector ||
+                this.rocketView.showEarthAttractionVector ||
+                this.rocketView.showTotalThrustVector ||
+                this.rocketView.showThrustVector ||
+                this.rocketView.showAccelerationVector ||
+                this.rocketView.showMissionStartVector ||
+                this.rocketView.showMissionTargetVector ||
+                this.rocketView.showGravityVector // au cas où il reste utilisé
+            );
             // Appliquer à tous les vecteurs
-            this.rocketView.showGravityVector = newValue;
-            this.rocketView.showThrustVector = newValue;
             this.rocketView.showVelocityVector = newValue;
             this.rocketView.showLunarAttractionVector = newValue;
             this.rocketView.showEarthAttractionVector = newValue;
             this.rocketView.showTotalThrustVector = newValue;
-            
+            this.rocketView.showThrustVector = newValue;
+            this.rocketView.showAccelerationVector = newValue;
+            this.rocketView.showMissionStartVector = newValue;
+            this.rocketView.showMissionTargetVector = newValue;
+            this.rocketView.showGravityVector = newValue; // pour compatibilité
             console.log(`Affichage des vecteurs: ${newValue ? 'activé' : 'désactivé'}`);
         }
     }

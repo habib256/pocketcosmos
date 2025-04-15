@@ -141,9 +141,58 @@ class RenderingController {
             this.particleView.renderParticles(ctx, particleSystemModel, camera);
         }
         
+        // Calculs des vecteurs pour l'affichage
+        // 1. Vecteur d'accélération totale (somme des forces)
+        let accelerationVector = null;
+        if (this.physicsController && this.physicsController.physicsVectors) {
+            // On prend la somme des forces (gravityForce ici = somme des forces appliquées)
+            const f = this.physicsController.physicsVectors.gravityForce;
+            if (f && (f.x !== 0 || f.y !== 0)) {
+                accelerationVector = { x: f.x, y: f.y };
+            }
+        }
+
+        // 2. Vecteurs de mission (départ et arrivée)
+        let missionStartVector = null;
+        let missionTargetVector = null;
+        if (activeMissions && activeMissions.length > 0 && rocketModel && universeModel) {
+            const mission = activeMissions[0];
+            const rocketPos = rocketModel.position;
+            // Planète de départ
+            const startBody = universeModel.celestialBodies.find(b => b.name === mission.from);
+            if (startBody && rocketPos) {
+                const dx = startBody.position.x - rocketPos.x;
+                const dy = startBody.position.y - rocketPos.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                missionStartVector = {
+                    vector: { x: dx, y: dy },
+                    name: mission.from,
+                    distance: dist
+                };
+            }
+            // Planète d'arrivée
+            const targetBody = universeModel.celestialBodies.find(b => b.name === mission.to);
+            if (targetBody && rocketPos) {
+                const dx = targetBody.position.x - rocketPos.x;
+                const dy = targetBody.position.y - rocketPos.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                missionTargetVector = {
+                    vector: { x: dx, y: dy },
+                    name: mission.to,
+                    distance: dist
+                };
+            }
+        }
+        // Fusionner dans l'état de la fusée pour l'affichage
+        const rocketStateForView = {
+            ...rocketModel,
+            accelerationVector,
+            missionStartVector,
+            missionTargetVector
+        };
         // Rendre la fusée
         if (this.rocketView) {
-            this.rocketView.render(ctx, rocketModel, camera);
+            this.rocketView.render(ctx, rocketStateForView, camera);
         }
         
         // Dessiner les vecteurs de force si activés
