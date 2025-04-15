@@ -240,4 +240,22 @@ class PhysicsController {
         this.gameController = gameController;
         // On pourrait passer gameController aux sous-modules si nécessaire
     }
+
+    // Calcule l'accélération gravitationnelle totale en un point (x, y)
+    calculateGravityAtPoint(x, y) {
+        let ax = 0, ay = 0;
+        for (const celestialInfo of this.celestialBodies) {
+            const body = celestialInfo.body;
+            const model = celestialInfo.model;
+            const dx = body.position.x - x;
+            const dy = body.position.y - y;
+            const r2 = dx * dx + dy * dy;
+            if (r2 < 1e-6) continue; // Ignore le centre
+            const r = Math.sqrt(r2);
+            const a = this.gravitationalConstant * model.mass / r2;
+            ax += a * dx / r;
+            ay += a * dy / r;
+        }
+        return { ax, ay };
+    }
 } 

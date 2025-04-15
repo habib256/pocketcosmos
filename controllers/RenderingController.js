@@ -119,6 +119,9 @@ class RenderingController {
         // Rendre le fond
         if (this.universeView) {
             this.universeView.renderBackground(ctx, camera);
+            if (this.physicsController) {
+                this.universeView.render(ctx, camera, this.physicsController);
+            }
         }
         
         // Rendre les étoiles

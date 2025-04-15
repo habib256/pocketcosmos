@@ -59,11 +59,21 @@ class GameController {
         document.addEventListener('visibilitychange', () => {
             if (document.hidden && !this.isPaused) {
                 this.isPaused = true;
-                console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
+                // console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
                 // On peut aussi émettre un événement si besoin :
                 // this.eventBus.emit('GAME_PAUSED');
             }
         });
+
+        // Ajout : pause automatique si la fenêtre perd le focus
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('blur', () => {
+                if (!this.isPaused) {
+                    this.isPaused = true;
+                    // this.eventBus.emit('GAME_PAUSED');
+                }
+            });
+        }
 
         this.pauseKeyDown = false;
 
@@ -98,6 +108,8 @@ class GameController {
         
         // Événement pour les vecteurs (une seule méthode)
         this.eventBus.subscribe('toggleVectors', () => this.toggleVectors());
+        // Ajout : événement pour le champ de gravité
+        this.eventBus.subscribe('toggleGravityField', () => this.toggleGravityField());
         
         // Événement pour les mises à jour d'état de la fusée
         this.eventBus.subscribe('ROCKET_STATE_UPDATED', (data) => this.handleRocketStateUpdated(data));
@@ -1411,4 +1423,10 @@ class GameController {
     }
 
     // --- Fin Gestionnaires Joystick ---
+
+    toggleGravityField() {
+        if (this.universeView && typeof this.universeView.toggleGravityField === 'function') {
+            this.universeView.toggleGravityField();
+        }
+    }
 } 

@@ -89,9 +89,8 @@ class TraceView {
         return this.isVisible;
     }
     
-    clear(fullClear = false) {
-        if (fullClear) {
-            console.log('%c[TraceView] clear: Effacement COMPLET des traces.', 'color: red; font-weight: bold;');
+    clear(all = false) {
+        if (all) {
             // Effacement complet de toutes les traces
             this.traces = [];
             // Suppression de la référence à moonRelativeTraces

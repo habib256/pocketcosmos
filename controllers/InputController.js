@@ -14,6 +14,7 @@ class InputController {
         'KeyR': 'resetRocket',
         'KeyC': 'centerCamera',
         'KeyV': 'toggleVectors',
+        'KeyG': 'toggleGravityField',
         'KeyI': 'toggleAI',
         'Equal': 'zoomIn',
         'Minus': 'zoomOut',
@@ -89,6 +90,7 @@ class InputController {
             'r': 'resetRocket',
             'c': 'centerCamera',
             'v': 'toggleVectors',
+            'g': 'toggleGravityField',
             't': 'toggleTraces',        // Afficher/masquer les traces
             'p': 'pauseGame',           // Pause avec P
             'Escape': 'pauseGame',      // Pause avec Escape
@@ -180,7 +182,7 @@ class InputController {
 
         // Vérifier immédiatement les gamepads déjà connectés
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-        console.log(`%c[InputController] Vérification initiale: ${gamepads.length} slots de gamepad trouvés.`, 'color: purple;');
+        // console.log(`%c[InputController] Vérification initiale: ${gamepads.length} slots de gamepad trouvés.`, 'color: purple;');
         for (const gp of gamepads) {
             if (gp) {
                 console.log(`%c[InputController] -> Gamepad trouvé lors de la vérification initiale: Index ${gp.index}, ID: ${gp.id}`, 'color: purple; font-weight: bold;');
@@ -188,9 +190,9 @@ class InputController {
                 break; // Se connecter au premier trouvé pour l'instant
             }
         }
-         if (!this.gamepad) {
-             console.log('%c[InputController] Aucun gamepad actif trouvé lors de la vérification initiale. En attente de l\'événement \'gamepadconnected\'...', 'color: orange;');
-         }
+        // if (!this.gamepad) {
+        //     console.log('%c[InputController] Aucun gamepad actif trouvé lors de la vérification initiale. En attente de l\'événement \'gamepadconnected\'...', 'color: orange;');
+        // }
     }
 
     // Nouvelle méthode pour gérer la connexion (appelée par l'event ou la vérification initiale)
@@ -236,6 +238,10 @@ class InputController {
             
             // Émettre l'événement correspondant
             this.eventBus.emit('INPUT_KEYDOWN', { action, key: event.key });
+            // Ajout : toggleGravityField
+            if (action === 'toggleGravityField') {
+                this.eventBus.emit('toggleGravityField');
+            }
         }
     }
     
@@ -288,13 +294,6 @@ class InputController {
                 // console.warn('[InputController] Gamepad non trouvé à l\'index', this.gamepad.index);
                 // this.gamepad = null; 
                 return;
-            }
-
-            // Log l'état brut une fois de temps en temps pour ne pas spammer
-            if (Math.random() < 0.02) { // ~ toutes les 50 frames
-                 console.debug('[InputController] État brut Gamepad:',
-                    'Axes:', currentGamepad.axes.map(a => a.toFixed(2)),
-                    'Boutons:', currentGamepad.buttons.map((b, i) => b.pressed ? `B${i}(${b.value.toFixed(2)})` : '').filter(Boolean).join(' '));
             }
 
             // Traiter les axes

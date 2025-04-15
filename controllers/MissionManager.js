@@ -69,7 +69,6 @@ class MissionManager {
         };
         this.missions.push(mission);
         const cargoString = requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
-        console.log(`%c[MissionManager] Nouvelle mission ajoutée: ${from} -> ${to} (${cargoString})`, 'color: cyan;');
         return mission;
     }
 
@@ -111,7 +110,6 @@ class MissionManager {
                     });
 
                     const cargoString = mission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
-                    console.log(`%c[MissionManager] Mission ${mission.id} (${mission.from} -> ${mission.to}) complétée à ${currentLocation}. Cargo livré: ${cargoString}`, 'color: green;');
                     
                     // Marquer la mission comme complétée
                     mission.status = "completed";
@@ -137,7 +135,6 @@ class MissionManager {
      */
     resetMissions() {
         this.missions = []; // Vider les missions actuelles
-        console.log("%c[MissionManager] Réinitialisation des missions.", 'color: orange;');
         // Mission 1: Terre -> Lune, 10 Fuel
         this.createMission("Terre", "Lune", [{ type: "Fuel", quantity: 10 }], 100); 
         // Mission 2: Lune -> Terre, 10 Wrench (Clés à molette)
