@@ -126,6 +126,13 @@ class RocketModel {
     }
     
     setThrusterPower(thrusterName, power) {
+        // Si plus de carburant, aucun thruster ne doit fonctionner
+        if (this.fuel <= 0) {
+            if (this.thrusters[thrusterName]) {
+                this.thrusters[thrusterName].power = 0;
+            }
+            return;
+        }
         if (this.thrusters[thrusterName]) {
             // Limiter la puissance entre 0 et la puissance maximale du propulseur
             const maxPower = this.thrusters[thrusterName].maxPower;

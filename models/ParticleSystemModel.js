@@ -31,8 +31,8 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.LATERAL.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.LATERAL.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.LATERAL.LIFETIME,
-                 // Calcul basé sur la consommation
-                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT)),
+                 // Calcul basé sur la consommation (divisé par 5)
+                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
                 particleLifetimeVar: 0.5
@@ -47,8 +47,8 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.LATERAL.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.LATERAL.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.LATERAL.LIFETIME,
-                 // Calcul basé sur la consommation
-                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT)),
+                 // Calcul basé sur la consommation (divisé par 5)
+                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
                 particleLifetimeVar: 0.5
@@ -63,8 +63,8 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.REAR.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.REAR.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.REAR.LIFETIME,
-                 // Calcul basé sur la consommation
-                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.REAR * PARTICLES_PER_FUEL_UNIT)),
+                 // Calcul basé sur la consommation (divisé par 5)
+                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.REAR * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
                 particleLifetimeVar: 0.5

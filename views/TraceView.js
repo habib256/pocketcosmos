@@ -1,7 +1,7 @@
 class TraceView {
     constructor() {
         this.traces = [];
-        this.maxPoints = 10000; // Nombre maximum de points dans la trace
+        this.maxPoints = 20000; // Nombre maximum de points dans la trace (x2)
         this.isVisible = true;
         
         // Suppression des variables relatives à la lune
