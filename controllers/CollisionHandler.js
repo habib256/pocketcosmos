@@ -327,6 +327,20 @@ class CollisionHandler {
                         }
                     }));
                 }
+                // --- Enfoncer la fusée dans la planète de 40 pixels ---
+                if (otherBody.position && (otherBody.circleRadius || otherBody.radius)) {
+                    const bodyRadius = otherBody.circleRadius ?? otherBody.radius;
+                    const dx = rocketBody.position.x - otherBody.position.x;
+                    const dy = rocketBody.position.y - otherBody.position.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                    const newDist = bodyRadius + (this.ROCKET.HEIGHT / 2) - 40; // 40 px plus près du centre
+                    rocketModel.position.x = otherBody.position.x + dx / dist * newDist;
+                    rocketModel.position.y = otherBody.position.y + dy / dist * newDist;
+                    // Synchroniser le corps physique si besoin
+                    if (this.Body && rocketBody) {
+                        this.Body.setPosition(rocketBody, { x: rocketModel.position.x, y: rocketModel.position.y });
+                    }
+                }
                 return false; // CRASH
             }
         }
