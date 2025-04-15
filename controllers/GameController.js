@@ -54,6 +54,18 @@ class GameController {
         
         // S'abonner aux événements
         this.subscribeToEvents();
+
+        // Ajout : pause automatique si l'utilisateur quitte l'onglet
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && !this.isPaused) {
+                this.isPaused = true;
+                console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
+                // On peut aussi émettre un événement si besoin :
+                // this.eventBus.emit('GAME_PAUSED');
+            }
+        });
+
+        this.pauseKeyDown = false;
     }
     
     // S'abonner aux événements de l'EventBus
@@ -87,14 +99,12 @@ class GameController {
     
     // Gérer les événements d'entrée
     handleKeyDown(data) {
-        // MODIFICATION: Si en pause, n'importe quelle touche (détectée par keydown) doit reprendre le jeu.
-        if (this.isPaused) {
+        // Si en pause, n'importe quelle flèche doit reprendre le jeu (hors P/Escape)
+        if (this.isPaused && (data.action === 'thrustForward' || data.action === 'thrustBackward' || data.action === 'rotateLeft' || data.action === 'rotateRight')) {
             this.isPaused = false;
-            console.log("Jeu repris par keydown");
-            // On ne traite pas l'action de la touche qui a repris le jeu.
-            return; 
+            console.log("Jeu repris par flèche");
+            return;
         }
-        // FIN MODIFICATION
         
         switch (data.action) {
             case 'thrustForward':
@@ -130,6 +140,12 @@ class GameController {
     }
     
     handleKeyUp(data) {
+        // Toggle pause sur relâchement de P ou Escape
+        if (data.action === 'pauseGame') {
+            this.isPaused = !this.isPaused;
+            console.log(this.isPaused ? "Jeu mis en pause (toggle par P/Escape)" : "Jeu repris (toggle par P/Escape)");
+            return;
+        }
         switch (data.action) {
             case 'thrustForward':
                 if (!this.rocketModel) return;
@@ -167,17 +183,22 @@ class GameController {
     }
     
     handleKeyPress(data) {
-        // MODIFICATION: Si en pause et que l'action n'est PAS pauseGame, reprendre le jeu.
-        if (this.isPaused && data.action !== 'pauseGame') { 
-             this.isPaused = false;
-             console.log("Jeu repris par keypress");
-             return; 
+        // Ne plus gérer la pause ici pour P/Escape
+        if (this.isPaused) {
+            this.isPaused = false;
+            console.log("Jeu repris par keypress");
+            return;
         }
-        // FIN MODIFICATION
 
         switch (data.action) {
             case 'pauseGame':
-                this.togglePause();
+                // Toujours sortir de la pause si on est en pause
+                if (this.isPaused) {
+                    this.isPaused = false;
+                    console.log("Jeu repris par touche P");
+                } else {
+                    this.togglePause();
+                }
                 break;
             case 'resetRocket':
                 this.resetRocket();

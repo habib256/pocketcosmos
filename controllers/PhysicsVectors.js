@@ -10,8 +10,8 @@ class PhysicsVectors {
             left: { x: 0, y: 0 },
             right: { x: 0, y: 0 }
         };
-        this.gravityForce = { x: 0, y: 0 }; // Force calculée pour la visualisation
-        // Note: La logique de calcul de this.gravityForce reste dans PhysicsController pour l'instant
+        this.totalAcceleration = { x: 0, y: 0 }; // Force calculée pour la visualisation
+        // Note: La logique de calcul de this.totalAcceleration reste dans PhysicsController pour l'instant
         // car elle utilise this.celestialBodies qui n'est pas directement dans ce module.
         // On pourrait la déplacer ici si PhysicsVectors reçoit celestialBodies.
     }
@@ -30,8 +30,8 @@ class PhysicsVectors {
     }
 
      // Méthode pour mettre à jour la force de gravité depuis PhysicsController
-     setGravityForceForDebug(x, y) {
-         this.gravityForce = { x, y };
+     setTotalAcceleration(x, y) {
+         this.totalAcceleration = { x, y };
      }
 
     // Activer/désactiver l'affichage
@@ -106,88 +106,30 @@ class PhysicsVectors {
 
             // Dessiner la ligne et la pointe
             this.drawArrow(ctx, rocketPreZoomX, rocketPreZoomY, endPreZoomX, endPreZoomY, velocityColor, baseLineWidth, baseHeadLength, camera.zoom);
-
-            // --- Afficher la magnitude (taille fixe à l'écran) ---
-            ctx.font = `${baseFontSize / camera.zoom}px Arial`; // Taille de police "pré-zoom"
-            const text = `V: ${velocityMagnitude.toFixed(1)} m/s`;
-            const textMetrics = ctx.measureText(text); // Mesure dans le contexte actuel (transformé)
-            const textWidthPreZoom = textMetrics.width; // La largeur mesurée est déjà la bonne en pré-zoom
-            const textHeightPreZoom = baseFontSize / camera.zoom; // Hauteur approx "pré-zoom"
-            const paddingPreZoom = 4 / camera.zoom;
-
-            // Décalage pour le texte (constant à l'écran -> divisé par zoom pour pré-zoom)
-            const textOffsetScreen = 5;
-            const textOffsetXPreZoom = textOffsetScreen / camera.zoom;
-            const textOffsetYPreZoom = textOffsetScreen / camera.zoom;
-
-            // Position du texte "pré-zoom"
-            const textPreZoomX = endPreZoomX + textOffsetXPreZoom;
-            const textPreZoomY = endPreZoomY - textOffsetYPreZoom; // - car Y va vers le bas
-
-            // Position et dimensions du fond "pré-zoom"
-            const backgroundPreZoomX = textPreZoomX - paddingPreZoom;
-            const backgroundPreZoomY = textPreZoomY - textHeightPreZoom; // Décalage pour aligner
-            const backgroundWidthPreZoom = textWidthPreZoom + paddingPreZoom * 2;
-            const backgroundHeightPreZoom = textHeightPreZoom + paddingPreZoom * 2;
-            
-            // Dessiner fond et texte avec coordonnées/dimensions "pré-zoom"
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; 
-            ctx.fillRect(backgroundPreZoomX, backgroundPreZoomY, backgroundWidthPreZoom, backgroundHeightPreZoom);
-            ctx.fillStyle = velocityColor;
-            ctx.fillText(text, textPreZoomX, textPreZoomY);
         }
 
         // --- Dessiner le vecteur de force gravitationnelle ---
-        if (this.gravityForce && (this.gravityForce.x !== 0 || this.gravityForce.y !== 0)) {
+        if (this.totalAcceleration && (this.totalAcceleration.x !== 0 || this.totalAcceleration.y !== 0)) {
+            // Afficher uniquement la direction (flèche de longueur fixe, sans texte)
             const gravityColor = '#FF00FF'; // Magenta
-            const forceMagnitude = Math.sqrt(this.gravityForce.x**2 + this.gravityForce.y**2);
-            const angle = Math.atan2(this.gravityForce.y, this.gravityForce.x);
-
-            // Échelle de base adaptative pour la gravité
-            const gravityBaseScale = 0.00001 * Math.max(1, 50000 / forceMagnitude);
-
-            // Calculer la longueur souhaitée à l'écran, limitée
-            let screenLength = forceMagnitude * gravityBaseScale;
-            screenLength = Math.max(minVectorScreenLength, Math.min(screenLength, maxVectorScreenLength));
-
-            // Convertir la longueur écran en longueur "pré-zoom"
-            const vectorLengthPreZoom = screenLength / camera.zoom;
-
-            // Calculer la position de fin "pré-zoom"
-            const endPreZoomX = rocketPreZoomX + Math.cos(angle) * vectorLengthPreZoom;
-            const endPreZoomY = rocketPreZoomY + Math.sin(angle) * vectorLengthPreZoom;
-
-            // Dessiner la ligne et la pointe
-            this.drawArrow(ctx, rocketPreZoomX, rocketPreZoomY, endPreZoomX, endPreZoomY, gravityColor, baseLineWidth, baseHeadLength, camera.zoom);
-
-            // --- Afficher la magnitude (taille fixe à l'écran) ---
-            ctx.font = `${baseFontSize / camera.zoom}px Arial`; // Taille de police "pré-zoom"
-            const text = `G: ${forceMagnitude.toFixed(1)}`;
-            const textMetrics = ctx.measureText(text); // Mesure dans le contexte actuel (transformé)
-            const textWidthPreZoom = textMetrics.width; // La largeur mesurée est déjà la bonne en pré-zoom
-            const textHeightPreZoom = baseFontSize / camera.zoom; // Hauteur approx "pré-zoom"
-            const paddingPreZoom = 4 / camera.zoom;
-
-            // Décalage pour le texte (constant à l'écran -> divisé par zoom pour pré-zoom)
-            const textOffsetScreen = 10;
-            const textOffsetXPreZoom = (textOffsetScreen / camera.zoom) * Math.cos(angle);
-            const textOffsetYPreZoom = (textOffsetScreen / camera.zoom) * Math.sin(angle);
-
-            // Position du texte "pré-zoom"
-            const textPreZoomX = endPreZoomX + textOffsetXPreZoom;
-            const textPreZoomY = endPreZoomY + textOffsetYPreZoom;
-
-             // Position et dimensions du fond "pré-zoom"
-             const backgroundPreZoomX = textPreZoomX - paddingPreZoom;
-             const backgroundPreZoomY = textPreZoomY - textHeightPreZoom; // Décalage pour aligner
-             const backgroundWidthPreZoom = textWidthPreZoom + paddingPreZoom * 2;
-             const backgroundHeightPreZoom = textHeightPreZoom + paddingPreZoom * 2;
-
-            // Dessiner fond et texte avec coordonnées/dimensions "pré-zoom"
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-            ctx.fillRect(backgroundPreZoomX, backgroundPreZoomY, backgroundWidthPreZoom, backgroundHeightPreZoom);
-            ctx.fillStyle = gravityColor;
-            ctx.fillText(text, textPreZoomX, textPreZoomY);
+            const forceMagnitude = Math.sqrt(this.totalAcceleration.x**2 + this.totalAcceleration.y**2);
+            if (forceMagnitude > 0) {
+                const angle = Math.atan2(this.totalAcceleration.y, this.totalAcceleration.x);
+                // Longueur fixe à l'écran (ex: 60 pixels)
+                const fixedScreenLength = 60;
+                const vectorLengthPreZoom = fixedScreenLength / camera.zoom;
+                const endPreZoomX = rocketPreZoomX + Math.cos(angle) * vectorLengthPreZoom;
+                const endPreZoomY = rocketPreZoomY + Math.sin(angle) * vectorLengthPreZoom;
+                this.drawArrow(ctx, rocketPreZoomX, rocketPreZoomY, endPreZoomX, endPreZoomY, gravityColor, baseLineWidth, baseHeadLength, camera.zoom);
+                // Ajouter la lettre 'A' à l'extrémité du vecteur
+                ctx.save();
+                ctx.font = `${baseFontSize / camera.zoom}px Arial`;
+                ctx.fillStyle = gravityColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('A', endPreZoomX, endPreZoomY - 10 / camera.zoom);
+                ctx.restore();
+            }
         }
     }
 

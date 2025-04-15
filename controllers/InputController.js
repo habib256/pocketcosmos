@@ -90,7 +90,8 @@ class InputController {
             'c': 'centerCamera',
             'v': 'toggleVectors',
             't': 'toggleTraces',        // Afficher/masquer les traces
-            'p': 'pauseGame',
+            'p': 'pauseGame',           // Pause avec P
+            'Escape': 'pauseGame',      // Pause avec Escape
             'm': 'decreaseThrustMultiplier',
             'i': 'toggleAI'             // Activer/désactiver l'IA
         };
@@ -269,7 +270,7 @@ class InputController {
                         action === 'rotateLeft' || action === 'rotateRight' || 
                         action === 'zoomIn' || action === 'zoomOut') {
                         this.eventBus.emit('INPUT_KEYDOWN', { action, key });
-                    } else {
+                    } else if (action !== 'pauseGame') { // Ne jamais répéter pauseGame ici
                         // Pour les actions ponctuelles, envoyer un événement keypress une seule fois
                         this.eventBus.emit('INPUT_KEYPRESS', { action, key });
                         // Réinitialiser l'état de la touche pour éviter les répétitions

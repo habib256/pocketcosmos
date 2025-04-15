@@ -546,7 +546,7 @@ class RocketView {
             ctx.fillStyle = "#00BFFF";
             ctx.font = "12px Arial";
             ctx.textAlign = "center";
-            const label = rocketState.missionStartVector.name + ' ' + Math.floor(rocketState.missionStartVector.distance) + ' m';
+            const label = rocketState.missionStartVector.name + ' ' + Math.floor(rocketState.missionStartVector.distance);
             ctx.fillText(label, dirX * vectorLength + dirX * 20, dirY * vectorLength + dirY * 15);
         }
         ctx.restore();
@@ -580,7 +580,7 @@ class RocketView {
             ctx.fillStyle = "#A020F0";
             ctx.font = "12px Arial";
             ctx.textAlign = "center";
-            const label = rocketState.missionTargetVector.name + ' ' + Math.floor(rocketState.missionTargetVector.distance) + ' m';
+            const label = rocketState.missionTargetVector.name + ' ' + Math.floor(rocketState.missionTargetVector.distance);
             ctx.fillText(label, dirX * vectorLength + dirX * 20, dirY * vectorLength + dirY * 15);
         }
         ctx.restore();

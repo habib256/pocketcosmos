@@ -145,10 +145,13 @@ class RenderingController {
         // 1. Vecteur d'accélération totale (somme des forces)
         let accelerationVector = null;
         if (this.physicsController && this.physicsController.physicsVectors) {
-            // On prend la somme des forces (gravityForce ici = somme des forces appliquées)
-            const f = this.physicsController.physicsVectors.gravityForce;
+            // On prend l'accélération totale (somme des forces divisée par la masse)
+            const f = this.physicsController.physicsVectors.totalAcceleration;
             if (f && (f.x !== 0 || f.y !== 0)) {
                 accelerationVector = { x: f.x, y: f.y };
+                // Log de la norme du vecteur d'accélération
+                const norm = Math.sqrt(f.x * f.x + f.y * f.y);
+                console.log('[DEBUG] Norme du vecteur accélération:', norm, 'Valeur:', f);
             }
         }
 
@@ -190,6 +193,12 @@ class RenderingController {
             missionStartVector,
             missionTargetVector
         };
+        // LOG DEBUG pour le vecteur accélération (une seule fois au chargement ou lors d'un changement de mission)
+        if (!window._accelVectorLogged || window._lastMissionName !== (activeMissions && activeMissions[0] && activeMissions[0].name)) {
+            console.log('[DEBUG] accelerationVector:', accelerationVector);
+            window._accelVectorLogged = true;
+            window._lastMissionName = (activeMissions && activeMissions[0] && activeMissions[0].name);
+        }
         // Rendre la fusée
         if (this.rocketView) {
             this.rocketView.render(ctx, rocketStateForView, camera);

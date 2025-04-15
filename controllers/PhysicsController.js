@@ -38,7 +38,7 @@ class PhysicsController {
 
         // Paramètres de simulation
         this.timeScale = 1.0;
-        this.gravitationalConstant = this.PHYSICS.G * 0.3; // Utilisé seulement pour le calcul de gravité pour le debug
+        this.gravitationalConstant = this.PHYSICS.G; // Correction : utiliser la même constante que la simulation
 
         // Contrôles assistés (l'état est géré ici, la logique dans ThrusterPhysics)
         this.assistedControls = true;
@@ -192,8 +192,14 @@ class PhysicsController {
                 }
             }
         }
-        // Mettre à jour le debugger
-        this.physicsVectors.setGravityForceForDebug(totalForceX, totalForceY);
+        // Calculer l'accélération (a = F/m)
+        let accX = 0;
+        let accY = 0;
+        if (this.rocketBody && this.rocketBody.mass) {
+            accX = totalForceX / this.rocketBody.mass;
+            accY = totalForceY / this.rocketBody.mass;
+        }
+        this.physicsVectors.setTotalAcceleration(accX, accY);
     }
 
     // Méthodes déléguées aux modules spécifiques
