@@ -96,13 +96,14 @@ class GameController {
 
             // --- Effet Mission Réussie (particules texte) ---
             window.addEventListener('MISSION_SUCCESS_PARTICLES', (e) => {
-                if (this.particleController && e.detail) {
-                    this.particleController.createMissionSuccessParticles(
-                        e.detail.x,
-                        e.detail.y,
-                        e.detail.message || 'Mission réussie'
-                    );
-                }
+                // Effet désactivé : on ne veut plus de texte coloré au-dessus de la fusée
+                // if (this.particleController && e.detail) {
+                //     this.particleController.createMissionSuccessParticles(
+                //         e.detail.x,
+                //         e.detail.y,
+                //         e.detail.message || 'Mission réussie'
+                //     );
+                // }
             });
         }
 

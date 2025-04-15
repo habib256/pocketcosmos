@@ -188,7 +188,7 @@ class RocketView {
             ctx.moveTo(0, 0);
             ctx.lineTo(dirX * vectorLength, dirY * vectorLength);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = "#00FFFF"; // Cyan pour la vitesse
+            ctx.strokeStyle = 'rgba(255, 100, 100, 0.5)'; // Couleur identique à la trace
             ctx.stroke();
             // Flèche
             const arrowSize = RENDER.GRAVITY_ARROW_SIZE * 0.8;
@@ -204,12 +204,12 @@ class RocketView {
                 dirY * vectorLength - arrowSize * Math.sin(angle + Math.PI/6)
             );
             ctx.closePath();
-            ctx.fillStyle = "#00FFFF";
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
             ctx.fill();
-            ctx.fillStyle = "#00FFFF";
-            ctx.font = "12px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("V", dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('V', dirX * vectorLength + dirX * 15, dirY * vectorLength + dirY * 15);
         }
     }
     

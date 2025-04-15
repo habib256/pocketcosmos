@@ -39,31 +39,6 @@ class ParticleView {
             }
         }
 
-        // --- Affichage du texte Mission Réussie (overlay doré) ---
-        if (particleSystemModel.missionSuccessText && particleSystemModel.missionSuccessText.visible) {
-            const t = particleSystemModel.missionSuccessText;
-            const elapsed = Date.now() - t.time;
-            if (elapsed < t.duration) {
-                ctx.save();
-                ctx.globalAlpha = 1 - (elapsed / t.duration) * 0.5;
-                ctx.font = t.font;
-                ctx.fillStyle = t.color;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                if (t.shadow) {
-                    ctx.shadowColor = '#FFEC80';
-                    ctx.shadowBlur = 24;
-                }
-                ctx.strokeStyle = '#B8860B';
-                ctx.lineWidth = 4;
-                ctx.strokeText('Mission réussie', t.x, t.y);
-                ctx.fillText('Mission réussie', t.x, t.y);
-                ctx.restore();
-            } else {
-                t.visible = false;
-            }
-        }
-
         // --- Affichage des particules de célébration (explosion festive) ---
         if (particleSystemModel.celebrationParticles && particleSystemModel.celebrationParticles.length > 0) {
             for (let i = particleSystemModel.celebrationParticles.length - 1; i >= 0; i--) {

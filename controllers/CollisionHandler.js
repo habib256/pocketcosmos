@@ -12,8 +12,6 @@ class CollisionHandler {
         this._lastLandedState = {};
 
         // --- Ajout pour détection mission accomplie ---
-        this._missionJustCompleted = false;
-        // On suppose que l'eventBus est accessible via physicsController.eventBus
         if (this.physicsController.eventBus) {
             this.physicsController.eventBus.subscribe('MISSION_COMPLETED', () => {
                 // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
@@ -26,6 +24,17 @@ class CollisionHandler {
                 }
                 // Déclencher l'affichage du texte dans l'UI
                 window._missionSuccessTextTime = Date.now();
+                // Déclencher l'effet particules à la position de la fusée
+                const rocketModel = this.physicsController.rocketModel;
+                if (typeof window !== 'undefined' && window.dispatchEvent && rocketModel) {
+                    window.dispatchEvent(new CustomEvent('MISSION_SUCCESS_PARTICLES', {
+                        detail: {
+                            x: rocketModel.position.x,
+                            y: rocketModel.position.y,
+                            message: "Mission réussie"
+                        }
+                    }));
+                }
                 // Optionnel : log pour debug
                 console.log('[CollisionHandler] Mission accomplie détectée, célébration Mission Réussie déclenchée');
             });
@@ -89,22 +98,6 @@ class CollisionHandler {
                             console.log(`Atterrissage réussi sur ${otherBody.label}`);
                         }
                         this._lastLandedState[otherBody.label] = !!rocketModel.isLanded;
-
-                        // --- Effet Mission Réussie (particules) ---
-                        if (this._missionJustCompleted) {
-                            setTimeout(() => {
-                                if (typeof window !== 'undefined' && window.dispatchEvent) {
-                                    window.dispatchEvent(new CustomEvent('MISSION_SUCCESS_PARTICLES', {
-                                        detail: {
-                                            x: rocketModel.position.x,
-                                            y: rocketModel.position.y,
-                                            message: "Mission réussie"
-                                        }
-                                    }));
-                                }
-                            }, 1200); // délai avant l'effet (1,2s)
-                            this._missionJustCompleted = false;
-                        }
                     } else {
                         // Collision normale
                         const impactDamage = impactVelocity * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
@@ -165,22 +158,6 @@ class CollisionHandler {
                             // Calculer la position relative si le corps est la Terre
                             if (otherBody.label === 'Terre') {
                                 rocketModel.updateRelativePosition(this.physicsController.celestialBodies.find(cb => cb.model.name === 'Terre')?.model);
-                            }
-
-                            // --- Effet Mission Réussie (particules) ---
-                            if (this._missionJustCompleted) {
-                                setTimeout(() => {
-                                    if (typeof window !== 'undefined' && window.dispatchEvent) {
-                                        window.dispatchEvent(new CustomEvent('MISSION_SUCCESS_PARTICLES', {
-                                            detail: {
-                                                x: rocketModel.position.x,
-                                                y: rocketModel.position.y,
-                                                message: "Mission réussie"
-                                            }
-                                        }));
-                                    }
-                                }, 1200); // délai avant l'effet (1,2s)
-                                this._missionJustCompleted = false;
                             }
                         }
 
