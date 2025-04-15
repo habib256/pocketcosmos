@@ -66,6 +66,24 @@ class GameController {
         });
 
         this.pauseKeyDown = false;
+
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('ROCKET_CRASH_EXPLOSION', (e) => {
+                if (this.particleController && e.detail) {
+                    // Explosion massive : beaucoup de particules, couleurs vives, grande taille
+                    this.particleController.createExplosion(
+                        e.detail.x,
+                        e.detail.y,
+                        120, // nombre de particules
+                        8,   // vitesse
+                        10,  // taille
+                        2.5, // durée de vie (secondes)
+                        '#FFDD00', // couleur début (jaune vif)
+                        '#FF3300'  // couleur fin (rouge/orange)
+                    );
+                }
+            });
+        }
     }
     
     // S'abonner aux événements de l'EventBus

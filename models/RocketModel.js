@@ -186,6 +186,13 @@ class RocketModel {
             } catch (error) {
                 console.error("Erreur lors de la lecture du fichier crash.mp3:", error);
             }
+
+            // Déclencher une explosion de particules à la position de la fusée
+            if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
+                    detail: { x: this.position.x, y: this.position.y }
+                }));
+            }
         }
     }
     
