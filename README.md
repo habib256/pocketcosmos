@@ -18,7 +18,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *La fusée près de la lune en orbite*
 
 ![Trajectoire de la fusée](assets/screenshots/Trajectoire.png)
-*Suivi de la trajectoire* ዱካ
+*Suivi de la trajectoire*
 
 ## ✨ Fonctionnalités Principales
 
@@ -36,7 +36,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *   **Caméra Dynamique 🎥:** Suivi de la fusée et zoom ajustable.
 *   **Santé et Carburant ❤️‍🩹⛽:** Gérez vos ressources vitales.
 *   **Aide au Pilotage 🤓:** Activez les contrôles assistés pour une meilleure stabilisation.
-*   **Ambiance Sonore Riche 🔊:** Musique d'ambiance spatiale variée, sons pour les propulseurs, collisions et crashs.
+*   **Ambiance Sonore Riche 🔊:** Musique d'ambiance spatiale variée, sons pour les propulseurs, collisions et crashs (voir dossier assets/sound/ et assets/sound/ambiant/).
 *   **(Debug) Visualisation des Forces 🔬:** Activez l'affichage des vecteurs pour comprendre la physique.
 *   **Architecture Modulaire (EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
 
@@ -68,6 +68,9 @@ _(Le code est structuré de manière modulaire (inspiration MVC étendue + Event
 2.  Naviguez dans le dossier `pocketcosmos`.
 3.  Ouvrez le fichier `index.html` dans votre navigateur web moderne. 🎉
 
+**Remarque :**
+- Tous les scripts sont chargés via `<script>` dans `index.html` (pas d'import ES6).
+
 ## 📝 Personnalisation
 
 Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu ! Modifiez :
@@ -89,4 +92,4 @@ Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu 
 
 ## 📜 Licence
 
-Ce projet est sous licence GPL3. 👍 
+Ce projet est sous licence GPL3. 👍

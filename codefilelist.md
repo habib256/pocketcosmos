@@ -4,14 +4,19 @@
 
 ```
 ├── assets/           # Ressources statiques (images, sons, captures d'écran)
-├── controllers/     # Logique de contrôle, gestion des états et interactions
-├── models/         # Représentation des données et de l'état (fusée, univers, etc.)
-├── views/          # Rendu visuel des modèles sur le canvas
-├── constants.js    # Constantes globales (physique, rendu, configuration fusée)
-├── main.js         # Point d'entrée : Initialisation de l'application et des composants
-├── index.html      # Structure HTML, chargement des librairies et scripts
-├── README.md       # Informations générales sur le projet
-└── favicon.png     # Icône du site
+│   ├── sound/        # Effets sonores (propulsion, collisions, voix, etc.)
+│   │   └── ambiant/  # Sons d'ambiance spatiale (ondes, radio, etc.)
+│   ├── image/        # Images (fusée, sputnik, etc.)
+│   └── screenshots/  # Captures d'écran du jeu
+├── controllers/      # Logique de contrôle, gestion des états et interactions
+├── models/           # Représentation des données et de l'état (fusée, univers, etc.)
+├── views/            # Rendu visuel des modèles sur le canvas
+├── constants.js      # Constantes globales (physique, rendu, configuration fusée)
+├── main.js           # Point d'entrée : Initialisation de l'application et des composants
+├── index.html        # Structure HTML, chargement des librairies et scripts
+├── README.md         # Informations générales sur le projet
+├── favicon.png       # Icône du site (PNG)
+└── favicon.ico       # Icône du site (ICO)
 ```
 
 ## Architecture Globale (MVC étendu & EventBus)
@@ -66,11 +71,11 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 ## Description Détaillée des Composants
 
 ### Contrôleurs
-- `GameController.js` (1197 lignes) : Orchestre principal, boucle de jeu, gestion état global, initialisation.
-- `InputController.js` (226 lignes -> ~300 lignes) : Capture les entrées clavier/souris/tactile **et joystick (Gamepad API)** et les publie sur l'EventBus.
+- `GameController.js` (1366 lignes) : Orchestre principal, boucle de jeu, gestion état global, initialisation.
+- `InputController.js` (424 lignes) : Capture les entrées clavier/souris/tactile **et joystick (Gamepad API)** et les publie sur l'EventBus.
 - `RenderingController.js` (204 lignes) : Reçoit les états des modèles via EventBus et coordonne les différentes vues pour le rendu final.
-- `PhysicsController.js` (237 lignes) : Gère le moteur Matter.js, la création des corps, et la mise à jour de la simulation physique. Délégué la logique spécifique à d'autres contrôleurs (BodyFactory, CollisionHandler, ThrusterPhysics, SynchronizationManager).
-- `SynchronizationManager.js` (286 lignes) : ** essentiel ** Synchronise l'état entre les modèles logiques et les corps physiques Matter.js. Gère la stabilisation de la fusée posée/attachée.
+- `PhysicsController.js` (237 lignes) : Gère le moteur Matter.js, la création des corps, et la mise à jour de la simulation physique. Délègue la logique spécifique à d'autres contrôleurs (BodyFactory, CollisionHandler, ThrusterPhysics, SynchronizationManager).
+- `SynchronizationManager.js` (286 lignes) : **essentiel** Synchronise l'état entre les modèles logiques et les corps physiques Matter.js. Gère la stabilisation de la fusée posée/attachée.
 - `ThrusterPhysics.js` (282 lignes) : Calcule et applique les forces des propulseurs au corps physique. Gère la stabilisation (contrôles assistés).
 - `CollisionHandler.js` (289 lignes) : Détecte et gère les collisions physiques via les événements Matter.js.
 - `BodyFactory.js` (81 lignes) : Crée les objets physiques Matter.js (fusée, planètes) avec leurs propriétés.
@@ -93,14 +98,14 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 - `RocketView.js` (549 lignes) : Dessine la fusée et ses états (propulseurs).
 - `UniverseView.js` (171 lignes) : Dessine le fond, les étoiles, et coordonne le dessin des corps célestes.
 - `CelestialBodyView.js` (122 lignes) : Dessine un corps céleste individuel.
-- `UIView.js` (583 lignes) : Dessine l'interface utilisateur (infos fusée, missions, cargo, messages).
+- `UIView.js` (593 lignes) : Dessine l'interface utilisateur (infos fusée, missions, cargo, messages).
 - `TraceView.js` (111 lignes) : Dessine la trajectoire de la fusée.
 - `ParticleView.js` (96 lignes) : Dessine les particules.
 
 ## Points d'Entrée Importants
 - `main.js` (96 lignes) : Initialisation globale.
 - `index.html` (238 lignes) : Chargement des scripts dans le bon ordre, configuration initiale.
-- `GameController.js` (1197 lignes) : Boucle de jeu (`gameLoop`), gestion des états principaux.
+- `GameController.js` (1366 lignes) : Boucle de jeu (`gameLoop`), gestion des états principaux.
 - `EventBus.js` (43 lignes) : Comprendre les événements échangés est clé pour suivre le flux d'information.
 - `PhysicsController.js` (237 lignes) & `SynchronizationManager.js` (286 lignes) : Clés pour comprendre l'interaction avec le moteur physique.
 
