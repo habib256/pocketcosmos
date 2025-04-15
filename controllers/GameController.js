@@ -128,22 +128,22 @@ class GameController {
             case 'thrustForward':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
-                this.particleSystemModel.setEmitterActive('main', true);
+                this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);
                 break;
             case 'thrustBackward':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
-                this.particleSystemModel.setEmitterActive('rear', true);
+                this.particleSystemModel.setEmitterActive('rear', true, this.rocketModel);
                 break;
             case 'rotateLeft':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('left', ROCKET.THRUSTER_POWER.LEFT);
-                this.particleSystemModel.setEmitterActive('left', true);
+                this.particleSystemModel.setEmitterActive('left', true, this.rocketModel);
                 break;
             case 'rotateRight':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('right', ROCKET.THRUSTER_POWER.RIGHT);
-                this.particleSystemModel.setEmitterActive('right', true);
+                this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
                 break;
             case 'zoomIn':
                 this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
@@ -168,7 +168,7 @@ class GameController {
             case 'thrustForward':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('main', 0);
-                this.particleSystemModel.setEmitterActive('main', false);
+                this.particleSystemModel.setEmitterActive('main', false, this.rocketModel);
                 
                 // Forcer l'arrêt du son du propulseur principal
                 if (this.physicsController && this.physicsController.mainThrusterSoundPlaying) {
@@ -182,17 +182,17 @@ class GameController {
             case 'thrustBackward':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('rear', 0);
-                this.particleSystemModel.setEmitterActive('rear', false);
+                this.particleSystemModel.setEmitterActive('rear', false, this.rocketModel);
                 break;
             case 'rotateLeft':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('left', 0);
-                this.particleSystemModel.setEmitterActive('left', false);
+                this.particleSystemModel.setEmitterActive('left', false, this.rocketModel);
                 break;
             case 'rotateRight':
                 if (!this.rocketModel) return;
                 this.rocketModel.setThrusterPower('right', 0);
-                this.particleSystemModel.setEmitterActive('right', false);
+                this.particleSystemModel.setEmitterActive('right', false, this.rocketModel);
                 break;
         }
         

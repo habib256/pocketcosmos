@@ -94,7 +94,14 @@ class ParticleSystemModel {
     }
     
     // Activer/désactiver un émetteur
-    setEmitterActive(emitterName, isActive) {
+    setEmitterActive(emitterName, isActive, rocketModel = null) {
+        // Si la fusée est détruite, on ne doit pas activer l'émetteur
+        if (isActive && rocketModel && rocketModel.isDestroyed) {
+            if (this.emitters[emitterName]) {
+                this.emitters[emitterName].isActive = false;
+            }
+            return;
+        }
         if (this.emitters[emitterName]) {
             this.emitters[emitterName].isActive = isActive;
         }

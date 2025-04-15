@@ -126,8 +126,8 @@ class RocketModel {
     }
     
     setThrusterPower(thrusterName, power) {
-        // Si plus de carburant, aucun thruster ne doit fonctionner
-        if (this.fuel <= 0) {
+        // Si plus de carburant ou fusée détruite, aucun thruster ne doit fonctionner
+        if (this.fuel <= 0 || this.isDestroyed) {
             if (this.thrusters[thrusterName]) {
                 this.thrusters[thrusterName].power = 0;
             }
