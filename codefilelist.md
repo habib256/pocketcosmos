@@ -5,8 +5,7 @@
 ```
 ├── assets/           # Ressources statiques (images, sons, captures d'écran)
 │   ├── sound/        # Effets sonores (propulsion, collisions, voix, etc.)
-│   │   └── ambiant/  # Sons d'ambiance spatiale (ondes, radio, etc.)
-│   ├── image/        # Images (fusée, sputnik, etc.)
+│   ├── image/        # Images (fusée, planètes, etc.)
 │   └── screenshots/  # Captures d'écran du jeu
 ├── controllers/      # Logique de contrôle, gestion des états et interactions
 ├── models/           # Représentation des données et de l'état (fusée, univers, etc.)
@@ -15,108 +14,50 @@
 ├── main.js           # Point d'entrée : Initialisation de l'application et des composants
 ├── index.html        # Structure HTML, chargement des librairies et scripts
 ├── README.md         # Informations générales sur le projet
-├── favicon.png       # Icône du site (PNG)
-└── favicon.ico       # Icône du site (ICO)
+└── favicon.*         # Icônes du site
 ```
 
 ## Architecture Globale (MVC étendu & EventBus)
 
-Le projet suit une architecture inspirée du Modèle-Vue-Contrôleur (MVC), étendue pour gérer la complexité d'une simulation physique en temps réel.
+Le projet suit une architecture MVC étendue :
+- **Modèles (`models/`)** : État pur des objets (position, vitesse, fuel, etc.), sans logique de jeu complexe.
+- **Vues (`views/`)** : Dessinent les modèles sur le canvas, sans modifier l'état.
+- **Contrôleurs (`controllers/`)** : Orchestrent la logique, la physique, les entrées, la synchronisation et le rendu.
+- **EventBus** : Système d'événements pour découpler les modules.
 
--   **Modèles (`models/`)**: Contiennent l'état pur des objets (position, vitesse, fuel, santé, etc.). Ils ne contiennent pas de logique de jeu complexe ni de physique directe.
--   **Vues (`views/`)**: Responsables du dessin des modèles sur le canvas (`<canvas>`). Elles lisent l'état des modèles mais ne les modifient pas directement.
--   **Contrôleurs (`controllers/`)**: Orchestrent l'application. Ils gèrent les entrées utilisateur (`InputController`), la logique de jeu principale (`GameController`), le moteur physique (`PhysicsController`), le rendu (`RenderingController`), la communication (`EventBus`), et la synchronisation entre l'état logique (modèles) et l'état physique (moteur Matter.js) (`SynchronizationManager`).
+## Vues principales (`views/`)
+- **RocketView.js** : Affiche la fusée et ses états (propulseurs, image, crash). Ne gère plus aucun vecteur physique.
+- **VectorsView.js** : Affiche tous les vecteurs physiques : poussée (rouge), vitesse, accélération totale F/m (orange, « a=F/m »), gravité, missions, etc. Centralise tout l'affichage vectoriel, indépendamment de RocketView. L'affichage des vecteurs est activable/désactivable dynamiquement (touche V, toggle global via RenderingController).
+- **UniverseView.js** : Affiche le fond, les étoiles, et coordonne le dessin des corps célestes.
+- **CelestialBodyView.js** : Affiche un corps céleste individuel.
+- **TraceView.js** : Affiche la trajectoire de la fusée.
+- **ParticleView.js** : Affiche les particules (propulsion, débris, effets).
+- **UIView.js** : Affiche l'interface utilisateur (infos, missions, cargo, messages).
 
-**`EventBus.js`** est la pierre angulaire de la communication découplée entre les différents modules. Au lieu d'appels directs, les composants émettent des événements (ex: `INPUT_KEYDOWN`, `ROCKET_STATE_UPDATED`) et d'autres composants s'abonnent à ces événements pour réagir en conséquence. Cela permet une grande modularité et facilite l'ajout ou la modification de fonctionnalités.
-
-## Gestion de la Physique (Matter.js)
-
-La simulation physique est gérée par la bibliothèque **Matter.js**, étendue avec le plugin **Matter-Attractors** pour simuler la gravité.
-
--   **`PhysicsController.js`**: Initialise et gère le moteur Matter.js (`this.engine`). Il crée les corps physiques (`Matter.Body`) correspondant aux modèles logiques (fusée, corps célestes) via `BodyFactory.js`. Il contient la boucle de mise à jour du moteur physique (`Engine.update`).
--   **`BodyFactory.js`**: Centralise la création des corps physiques Matter.js pour la fusée et les corps célestes, en appliquant les propriétés définies dans `constants.js` et les modèles.
--   **`CollisionHandler.js`**: Utilise les événements de collision de Matter.js (`collisionStart`, `collisionActive`, `collisionEnd`) pour détecter les impacts, calculer les dégâts, gérer l'état d'atterrissage (`isLanded`), et déclencher les sons appropriés.
--   **`ThrusterPhysics.js`**: Applique les forces des propulseurs au corps physique de la fusée (`Matter.Body.applyForce`) en fonction de l'état du `RocketModel` et gère la stabilisation de la rotation (contrôles assistés).
--   **Gravité**: La gravité est simulée par le plugin `MatterAttractors`, configuré dans `BodyFactory.js` pour chaque corps céleste.
-
-## Synchronisation Modèle/Physique
-
-Un défi majeur dans les simulations physiques est de maintenir la cohérence entre l'état logique (modèles) et l'état simulé par le moteur physique.
-
--   **`SynchronizationManager.js`**: Ce contrôleur est **crucial**. Il assure la synchronisation bidirectionnelle :
-    -   `syncModelWithPhysics()`: Met à jour le `RocketModel` avec les données (position, vitesse, angle) du `rocketBody` physique après une étape de simulation Matter.js.
-    -   `syncPhysicsWithModel()`: Force l'état du `rocketBody` physique à correspondre à celui du `RocketModel` (utilisé pour la réinitialisation ou des ajustements manuels).
-    -   `handleLandedOrAttachedRocket()`: Logique complexe pour stabiliser la fusée lorsqu'elle est posée (`isLanded`) ou détruite et attachée à un corps céleste. Il gère le suivi de la position et de la vélocité du corps parent (ex: Lune orbitant la Terre) et force l'état physique de la fusée pour éviter les instabilités.
-    -   `syncMovingBodyPositions()`: S'assure que les positions des corps célestes physiques (qui peuvent orbiter) correspondent à leurs positions calculées dans les modèles logiques.
-
-## Boucle de Jeu Principale (`GameController.js`)
-
-`GameController.js` est le chef d'orchestre de l'application.
-
-1.  **Initialisation (`init`)**: Crée les modèles, les vues, les contrôleurs (y compris `PhysicsController`), configure la caméra, et démarre la boucle de jeu.
-2.  **Boucle de Jeu (`gameLoop`)**: Appelée à chaque frame (`requestAnimationFrame`).
-    -   Calcule le `deltaTime`.
-    -   Met à jour l'état de l'univers (orbites des planètes dans `UniverseModel.update`).
-    -   Met à jour le système de particules (`ParticleController.update`).
-    -   Appelle `physicsController.update(deltaTime)` pour exécuter une étape de simulation physique (incluant application des forces, détection des collisions, et mise à jour des positions/vitesses physiques).
-    -   Appelle `synchronizationManager.syncModelWithPhysics()` (si nécessaire) pour mettre à jour le modèle logique de la fusée.
-    -   Met à jour l'IA de la fusée (`RocketAgent.update`).
-    -   Met à jour la trace de la fusée (`TraceView.addTracePoint`).
-    -   Met à jour l'état des missions (`MissionManager.update`).
-    -   Prépare les états pour le rendu (`RenderingController.update...State`).
-    -   Appelle `renderingController.render()` pour dessiner tous les éléments (fond, étoiles, planètes, fusée, particules, UI) sur le canvas.
-3.  **Gestion des Entrées**: Réagit aux événements d'entrée (`handleKeyDown`, `handleKeyUp`, etc.) transmis par `InputController` via l'EventBus, modifiant l'état des modèles (ex: activation des propulseurs dans `RocketModel`).
-4.  **Gestion d'État**: Gère la pause (`isPaused`), la réinitialisation (`resetRocket`), le centrage de la caméra, etc.
-
-**Note :** Depuis la dernière mise à jour, la pause automatique lors de la perte de focus de la fenêtre (événement `blur`) a été retirée. Le jeu ne se met plus en pause si la fenêtre perd le focus, mais reste en pause automatique lors d'un changement d'onglet (`visibilitychange`). La gestion de la pause se fait donc uniquement via le changement d'onglet ou les touches clavier (P/Escape).
-
-## Description Détaillée des Composants
-
-### Contrôleurs
-- `GameController.js` (1366 lignes) : Orchestre principal, boucle de jeu, gestion état global, initialisation.
-- `InputController.js` (424 lignes) : Capture les entrées clavier/souris/tactile **et joystick (Gamepad API)** et les publie sur l'EventBus.
-- `RenderingController.js` (204 lignes) : Reçoit les états des modèles via EventBus et coordonne les différentes vues pour le rendu final.
-- `PhysicsController.js` (237 lignes) : Gère le moteur Matter.js, la création des corps, et la mise à jour de la simulation physique. Délègue la logique spécifique à d'autres contrôleurs (BodyFactory, CollisionHandler, ThrusterPhysics, SynchronizationManager).
-- `SynchronizationManager.js` (286 lignes) : **essentiel** Synchronise l'état entre les modèles logiques et les corps physiques Matter.js. Gère la stabilisation de la fusée posée/attachée.
-- `ThrusterPhysics.js` (282 lignes) : Calcule et applique les forces des propulseurs au corps physique. Gère la stabilisation (contrôles assistés).
-- `CollisionHandler.js` (289 lignes) : Détecte et gère les collisions physiques via les événements Matter.js.
-- `BodyFactory.js` (81 lignes) : Crée les objets physiques Matter.js (fusée, planètes) avec leurs propriétés.
-- `EventBus.js` (43 lignes) : Système de messagerie Publish/Subscribe pour découpler les composants.
-- `ParticleController.js` (185 lignes) : Gère la logique de mise à jour des systèmes de particules (propulsion, débris).
-- `RocketAgent.js` (587 lignes) : Implémente l'IA (optionnelle) pour contrôler la fusée (peut-être basé sur TensorFlow.js).
-- `MissionManager.js` (173 lignes) : Gère la logique des missions (objectifs, statut, récompenses).
-- `RocketCargo.js` (114 lignes) : Gère l'inventaire de la cargaison de la fusée.
-- `PhysicsVectors.js` (221 lignes) : (Optionnel) Gère l'affichage des vecteurs de force pour le débogage.
-
-### Modèles
-- `RocketModel.js` (292 lignes) : État logique de la fusée (position, vitesse, fuel, santé, état des propulseurs, état d'atterrissage/destruction, cargo).
-- `CelestialBodyModel.js` (95 lignes) : État logique d'un corps céleste (position, masse, rayon, relation parent/enfant pour orbite).
-- `UniverseModel.js` (104 lignes) : Contient la collection des corps célestes et la logique de mise à jour de leurs orbites.
-- `ParticleSystemModel.js` (138 lignes) : Gère l'état des émetteurs de particules et des particules individuelles (débris).
-- `CameraModel.js` (88 lignes) : Gère l'état de la caméra (position, zoom, cible).
-- `ParticleModel.js` (63 lignes) : État d'une particule individuelle.
-
-### Vues
-- `RocketView.js` (549 lignes) : Dessine la fusée et ses états (propulseurs).
-- `UniverseView.js` (171 lignes) : Dessine le fond, les étoiles, et coordonne le dessin des corps célestes.
-- `CelestialBodyView.js` (122 lignes) : Dessine un corps céleste individuel.
-- `UIView.js` (593 lignes) : Dessine l'interface utilisateur (infos fusée, missions, cargo, messages).
-- `TraceView.js` (111 lignes) : Dessine la trajectoire de la fusée.
-- `ParticleView.js` (96 lignes) : Dessine les particules.
+## Contrôleurs clés
+- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale.
+- **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
+- **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V).
+- **PhysicsController.js** : Gère le moteur Matter.js, la simulation physique.
+- **SynchronizationManager.js** : Synchronise l'état logique et physique.
+- **ThrusterPhysics.js** : Applique les forces des propulseurs.
+- **CollisionHandler.js** : Gère les collisions.
+- **BodyFactory.js** : Crée les corps physiques Matter.js.
+- **EventBus.js** : Système Publish/Subscribe pour la communication interne.
+- **ParticleController.js** : Gère les particules.
+- **MissionManager.js** : Gère la logique des missions.
 
 ## Points d'Entrée Importants
-- `main.js` (96 lignes) : Initialisation globale.
-- `index.html` (238 lignes) : Chargement des scripts dans le bon ordre, configuration initiale.
-- `GameController.js` (1366 lignes) : Boucle de jeu (`gameLoop`), gestion des états principaux.
-- `EventBus.js` (43 lignes) : Comprendre les événements échangés est clé pour suivre le flux d'information.
-- `PhysicsController.js` (237 lignes) & `SynchronizationManager.js` (286 lignes) : Clés pour comprendre l'interaction avec le moteur physique.
+- **main.js** : Initialisation globale.
+- **index.html** : Chargement des scripts dans le bon ordre.
+- **GameController.js** : Boucle de jeu, gestion des états principaux.
+- **RenderingController.js** : Rendu global, gestion du toggle des vecteurs.
 
 ## Notes Importantes
-
-- **Chargement des scripts** : Tous les scripts JavaScript sont chargés globalement via des balises `<script>` dans `index.html`. L'ordre de chargement est donc crucial pour le bon fonctionnement du projet.
-- **Compatibilité Matter.js/Attractors** : L'avertissement de compatibilité entre Matter.js et Matter-Attractors peut être ignoré ; les deux fonctionnent ensemble dans ce projet.
-- **EventBus** : La compréhension des événements émis et écoutés par chaque composant est essentielle pour le débogage ou l'ajout de nouvelles fonctionnalités.
-- **Nettoyage du code** : Il est recommandé de vérifier et supprimer les éventuels fichiers dupliqués ou redondants pour garder la base de code propre.
-- **Commentaires et logs** : Le code contient de nombreux commentaires et des `console.log` utiles pour le débogage.
-- **Test des manettes** : Pour identifier les axes et boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
-- Tu peux calculer l'accélération F/m d'un objet comme la fusée indépendamment de matter.js. Rappelles toi que de toute façon on utilise Matter.js avec Matter Attractor ! Lorsqu'on calcule l'accélération, on l'envoie après à matter attractor pour matter JS. Donc effectivement, le calcul se fait à extérieur de matterjs, puis est donné à matter-attractor. De la même façon, tous les calculs de positionnement des planètes sont faits à l'extérieur de Matter.js et de Matter Attractor.
+- **Chargement des scripts** : Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre est crucial.
+- **Vecteurs physiques** : L'affichage de tous les vecteurs (poussée, vitesse, accélération totale F/m, etc.) est centralisé dans `VectorsView.js` et contrôlé globalement (touche V).
+- **RocketView.js** ne gère plus aucun vecteur : tout est dans `VectorsView.js`.
+- **Calculs physiques** : L'accélération F/m (somme des forces sur la fusée divisée par sa masse) est calculée indépendamment de Matter.js, puis utilisée pour l'affichage et la simulation.
+- **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités.
+- **Nettoyage** : Supprimer les fichiers obsolètes ou redondants pour garder la base propre.
+- **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.

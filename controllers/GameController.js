@@ -1038,33 +1038,8 @@ class GameController {
 
     // Activer/désactiver tous les vecteurs (gravité, poussée et vitesse)
     toggleVectors() {
-        if (this.rocketView) {
-            // Définir une valeur commune pour tous les vecteurs (anciens + nouveaux)
-            const newValue = !(
-                this.rocketView.showVelocityVector ||
-                this.rocketView.showLunarAttractionVector ||
-                this.rocketView.showEarthAttractionVector ||
-                this.rocketView.showTotalThrustVector ||
-                this.rocketView.showThrustVector ||
-                this.rocketView.showAccelerationVector ||
-                this.rocketView.showMissionStartVector ||
-                this.rocketView.showMissionTargetVector ||
-                this.rocketView.showGravityVector // au cas où il reste utilisé
-            );
-            // Appliquer à tous les vecteurs
-            this.rocketView.showVelocityVector = newValue;
-            this.rocketView.showLunarAttractionVector = newValue;
-            this.rocketView.showEarthAttractionVector = newValue;
-            this.rocketView.showTotalThrustVector = newValue;
-            this.rocketView.showThrustVector = newValue;
-            this.rocketView.showAccelerationVector = newValue;
-            this.rocketView.showMissionStartVector = newValue;
-            this.rocketView.showMissionTargetVector = newValue;
-            this.rocketView.showGravityVector = newValue; // pour compatibilité
-            console.log(`Affichage des vecteurs: ${newValue ? 'activé' : 'désactivé'}`);
-        }
-        if (this.physicsController && this.physicsController.physicsVectors) {
-            this.physicsController.physicsVectors.toggleForceVectors();
+        if (this.renderingController) {
+            this.renderingController.toggleVectors();
         }
     }
 

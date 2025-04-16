@@ -9,6 +9,8 @@ class RenderingController {
         this.particleView = null;
         this.traceView = null;
         this.uiView = null;
+        this.vectorsView = new VectorsView(); // Nouvelle vue pour les vecteurs
+        this.showVectors = false; // Par défaut désactivé
         
         // Référence au contrôleur de physique pour afficher les forces
         this.physicsController = null;
@@ -184,7 +186,7 @@ class RenderingController {
         }
         // Fusionner dans l'état de la fusée pour l'affichage
         const rocketStateForView = {
-            ...rocketModel,
+            ...this.rocketState,
             accelerationVector,
             missionStartVector,
             missionTargetVector
@@ -199,10 +201,19 @@ class RenderingController {
         if (this.rocketView) {
             this.rocketView.render(ctx, rocketStateForView, camera);
         }
-        
-        // Dessiner les vecteurs de force si activés
-        if (this.physicsController) {
-            this.physicsController.drawForceVectors(ctx, camera);
+        // Afficher les vecteurs physiques de la fusée SI activé
+        if (this.vectorsView && this.showVectors) {
+            this.vectorsView.render(ctx, rocketStateForView, camera, {
+                showTotalThrustVector: true,
+                showVelocityVector: true,
+                showAccelerationVector: true,
+                showLunarAttractionVector: true,
+                showEarthAttractionVector: true,
+                showMissionStartVector: true,
+                showMissionTargetVector: true,
+                showThrustVector: true,
+                showTotalAccelerationVector: true
+            });
         }
         
         // Rendre l'interface utilisateur
@@ -254,5 +265,11 @@ class RenderingController {
         
         // Ajouter le point de trace (coordonnées absolues uniquement)
         this.traceView.update(this.rocketState.position);
+    }
+    
+    // Ajout : méthode pour basculer l'affichage des vecteurs
+    toggleVectors() {
+        this.showVectors = !this.showVectors;
+        console.log(`[RenderingController] Affichage des vecteurs : ${this.showVectors ? 'activé' : 'désactivé'}`);
     }
 } 
