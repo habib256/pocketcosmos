@@ -155,9 +155,10 @@ class CollisionHandler {
                             // Suppression du forçage direct de l'angle physique ici
                             // this.Body.setAngle(rocketBody, correctAngle);
                             
-                            // Calculer la position relative si le corps est la Terre
-                            if (otherBody.label === 'Terre') {
-                                rocketModel.updateRelativePosition(this.physicsController.celestialBodies.find(cb => cb.model.name === 'Terre')?.model);
+                            // Calculer la position relative pour n'importe quel corps céleste
+                            const cbModel = this.physicsController.celestialBodies.find(cb => cb.model.name === otherBody.label)?.model;
+                            if (cbModel) {
+                                rocketModel.updateRelativePosition(cbModel);
                             }
                         }
 

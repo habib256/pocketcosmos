@@ -74,11 +74,20 @@ function showInstructions() {
     instructions.id = 'instructions';
     instructions.innerHTML = `
         <img src="favicon.png" alt="Favicon" style="width:300px;height:300px;display:block;margin:0 auto 10px auto;" />
-        <h3>Contrôles</h3>
-        <p>↑/W: Propulsion avant | ↓/S: Propulsion arrière</p>
-        <p>←/A: Rotation gauche | →/D: Rotation droite</p>
-        <p>R: Réinitialiser | C: Centrer caméra | T: Traces</p>
-        <p>V: Vecteurs | Mouse wheel: Zoom</p>
+        <h3>Contrôles: Clavier, Souris & Joystick</h3>
+        <ul style="text-align:left; max-width: 500px; margin: 0 auto; font-size: 1.1em;">
+            <li><b>↑ / W</b> : Propulsion avant</li>
+            <li><b>↓ / S</b> : Propulsion arrière</li>
+            <li><b>← / A</b> : Rotation gauche</li>
+            <li><b>→ / D</b> : Rotation droite</li>
+            <li><b>R</b> : Réinitialiser la fusée</li>
+            <li><b>T</b> : Afficher/masquer la trace de trajectoire</li>
+            <li><b>V</b> : Afficher/masquer les vecteurs physiques</li>
+            <li><b>G</b> : Afficher/masquer le champ de gravité et les équipotentielles</li>
+            <li><b>+</b> / <b>-</b> ou <b>Molette Souris</b> : Zoom avant / arrière</li>
+            <li><b>P</b> ou <b>Échap</b> : Pause</li>
+        </ul>
+        <p style="font-size:0.95em; color:#888; text-align:center;">A tiny rocket. An infinite universe. Your journey begins. </p>
     `;
     
     // Créer le bouton de fermeture

@@ -118,13 +118,26 @@ class SynchronizationManager {
                         if (!rocketModel.relativePosition) {
                             // Première frame posée sur mobile OU après un recalcul: calculer relative.
                             rocketModel.updateRelativePosition(landedOnModel);
-                            console.log(`Position relative sur ${landedOnModel.name} calculée/recalculée.`);
+                            console.log(`[SyncManager] Position relative sur ${landedOnModel.name} calculée/recalculée.`);
                         }
-                        // Mettre à jour la position absolue du MODÈLE en utilisant la position actuelle du parent
+                        // Toujours mettre à jour la position absolue du MODÈLE en utilisant la position actuelle du parent
                         rocketModel.updateAbsolutePosition(landedOnModel);
                         // Forcer la position PHYSIQUE à correspondre au modèle mis à jour
                         this.Body.setPosition(rocketBody, rocketModel.position);
-
+                        // Forcer l'angle à chaque frame
+                        const angleToBody = Math.atan2(
+                            rocketBody.position.y - landedOnModel.position.y,
+                            rocketBody.position.x - landedOnModel.position.x
+                        );
+                        const correctAngle = angleToBody + Math.PI / 2;
+                        this.Body.setAngle(rocketBody, correctAngle);
+                        // Forcer la vélocité à chaque frame
+                        this.Body.setVelocity(rocketBody, parentVelocity);
+                        this.Body.setAngularVelocity(rocketBody, 0);
+                        // Log de debug si la position relative est absente
+                        if (!rocketModel.relativePosition) {
+                            console.warn(`[SyncManager] Attention: relativePosition absente pour ${rocketModel.landedOn}`);
+                        }
                     } else {
                         // Corps statique (ex: Soleil ou si Terre est statique): Maintenir la position où l'atterrissage s'est produit.
                         // La position physique ne devrait pas changer si les vitesses sont nulles.

@@ -39,6 +39,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *   **Ambiance Sonore Riche 🔊:** Musique d'ambiance spatiale variée, sons pour les propulseurs, collisions et crashs (voir dossier assets/sound/ et assets/sound/ambiant/).
 *   **(Debug) Visualisation des Forces 🔬:** Activez l'affichage des vecteurs pour comprendre la physique.
 *   **Architecture Modulaire (EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
+*   **(Nouveau) Champ de Gravité et Lignes Équipotentielles 🌀:** Visualisez le champ de gravité généré par tous les corps célestes sous forme de flèches ou de lignes équipotentielles (isopotentielles), pour explorer la structure du potentiel gravitationnel multi-corps en temps réel.
 
 ## 🎮 Contrôles
 
@@ -51,6 +52,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **+ / -** (ou Molette Souris) : Zoom avant / arrière 🔍
 - **T** : Afficher/masquer la trace de trajectoire
 - **V** : Afficher/masquer les vecteurs de force (pour debug)
+- **G** : Afficher/masquer le champ de gravité (flèches puis lignes équipotentielles)
 - **I** : Activer/désactiver le contrôle par l'IA 🤖
 
 ## 🔧 Technologies
@@ -61,6 +63,9 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **JavaScript** (ES6+)
 
 _(Le code est structuré de manière modulaire (inspiration MVC étendue + EventBus) pour faciliter la compréhension et les modifications 😉)._
+
+**Nouveauté pédagogique :**
+- L'affichage du champ de gravité (touche G) permet d'explorer visuellement l'influence gravitationnelle de chaque corps céleste, et de comprendre la notion de potentiel gravitationnel (lignes équipotentielles) dans un système multi-corps. Outil idéal pour l'enseignement ou l'expérimentation !
 
 ## 🚀 Installation
 

@@ -199,36 +199,29 @@ class RocketModel {
     // Calcule et met à jour la position relative par rapport à un corps céleste
     updateRelativePosition(celestialBody) {
         if (!celestialBody) return;
-        
-        // Vérifier si on est posé sur le corps céleste ou attaché à lui (après destruction)
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
-        
         if (isRelatedToBody) {
-            // Calculer le vecteur de la position relative (du centre du corps céleste vers la fusée)
             const dx = this.position.x - celestialBody.position.x;
             const dy = this.position.y - celestialBody.position.y;
-            
-            // Calculer la distance et l'angle par rapport au corps céleste
             const distance = Math.sqrt(dx * dx + dy * dy);
             const angleToBody = Math.atan2(dy, dx);
-            
-            // Stocker la position relative sous forme de coordonnées polaires et cartésiennes
-            // pour éviter les problèmes de discontinuité lors du passage de -π à +π
+            // Nouvel angle relatif à l'angle orbital du corps céleste
+            let angleRelatifOrbital = angleToBody;
+            if (typeof celestialBody.currentOrbitAngle === 'number') {
+                angleRelatifOrbital = angleToBody - celestialBody.currentOrbitAngle;
+            }
             this.relativePosition = {
                 x: dx,
                 y: dy,
                 angle: this.angle,
                 distance: distance,
                 angleToBody: angleToBody,
-                // Stocker également les composantes normalisées du vecteur pour plus de précision
-                dirX: dx / distance, 
+                angleRelatifOrbital: angleRelatifOrbital,
+                dirX: dx / distance,
                 dirY: dy / distance,
-                // Stocker les coordonnées absolues pour la Terre
                 absoluteX: this.position.x,
                 absoluteY: this.position.y
             };
-            
-            // Pour la Terre, marquer explicitement que la position doit rester fixe
             if (celestialBody.name === 'Terre' && this.isLanded) {
                 this.relativePosition.isFixedOnEarth = true;
             }
@@ -238,46 +231,27 @@ class RocketModel {
     // Met à jour la position absolue en fonction de la position du corps céleste auquel on est attaché
     updateAbsolutePosition(celestialBody) {
         if (!celestialBody || !this.relativePosition) return;
-        
-        // Vérifier si on est posé sur le corps céleste ou attaché à lui (après destruction)
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
-        
         if (isRelatedToBody) {
-            // Si la fusée est posée sur la Terre, utiliser les coordonnées absolues fixes
             if (this.relativePosition.isFixedOnEarth && celestialBody.name === 'Terre' && this.isLanded) {
                 this.position.x = this.relativePosition.absoluteX;
                 this.position.y = this.relativePosition.absoluteY;
-                // L'angle est perpendiculaire à la surface terrestre
                 this.angle = this.relativePosition.angle;
                 return;
             }
-            
-            if (this.isDestroyed) {
-                // Si la fusée est détruite, nous avons deux options :
-                // 1. Utiliser les coordonnées cartésiennes (position statique relative)
-                // 2. Utiliser les coordonnées polaires (suivre la rotation)
-                
-                // Pour les débris sur la Lune, utiliser les coordonnées polaires pour suivre la rotation
-                if (celestialBody.name === 'Lune' && (this.attachedTo === 'Lune' || this.landedOn === 'Lune')) {
-                    // Pour les autres corps, utiliser les coordonnées cartésiennes (plus simple)
-                    this.position.x = celestialBody.position.x + this.relativePosition.x;
-                    this.position.y = celestialBody.position.y + this.relativePosition.y;
-                } else {
-                    // Pour une fusée posée, utiliser les coordonnées polaires qui sont 
-                    // plus adaptées pour suivre la rotation du corps céleste
-                    // Mettre à jour l'angle de la fusée pour qu'elle reste perpendiculaire au rayon du corps céleste
-                    if (this.landedOn === celestialBody.name) {
-                        // L'angle correct est l'angle vers le corps céleste + 90 degrés (π/2)
-                        this.angle = this.relativePosition.angleToBody + Math.PI/2;
-                    }
-                }
+            // --- Correction pour corps mobiles ---
+            if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
+                // Calculer l'angle absolu actuel
+                const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
+                this.position.x = celestialBody.position.x + Math.cos(angleAbsolu) * this.relativePosition.distance;
+                this.position.y = celestialBody.position.y + Math.sin(angleAbsolu) * this.relativePosition.distance;
+                // L'angle de la fusée reste perpendiculaire au rayon
+                this.angle = angleAbsolu + Math.PI/2;
             } else {
-                // Pour une fusée posée, utiliser les coordonnées polaires qui sont 
-                // plus adaptées pour suivre la rotation du corps céleste
-                
-                // Mettre à jour l'angle de la fusée pour qu'elle reste perpendiculaire au rayon du corps céleste
+                // Fallback : ancienne logique
+                this.position.x = celestialBody.position.x + this.relativePosition.x;
+                this.position.y = celestialBody.position.y + this.relativePosition.y;
                 if (this.landedOn === celestialBody.name) {
-                    // L'angle correct est l'angle vers le corps céleste + 90 degrés (π/2)
                     this.angle = this.relativePosition.angleToBody + Math.PI/2;
                 }
             }

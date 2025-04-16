@@ -28,6 +28,7 @@ Le projet suit une architecture MVC étendue :
 ## Vues principales (`views/`)
 - **RocketView.js** : Affiche la fusée et ses états (propulseurs, image, crash). Ne gère plus aucun vecteur physique.
 - **VectorsView.js** : Affiche tous les vecteurs physiques : poussée (rouge), vitesse, accélération totale F/m (orange, « a=F/m »), gravité, missions, etc. Centralise tout l'affichage vectoriel, indépendamment de RocketView. L'affichage des vecteurs est activable/désactivable dynamiquement (touche V, toggle global via RenderingController).
+- **Champ de gravité et équipotentielles** : VectorsView.js calcule et affiche le champ de gravité généré par tous les corps célestes, soit sous forme de flèches (champ), soit sous forme de lignes équipotentielles (potentiel gravitationnel). Le mode d'affichage se toggle avec la touche G (géré globalement par RenderingController).
 - **UniverseView.js** : Affiche le fond, les étoiles, et coordonne le dessin des corps célestes.
 - **CelestialBodyView.js** : Affiche un corps céleste individuel.
 - **TraceView.js** : Affiche la trajectoire de la fusée.
@@ -37,7 +38,7 @@ Le projet suit une architecture MVC étendue :
 ## Contrôleurs clés
 - **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale.
 - **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
-- **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V).
+- **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V) et du champ de gravité/équipotentielles (touche G).
 - **PhysicsController.js** : Gère le moteur Matter.js, la simulation physique.
 - **SynchronizationManager.js** : Synchronise l'état logique et physique.
 - **ThrusterPhysics.js** : Applique les forces des propulseurs.
@@ -56,6 +57,7 @@ Le projet suit une architecture MVC étendue :
 ## Notes Importantes
 - **Chargement des scripts** : Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre est crucial.
 - **Vecteurs physiques** : L'affichage de tous les vecteurs (poussée, vitesse, accélération totale F/m, etc.) est centralisé dans `VectorsView.js` et contrôlé globalement (touche V).
+- **Champ de gravité/équipotentielles** : L'affichage du champ de gravité (flèches) et des lignes équipotentielles (potentiel) est centralisé dans `VectorsView.js` et contrôlé globalement (touche G). Outil pédagogique pour explorer la gravité multi-corps.
 - **RocketView.js** ne gère plus aucun vecteur : tout est dans `VectorsView.js`.
 - **Calculs physiques** : L'accélération F/m (somme des forces sur la fusée divisée par sa masse) est calculée indépendamment de Matter.js, puis utilisée pour l'affichage et la simulation. Tout comme la physique des corps celestes.
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités.
