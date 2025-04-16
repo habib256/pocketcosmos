@@ -422,6 +422,10 @@ class GameController {
             const thruster = this.rocketModel.thrusters[thrusterName];
             
             if (thruster.power > 0) {
+                // On ignore les thrusters latéraux pour l'affichage des vecteurs de poussée
+                if (thrusterName === 'left' || thrusterName === 'right') {
+                    continue;
+                }
                 let thrustAngle = 0;
                 let thrustMagnitude = 0;
                 
@@ -433,14 +437,6 @@ class GameController {
                     case 'rear':
                         thrustAngle = this.rocketModel.angle - Math.PI/2;
                         thrustMagnitude = PHYSICS.REAR_THRUST * (thruster.power / thruster.maxPower);
-                        break;
-                    case 'left':
-                        thrustAngle = this.rocketModel.angle + 0;
-                        thrustMagnitude = PHYSICS.LATERAL_THRUST * (thruster.power / thruster.maxPower);
-                        break;
-                    case 'right':
-                        thrustAngle = this.rocketModel.angle + Math.PI;
-                        thrustMagnitude = PHYSICS.LATERAL_THRUST * (thruster.power / thruster.maxPower);
                         break;
                 }
                 

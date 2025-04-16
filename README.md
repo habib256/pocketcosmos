@@ -15,10 +15,13 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *Écran de démarrage de la simulation*
 
 ![Simulation lunaire](assets/screenshots/Lune.png)
-*La fusée près de la lune en orbite*
+*La fusée près de la lune en orbite avec affichage des vecteurs de la fusée*
 
 ![Trajectoire de la fusée](assets/screenshots/Trajectoire.png)
 *Suivi de la trajectoire*
+
+![Equipotentielles gravitationelles](assets/screenshots/Equipotentielle.png)
+*Tracée des équipotentielles*
 
 ## ✨ Fonctionnalités Principales
 
