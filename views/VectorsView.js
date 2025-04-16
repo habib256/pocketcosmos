@@ -29,6 +29,7 @@ class VectorsView {
         }
         // Vecteur d'accélération totale (somme des forces F/m)
         if (options.showTotalAccelerationVector && rocketState.accelerationVector) {
+            console.log('[DEBUG][VectorsView] accelerationVector reçu pour affichage:', rocketState.accelerationVector);
             const mag = Math.sqrt(rocketState.accelerationVector.x ** 2 + rocketState.accelerationVector.y ** 2);
             const scale = 1000; // facteur d'échelle pour la lisibilité (accélération souvent petite)
             let length = mag * scale;
@@ -51,7 +52,7 @@ class VectorsView {
                 const scale = 0.05; // Ajuster pour la lisibilité
                 const len = Math.max(30, Math.min(norm * scale, 100));
                 const dir = { x: v.x / norm, y: v.y / norm };
-                this.drawVector(ctx, rocketState.position, dir, len, '#7ec0ee', 'Départ', camera); // Bleu pâle
+                this.drawVector(ctx, rocketState.position, dir, len, 'blue', 'Départ', camera); // Changé en bleu
             }
         }
         if (options.showMissionTargetVector && rocketState.missionTargetVector && rocketState.missionTargetVector.vector) {
@@ -61,7 +62,7 @@ class VectorsView {
                 const scale = 0.05;
                 const len = Math.max(30, Math.min(norm * scale, 100));
                 const dir = { x: v.x / norm, y: v.y / norm };
-                this.drawVector(ctx, rocketState.position, dir, len, 'gold', 'Destination', camera);
+                this.drawVector(ctx, rocketState.position, dir, len, 'gold', 'Destination', camera); // Déjà en or (gold)
             }
         }
         // Vecteurs de poussée individuels

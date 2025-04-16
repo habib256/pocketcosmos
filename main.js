@@ -38,6 +38,11 @@ function init() {
     // Initialiser le jeu
     gameController.init(canvas);
     
+    // Connecter le PhysicsController au RenderingController
+    if (gameController.physicsController && gameController.renderingController) {
+        gameController.renderingController.setPhysicsController(gameController.physicsController);
+    }
+    
     // Afficher les instructions
     showInstructions();
 }

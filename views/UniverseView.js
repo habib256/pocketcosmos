@@ -178,6 +178,7 @@ class UniverseView {
 
     // Dessine le champ de gravité sur une grille
     drawGravityField(ctx, camera, physicsController) {
+        console.log('[DEBUG] drawGravityField appelé');
         if (!this.showGravityField || !physicsController) return;
         const step = 100; // Espacement de la grille (ajuster selon zoom si besoin)
         const lengthScale = 2000; // Pour rendre les flèches visibles
@@ -189,7 +190,10 @@ class UniverseView {
             for (let y = minY; y < maxY; y += step) {
                 const { ax, ay } = physicsController.calculateGravityAtPoint(x, y);
                 const a = Math.sqrt(ax * ax + ay * ay);
-                if (a < 1e-8) continue; // Ignore les points sans champ
+                if (a < 1e-8) {
+                    console.log(`[DEBUG] Champ trop faible à (${x},${y}) : a=${a}`);
+                    continue; // Ignore les points sans champ
+                }
                 const scale = Math.min(lengthScale * a, step * 0.8);
                 const sx = (x - camera.x) * camera.zoom + RENDER.CANVAS_WIDTH / 2;
                 const sy = (y - camera.y) * camera.zoom + RENDER.CANVAS_HEIGHT / 2;
@@ -217,6 +221,7 @@ class UniverseView {
 
     // Ajoute une méthode de rendu principale si elle n'existe pas déjà
     render(ctx, camera, physicsController) {
+        console.log('[DEBUG] UniverseView.render appelé, showGravityField =', this.showGravityField, 'physicsController:', !!physicsController);
         this.renderBackground(ctx, camera);
         this.drawGravityField(ctx, camera, physicsController);
         // Les autres appels de rendu (étoiles, corps célestes, etc.) doivent être faits ici dans l'ordre voulu

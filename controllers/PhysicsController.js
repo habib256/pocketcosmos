@@ -213,6 +213,10 @@ class PhysicsController {
             accY = totalForceY / this.rocketBody.mass;
         }
         this.physicsVectors.setTotalAcceleration(accX, accY);
+        // Ajout log pour debug accélération fusée
+        if (typeof accX === 'number' && typeof accY === 'number') {
+            console.log(`[RocketAccel] a = {x: ${accX.toExponential(2)}, y: ${accY.toExponential(2)}} module = ${(Math.sqrt(accX*accX+accY*accY)).toExponential(2)}`);
+        }
     }
 
     // Méthodes déléguées aux modules spécifiques
@@ -269,13 +273,28 @@ class PhysicsController {
             ax += a * dx / r;
             ay += a * dy / r;
         }
+        // Ajout log pour debug champ de gravité
+        if (Math.abs(ax) > 0 || Math.abs(ay) > 0) {
+            console.log(`[GravityField] G@(${x.toFixed(0)},${y.toFixed(0)}) = {ax: ${ax.toExponential(2)}, ay: ${ay.toExponential(2)}}`);
+        }
         return { ax, ay };
     }
 
     // Fonction pure : accélération gravitationnelle à une position donnée
     calculateGravityAccelerationAt(position, universeModel) {
         let ax = 0, ay = 0;
-        if (!position || !universeModel || !universeModel.celestialBodies) return { x: 0, y: 0 };
+        if (!position) {
+            console.warn('[DEBUG][PhysicsController] calculateGravityAccelerationAt: position manquante', position);
+            return { x: 0, y: 0 };
+        }
+        if (!universeModel) {
+            console.warn('[DEBUG][PhysicsController] calculateGravityAccelerationAt: universeModel manquant', universeModel);
+            return { x: 0, y: 0 };
+        }
+        if (!universeModel.celestialBodies || universeModel.celestialBodies.length === 0) {
+            console.warn('[DEBUG][PhysicsController] calculateGravityAccelerationAt: pas de corps célestes', universeModel.celestialBodies);
+            return { x: 0, y: 0 };
+        }
         for (const body of universeModel.celestialBodies) {
             const dx = body.position.x - position.x;
             const dy = body.position.y - position.y;

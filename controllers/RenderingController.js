@@ -14,6 +14,7 @@ class RenderingController {
         
         // Référence au contrôleur de physique pour afficher les forces
         this.physicsController = null;
+        console.log('[DEBUG][RC] RenderingController instancié, physicsController:', this.physicsController);
         
         // États des modèles pour le rendu
         this.rocketState = {
@@ -150,6 +151,7 @@ class RenderingController {
         // 1. Vecteur d'accélération totale (somme des forces)
         let accelerationVector = {x:0, y:0};
         if (this.physicsController && this.physicsController.lastRocketAcceleration) {
+            console.log('[DEBUG][RC] lastRocketAcceleration dans RenderingController:', this.physicsController.lastRocketAcceleration);
             accelerationVector = this.physicsController.lastRocketAcceleration;
         }
 
@@ -191,12 +193,8 @@ class RenderingController {
             missionStartVector,
             missionTargetVector
         };
-        // LOG DEBUG pour le vecteur accélération (une seule fois au chargement ou lors d'un changement de mission)
-        if (!window._accelVectorLogged || window._lastMissionName !== (activeMissions && activeMissions[0] && activeMissions[0].name)) {
-            console.log('[DEBUG] accelerationVector:', accelerationVector);
-            window._accelVectorLogged = true;
-            window._lastMissionName = (activeMissions && activeMissions[0] && activeMissions[0].name);
-        }
+        // LOG DEBUG pour le vecteur accélération (chaque frame)
+        console.log('[DEBUG][frame] accelerationVector transmis à VectorsView:', accelerationVector);
         // Rendre la fusée
         if (this.rocketView) {
             this.rocketView.render(ctx, rocketStateForView, camera);
