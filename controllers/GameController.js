@@ -65,16 +65,6 @@ class GameController {
             }
         });
 
-        // Ajout : pause automatique si la fenêtre perd le focus
-        if (typeof window !== 'undefined' && window.addEventListener) {
-            window.addEventListener('blur', () => {
-                if (!this.isPaused) {
-                    this.isPaused = true;
-                    // this.eventBus.emit('GAME_PAUSED');
-                }
-            });
-        }
-
         this.pauseKeyDown = false;
 
         if (typeof window !== 'undefined' && window.addEventListener) {

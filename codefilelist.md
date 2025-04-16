@@ -68,6 +68,8 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 3.  **Gestion des Entrées**: Réagit aux événements d'entrée (`handleKeyDown`, `handleKeyUp`, etc.) transmis par `InputController` via l'EventBus, modifiant l'état des modèles (ex: activation des propulseurs dans `RocketModel`).
 4.  **Gestion d'État**: Gère la pause (`isPaused`), la réinitialisation (`resetRocket`), le centrage de la caméra, etc.
 
+**Note :** Depuis la dernière mise à jour, la pause automatique lors de la perte de focus de la fenêtre (événement `blur`) a été retirée. Le jeu ne se met plus en pause si la fenêtre perd le focus, mais reste en pause automatique lors d'un changement d'onglet (`visibilitychange`). La gestion de la pause se fait donc uniquement via le changement d'onglet ou les touches clavier (P/Escape).
+
 ## Description Détaillée des Composants
 
 ### Contrôleurs
@@ -111,11 +113,10 @@ Un défi majeur dans les simulations physiques est de maintenir la cohérence en
 
 ## Notes Importantes
 
--   **Absence d'imports JS** : Tous les scripts sont chargés globalement via des balises `<script>` dans `index.html`. L'ordre de chargement est donc crucial.
--   **Erreur Matter.js/Attractors**: L'avertissement de compatibilité entre Matter.js et Matter-Attractors peut être ignoré ; ils fonctionnent ensemble dans ce projet.
--   **EventBus** : Comprendre les événements émis et écoutés par chaque composant est essentiel pour déboguer ou ajouter des fonctionnalités.
--   **Doublons**: Il serait judicieux de vérifier la présence éventuelle de fichiers dupliqués ou redondants afin de nettoyer la base de code.
--   **Code commenté**: Le code contient des commentaires et des `console.log` utiles pour le débogage.
- - Utilise https://hardwaretester.com/gamepad pour aider à l'identification des axes et des boutons du gamepad.
-§ 
-C'est une bien meilleure idée, parce que tu peux calculer cette accélération indépendamment de matter.js. Tu te rappelles de toute façon qu'on utilise Matter.js avec Matter Attractor ! @codefilelist.md  Lorsqu'on calcule l'accélération, on l'envoie après à mateur attractor pour mateur JS. Donc effectivement, le calcul se fait en extérieur, puis est donné à mateur attractor. 
+- **Chargement des scripts** : Tous les scripts JavaScript sont chargés globalement via des balises `<script>` dans `index.html`. L'ordre de chargement est donc crucial pour le bon fonctionnement du projet.
+- **Compatibilité Matter.js/Attractors** : L'avertissement de compatibilité entre Matter.js et Matter-Attractors peut être ignoré ; les deux fonctionnent ensemble dans ce projet.
+- **EventBus** : La compréhension des événements émis et écoutés par chaque composant est essentielle pour le débogage ou l'ajout de nouvelles fonctionnalités.
+- **Nettoyage du code** : Il est recommandé de vérifier et supprimer les éventuels fichiers dupliqués ou redondants pour garder la base de code propre.
+- **Commentaires et logs** : Le code contient de nombreux commentaires et des `console.log` utiles pour le débogage.
+- **Test des manettes** : Pour identifier les axes et boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
+- Tu peux calculer l'accélération F/m d'un objet comme la fusée indépendamment de matter.js. Rappelles toi que de toute façon on utilise Matter.js avec Matter Attractor ! Lorsqu'on calcule l'accélération, on l'envoie après à matter attractor pour matter JS. Donc effectivement, le calcul se fait à extérieur de matterjs, puis est donné à matter-attractor. De la même façon, tous les calculs de positionnement des planètes sont faits à l'extérieur de Matter.js et de Matter Attractor.

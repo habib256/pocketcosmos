@@ -104,6 +104,14 @@ class UIView {
         // Calculer et afficher la vitesse
         const speed = this.calculateSpeed(rocketModel);
         this.renderSpeed(ctx, speed, 20, 80);
+
+        // --- Affichage de l'accélération gravitationnelle ---
+        if (window.physicsController && window.physicsController.physicsVectors) {
+            const acc = window.physicsController.physicsVectors.getTotalAcceleration();
+            const accNorm = Math.sqrt(acc.x * acc.x + acc.y * acc.y);
+            ctx.fillStyle = this.colors.white;
+            ctx.fillText(`a: ${accNorm.toFixed(2)} m/s²`, 20, 110);
+        }
     }
 
     calculateSpeed(rocketModel) {

@@ -160,4 +160,9 @@ class PhysicsVectors {
         ctx.fillStyle = color;
         ctx.fill();
     }
+
+    // Ajout : méthode pour obtenir l'accélération totale
+    getTotalAcceleration() {
+        return this.totalAcceleration;
+    }
 } 
