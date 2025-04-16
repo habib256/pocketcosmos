@@ -68,6 +68,7 @@ function showInstructions() {
     const instructions = document.createElement('div');
     instructions.id = 'instructions';
     instructions.innerHTML = `
+        <img src="favicon.png" alt="Favicon" style="width:300px;height:300px;display:block;margin:0 auto 10px auto;" />
         <h3>Contrôles</h3>
         <p>↑/W: Propulsion avant | ↓/S: Propulsion arrière</p>
         <p>←/A: Rotation gauche | →/D: Rotation droite</p>

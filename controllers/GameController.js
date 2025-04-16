@@ -1063,6 +1063,9 @@ class GameController {
             this.rocketView.showGravityVector = newValue; // pour compatibilité
             console.log(`Affichage des vecteurs: ${newValue ? 'activé' : 'désactivé'}`);
         }
+        if (this.physicsController && this.physicsController.physicsVectors) {
+            this.physicsController.physicsVectors.toggleForceVectors();
+        }
     }
 
     // Gérer les mises à jour d'état de la fusée

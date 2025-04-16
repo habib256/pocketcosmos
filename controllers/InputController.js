@@ -85,17 +85,41 @@ class InputController {
             's': 'thrustBackward',
             'a': 'rotateLeft',
             'd': 'rotateRight',
+            'W': 'thrustForward',
+            'S': 'thrustBackward',
+            'A': 'rotateLeft',
+            'D': 'rotateRight',
+            'KeyW': 'thrustForward',
+            'KeyS': 'thrustBackward',
+            'KeyA': 'rotateLeft',
+            'KeyD': 'rotateRight',
             
             // Autres touches
             'r': 'resetRocket',
+            'R': 'resetRocket',
+            'KeyR': 'resetRocket',
             'c': 'centerCamera',
+            'C': 'centerCamera',
+            'KeyC': 'centerCamera',
             'v': 'toggleVectors',
+            'V': 'toggleVectors',
+            'KeyV': 'toggleVectors',
             'g': 'toggleGravityField',
+            'G': 'toggleGravityField',
+            'KeyG': 'toggleGravityField',
             't': 'toggleTraces',        // Afficher/masquer les traces
+            'T': 'toggleTraces',
+            'KeyT': 'toggleTraces',
             'p': 'pauseGame',           // Pause avec P
+            'P': 'pauseGame',
+            'KeyP': 'pauseGame',
             'Escape': 'pauseGame',      // Pause avec Escape
             'm': 'decreaseThrustMultiplier',
-            'i': 'toggleAI'             // Activer/désactiver l'IA
+            'M': 'decreaseThrustMultiplier',
+            'KeyM': 'decreaseThrustMultiplier',
+            'i': 'toggleAI',            // Activer/désactiver l'IA
+            'I': 'toggleAI',
+            'KeyI': 'toggleAI'
         };
         
         // Initialiser les événements du clavier, souris, tactile et joystick
@@ -168,13 +192,11 @@ class InputController {
     initGamepadEvents() {
         // Écouter les connexions futures
         window.addEventListener('gamepadconnected', (event) => {
-            console.log('%c[InputController] Événement \'gamepadconnected\' reçu:', 'color: green; font-weight: bold;', event.gamepad.id, 'Index:', event.gamepad.index);
             this.connectGamepad(event.gamepad);
         });
 
         // Écouter les déconnexions futures
         window.addEventListener('gamepaddisconnected', (event) => {
-            console.log('%c[InputController] Gamepad déconnecté:', 'color: red; font-weight: bold;', event.gamepad.id);
             if (this.gamepad && this.gamepad.index === event.gamepad.index) {
                 this.disconnectGamepad(event.gamepad.id);
             }
@@ -182,32 +204,24 @@ class InputController {
 
         // Vérifier immédiatement les gamepads déjà connectés
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-        // console.log(`%c[InputController] Vérification initiale: ${gamepads.length} slots de gamepad trouvés.`, 'color: purple;');
         for (const gp of gamepads) {
             if (gp) {
-                console.log(`%c[InputController] -> Gamepad trouvé lors de la vérification initiale: Index ${gp.index}, ID: ${gp.id}`, 'color: purple; font-weight: bold;');
                 this.connectGamepad(gp);
-                break; // Se connecter au premier trouvé pour l'instant
+                break;
             }
         }
-        // if (!this.gamepad) {
-        //     console.log('%c[InputController] Aucun gamepad actif trouvé lors de la vérification initiale. En attente de l\'événement \'gamepadconnected\'...', 'color: orange;');
-        // }
     }
 
     // Nouvelle méthode pour gérer la connexion (appelée par l'event ou la vérification initiale)
     connectGamepad(gamepad) {
-        if (this.gamepad) { // Si un autre est déjà connecté, on l'ignore pour l'instant
-            console.warn(`[InputController] Un autre gamepad (Index ${this.gamepad.index}) est déjà actif. Ignoré: ${gamepad.id}`);
+        if (this.gamepad) {
             return;
         }
         this.gamepad = gamepad;
         this.gamepadState.axes = Array(this.gamepad.axes.length).fill(0);
         this.gamepadState.buttons = Array(this.gamepad.buttons.length).fill({ pressed: false, value: 0 });
-        // Log simplifié
-        console.log(`[InputController] Gamepad ACTIVÉ - Index: ${this.gamepad.index}, Axes: ${this.gamepad.axes.length}, Boutons: ${this.gamepad.buttons.length}, ID: ${this.gamepad.id}`);
         this.eventBus.emit('INPUT_GAMEPAD_CONNECTED', { id: this.gamepad.id });
-        this.noGamepadLogged = false; // Réinitialiser le flag pour les logs dans update()
+        this.noGamepadLogged = false;
     }
 
     // Nouvelle méthode pour gérer la déconnexion
@@ -217,25 +231,33 @@ class InputController {
             this.gamepad = null;
             this.gamepadState.axes.fill(0);
             this.gamepadState.buttons.fill({ pressed: false, value: 0 });
-            // Log simplifié
-            console.log(`[InputController] Gamepad DÉSACTIVÉ - Index: ${index}, ID: ${gamepadId}`);
             this.eventBus.emit('INPUT_GAMEPAD_DISCONNECTED', { id: gamepadId });
-            this.noGamepadLogged = false; // Réinitialiser aussi ici
+            this.noGamepadLogged = false;
         }
     }
     
     // Gérer les événements keydown
     handleKeyDown(event) {
         // Mettre à jour l'état des touches
-        if (this.keys.hasOwnProperty(event.key)) {
-            this.keys[event.key] = true;
+        const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+        if (this.keys.hasOwnProperty(key)) {
+            this.keys[key] = true;
         }
-        
         // Convertir la touche en action
-        const action = this.keyMap[event.key];
+        let action = this.keyMap[event.key];
+        if (!action) {
+            // Essayer avec la version minuscule
+            action = this.keyMap[event.key.toLowerCase()];
+        }
+        if (!action && event.code) {
+            action = this.keyMap[event.code];
+        }
         if (action) {
-            event.preventDefault();
-            
+            // Ne bloque pas les touches système (F1-F12, Ctrl, Alt, Meta)
+            const isFunctionKey = event.key && event.key.startsWith('F') && event.key.length <= 3;
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && !isFunctionKey) {
+                event.preventDefault();
+            }
             // Émettre l'événement correspondant
             this.eventBus.emit('INPUT_KEYDOWN', { action, key: event.key });
             // Ajout : toggleGravityField
@@ -265,21 +287,16 @@ class InputController {
     // Mettre à jour l'état des entrées (clavier + joystick)
     update() {
         // --- Gestion Clavier ---
-        // Vérifier les touches maintenues pour les actions continues
         for (const key in this.keys) {
             if (this.keys[key]) {
-                // Convertir la touche en action
                 const action = this.keyMap[key];
                 if (action) {
-                    // Émettre l'événement correspondant pour les actions qui doivent être répétées
                     if (action === 'thrustForward' || action === 'thrustBackward' || 
                         action === 'rotateLeft' || action === 'rotateRight' || 
                         action === 'zoomIn' || action === 'zoomOut') {
                         this.eventBus.emit('INPUT_KEYDOWN', { action, key });
-                    } else if (action !== 'pauseGame') { // Ne jamais répéter pauseGame ici
-                        // Pour les actions ponctuelles, envoyer un événement keypress une seule fois
+                    } else if (action !== 'pauseGame') {
                         this.eventBus.emit('INPUT_KEYPRESS', { action, key });
-                        // Réinitialiser l'état de la touche pour éviter les répétitions
                         this.keys[key] = false;
                     }
                 }
@@ -290,14 +307,10 @@ class InputController {
         if (this.gamepad) {
             const currentGamepad = navigator.getGamepads()[this.gamepad.index];
             if (!currentGamepad) {
-                // Optionnel: gérer si le gamepad disparaît soudainement
-                // console.warn('[InputController] Gamepad non trouvé à l\'index', this.gamepad.index);
-                // this.gamepad = null; 
                 return;
             }
 
-            // Traiter les axes
-            const currentHeldAxes = {}; // Axes maintenus dans cette frame
+            const currentHeldAxes = {};
             for (let i = 0; i < currentGamepad.axes.length; i++) {
                 const value = currentGamepad.axes[i];
                 const prevValue = this.gamepadState.axes[i];
@@ -308,48 +321,36 @@ class InputController {
 
                 // 1. Gérer l'événement de CHANGEMENT (une seule fois)
                 if (adjustedValue !== adjustedPrevValue) {
-                    console.log(`%c[InputController] Axe ${i} changé: ${prevValue.toFixed(2)} -> ${value.toFixed(2)} (Ajusté: ${adjustedPrevValue.toFixed(2)} -> ${adjustedValue.toFixed(2)})`, 'color: blue;');
-                    this.gamepadState.axes[i] = value; // Mettre à jour l'état stocké
+                    this.gamepadState.axes[i] = value;
                     if (action) {
-                        // Émettre l'événement CHANGED pour tous les axes mappés
-                        console.log(`%c[InputController] -> Émission EventBus: INPUT_JOYSTICK_AXIS_CHANGED { action: '${action}', axis: ${i}, value: ${adjustedValue.toFixed(2)} }`, 'color: darkblue;');
                         this.eventBus.emit('INPUT_JOYSTICK_AXIS_CHANGED', {
                             action: action,
                             axis: i,
                             value: adjustedValue
                         });
-                    } else {
-                        console.log(`%c[InputController] -> Axe ${i} non mappé.`, 'color: gray;');
                     }
                 }
 
                 // 2. Gérer l'événement MAINTENU (pour les axes mappés)
                 if (action && adjustedValue !== 0) {
-                    currentHeldAxes[i] = true; // Marquer comme maintenu cette frame
-                    // Émettre l'événement HELD à chaque update tant que l'axe est incliné
-                    // console.log(`%c[InputController] -> Émission EventBus: INPUT_JOYSTICK_AXIS_HELD { action: '${action}', axis: ${i}, value: ${adjustedValue.toFixed(2)} }`, 'color: purple;'); // Peut spammer, désactiver par défaut
+                    currentHeldAxes[i] = true;
                     this.eventBus.emit('INPUT_JOYSTICK_AXIS_HELD', {
                         action: action,
                         axis: i,
                         value: adjustedValue
                     });
-                    // Marquer que cet axe est actuellement maintenu
                     this.heldAxes[i] = true;
                 }
             }
-            
-            // 3. Gérer l'événement RELACHÉ (pour les axes qui étaient maintenus mais ne le sont plus)
             for(const axisIndex in this.heldAxes) {
                 if (this.heldAxes[axisIndex] && !currentHeldAxes[axisIndex]) {
                     const action = this.gamepadMap.axes[axisIndex];
                     if (action) {
-                        console.log(`%c[InputController] -> Émission EventBus: INPUT_JOYSTICK_AXIS_RELEASED { action: '${action}', axis: ${axisIndex} }`, 'color: brown;');
-                         this.eventBus.emit('INPUT_JOYSTICK_AXIS_RELEASED', {
+                        this.eventBus.emit('INPUT_JOYSTICK_AXIS_RELEASED', {
                             action: action,
                             axis: parseInt(axisIndex, 10)
                         });
                     }
-                     // Marquer comme non maintenu
                     this.heldAxes[axisIndex] = false;
                 }
             }
@@ -360,30 +361,20 @@ class InputController {
                 const prevButtonState = this.gamepadState.buttons[i];
 
                 if (button.pressed !== prevButtonState.pressed) {
-                     console.log(`%c[InputController] Bouton ${i} changé: ${prevButtonState.pressed} -> ${button.pressed} (Valeur: ${button.value.toFixed(2)})`, 'color: orange;');
                     this.gamepadState.buttons[i] = { pressed: button.pressed, value: button.value };
                     const action = this.gamepadMap.buttons[i];
                     if (action) {
                         const eventName = button.pressed ? 'INPUT_JOYSTICK_BUTTON_DOWN' : 'INPUT_JOYSTICK_BUTTON_UP';
-                         console.log(`%c[InputController] -> Émission EventBus: ${eventName} { action: '${action}', button: ${i}, value: ${button.value.toFixed(2)} }`, 'color: darkorange;');
                         this.eventBus.emit(eventName, {
                             action: action,
                             button: i,
                             value: button.value
                         });
-                        // Émission 'changed' (optionnel)
-                        // this.eventBus.emit('INPUT_JOYSTICK_BUTTON_CHANGED', { action: action, button: i, pressed: button.pressed, value: button.value });
-                    } else {
-                         console.log(`%c[InputController] -> Bouton ${i} non mappé.`, 'color: gray;');
                     }
                 }
             }
         } else {
-             // Log si aucun gamepad detecte (une seule fois)
-             if (typeof this.noGamepadLogged === 'undefined' || !this.noGamepadLogged) {
-                 console.log('[InputController] Aucun gamepad detecte. En attente de connexion...');
-                 this.noGamepadLogged = true; 
-             }
+            this.noGamepadLogged = true; 
         }
     }
     
