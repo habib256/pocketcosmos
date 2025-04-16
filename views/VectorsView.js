@@ -148,11 +148,39 @@ class VectorsView {
                 // Position de départ et d'arrivée (en pixels écran)
                 const ex = sx + dirX * scale;
                 const ey = sy + dirY * scale;
+                // Déterminer la couleur en fonction de la force de gravité 'a'
+                let color;
+                if (a < 0.00005) {
+                    // Très faible : vert
+                    color = 'rgba(0,255,0,0.35)';
+                } else if (a < 0.0003) {
+                    // Dégradé vert → jaune
+                    const t = (a - 0.00005) / (0.0003 - 0.00005);
+                    const r = Math.round(255 * t);
+                    const g = 255;
+                    color = `rgba(${r},255,0,0.35)`;
+                } else if (a < 0.001) {
+                    // Dégradé jaune → orange
+                    const t = (a - 0.0003) / (0.001 - 0.0003);
+                    const r = 255;
+                    const g = Math.round(255 * (1 - t) + 165 * t); // 255→165
+                    const b = 0;
+                    color = `rgba(255,${g},${b},0.45)`;
+                } else if (a < 0.003) {
+                    // Dégradé orange → rouge
+                    const t = (a - 0.001) / (0.003 - 0.001);
+                    const r = 255;
+                    const g = Math.round(165 * (1 - t));
+                    color = `rgba(255,${g},0,0.55)`;
+                } else {
+                    // Très fort : rouge
+                    color = 'rgba(255,0,0,0.65)';
+                }
                 ctx.save();
                 ctx.beginPath();
                 ctx.moveTo(sx, sy);
                 ctx.lineTo(ex, ey);
-                ctx.strokeStyle = '#FF00FF';
+                ctx.strokeStyle = color;
                 ctx.lineWidth = 1;
                 ctx.stroke();
                 // Pointe de flèche
@@ -163,7 +191,7 @@ class VectorsView {
                 ctx.lineTo(ex - headlen * Math.cos(angle - Math.PI/6), ey - headlen * Math.sin(angle - Math.PI/6));
                 ctx.lineTo(ex - headlen * Math.cos(angle + Math.PI/6), ey - headlen * Math.sin(angle + Math.PI/6));
                 ctx.closePath();
-                ctx.fillStyle = '#FF00FF';
+                ctx.fillStyle = color;
                 ctx.fill();
                 ctx.restore();
             }

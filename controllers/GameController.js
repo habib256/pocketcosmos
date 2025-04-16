@@ -831,6 +831,12 @@ class GameController {
         }
         // -------------
 
+        // --- AJOUT : Mettre à jour l'univers (orbites des corps célestes) ---
+        if (this.universeModel) {
+            this.universeModel.update(deltaTime);
+        }
+        // ---------------------------------------------------------------
+
         // Mise à jour de la physique
         if (this.physicsController && this.rocketModel) {
             this.physicsController.update(deltaTime);

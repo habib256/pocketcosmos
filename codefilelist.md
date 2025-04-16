@@ -57,7 +57,7 @@ Le projet suit une architecture MVC étendue :
 - **Chargement des scripts** : Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre est crucial.
 - **Vecteurs physiques** : L'affichage de tous les vecteurs (poussée, vitesse, accélération totale F/m, etc.) est centralisé dans `VectorsView.js` et contrôlé globalement (touche V).
 - **RocketView.js** ne gère plus aucun vecteur : tout est dans `VectorsView.js`.
-- **Calculs physiques** : L'accélération F/m (somme des forces sur la fusée divisée par sa masse) est calculée indépendamment de Matter.js, puis utilisée pour l'affichage et la simulation.
+- **Calculs physiques** : L'accélération F/m (somme des forces sur la fusée divisée par sa masse) est calculée indépendamment de Matter.js, puis utilisée pour l'affichage et la simulation. Tout comme la physique des corps celestes.
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités.
 - **Nettoyage** : Supprimer les fichiers obsolètes ou redondants pour garder la base propre.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
