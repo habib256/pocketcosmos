@@ -4,7 +4,6 @@ class UniverseView {
         this.camera = new CameraModel();
         this.celestialBodyView = null;
         this.traceView = null;
-        this.showGravityField = false; // Affichage du champ de gravité
     }
     
     // Initialise la taille du canvas
@@ -170,60 +169,10 @@ class UniverseView {
         this.traceView = view;
     }
 
-    // Bascule l'affichage du champ de gravité
-    toggleGravityField() {
-        this.showGravityField = !this.showGravityField;
-        console.log(`[UniverseView] Champ de gravité : ${this.showGravityField ? 'activé' : 'désactivé'}`);
-    }
-
-    // Dessine le champ de gravité sur une grille
-    drawGravityField(ctx, camera, physicsController) {
-        console.log('[DEBUG] drawGravityField appelé');
-        if (!this.showGravityField || !physicsController) return;
-        const step = 100; // Espacement de la grille (ajuster selon zoom si besoin)
-        const lengthScale = 2000; // Pour rendre les flèches visibles
-        const minX = camera.x - (RENDER.CANVAS_WIDTH / 2) / camera.zoom;
-        const maxX = camera.x + (RENDER.CANVAS_WIDTH / 2) / camera.zoom;
-        const minY = camera.y - (RENDER.CANVAS_HEIGHT / 2) / camera.zoom;
-        const maxY = camera.y + (RENDER.CANVAS_HEIGHT / 2) / camera.zoom;
-        for (let x = minX; x < maxX; x += step) {
-            for (let y = minY; y < maxY; y += step) {
-                const { ax, ay } = physicsController.calculateGravityAtPoint(x, y);
-                const a = Math.sqrt(ax * ax + ay * ay);
-                if (a < 1e-8) {
-                    console.log(`[DEBUG] Champ trop faible à (${x},${y}) : a=${a}`);
-                    continue; // Ignore les points sans champ
-                }
-                const scale = Math.min(lengthScale * a, step * 0.8);
-                const sx = (x - camera.x) * camera.zoom + RENDER.CANVAS_WIDTH / 2;
-                const sy = (y - camera.y) * camera.zoom + RENDER.CANVAS_HEIGHT / 2;
-                const ex = sx + (ax / a) * scale * camera.zoom;
-                const ey = sy + (ay / a) * scale * camera.zoom;
-                ctx.beginPath();
-                ctx.moveTo(sx, sy);
-                ctx.lineTo(ex, ey);
-                ctx.strokeStyle = '#FF00FF';
-                ctx.lineWidth = 1;
-                ctx.stroke();
-                // Pointe de flèche
-                const angle = Math.atan2(ey - sy, ex - sx);
-                const headlen = 8; // Longueur de la pointe
-                ctx.beginPath();
-                ctx.moveTo(ex, ey);
-                ctx.lineTo(ex - headlen * Math.cos(angle - Math.PI / 6), ey - headlen * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(ex - headlen * Math.cos(angle + Math.PI / 6), ey - headlen * Math.sin(angle + Math.PI / 6));
-                ctx.lineTo(ex, ey);
-                ctx.fillStyle = '#FF00FF';
-                ctx.fill();
-            }
-        }
-    }
-
     // Ajoute une méthode de rendu principale si elle n'existe pas déjà
     render(ctx, camera, physicsController) {
-        console.log('[DEBUG] UniverseView.render appelé, showGravityField =', this.showGravityField, 'physicsController:', !!physicsController);
+        console.log('[DEBUG] UniverseView.render appelé, physicsController:', !!physicsController);
         this.renderBackground(ctx, camera);
-        this.drawGravityField(ctx, camera, physicsController);
         // Les autres appels de rendu (étoiles, corps célestes, etc.) doivent être faits ici dans l'ordre voulu
     }
 } 

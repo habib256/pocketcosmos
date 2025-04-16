@@ -1402,8 +1402,8 @@ class GameController {
     // --- Fin Gestionnaires Joystick ---
 
     toggleGravityField() {
-        if (this.universeView && typeof this.universeView.toggleGravityField === 'function') {
-            this.universeView.toggleGravityField();
+        if (this.renderingController && typeof this.renderingController.toggleGravityField === 'function') {
+            this.renderingController.toggleGravityField();
         }
     }
 } 

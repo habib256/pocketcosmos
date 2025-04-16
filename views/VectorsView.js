@@ -5,7 +5,11 @@ class VectorsView {
     render(ctx, rocketState, camera, options = {}) {
         if (!rocketState || !rocketState.position) return;
         ctx.save();
-        // Se placer au centre de la fusée
+        // Affichage du champ de gravité (grille 50x50, adaptatif au zoom)
+        if (options.showGravityField && options.physicsController) {
+            this.renderGravityField(ctx, camera, options.physicsController);
+        }
+        // Se placer au centre de la fusée pour les autres vecteurs
         ctx.translate(camera.offsetX, camera.offsetY);
         ctx.scale(camera.zoom, camera.zoom);
         ctx.translate(-camera.x, -camera.y);
@@ -115,6 +119,55 @@ class VectorsView {
         if (distance !== null && distance !== undefined) labelText += ' ' + Math.floor(distance);
         ctx.fillText(labelText, origin.x + dirX * length + dirX * 15, origin.y + dirY * length + dirY * 15);
         ctx.restore();
+    }
+
+    // Affiche le champ de gravité sur une grille 50x50, adaptée au zoom
+    renderGravityField(ctx, camera, physicsController) {
+        const gridX = 50;
+        const gridY = 50;
+        const width = ctx.canvas.width;
+        const height = ctx.canvas.height;
+        const stepX = width / gridX;
+        const stepY = height / gridY;
+        for (let ix = 0; ix < gridX; ix++) {
+            for (let iy = 0; iy < gridY; iy++) {
+                // Coordonnées écran (centrées dans chaque maille)
+                const sx = ix * stepX + stepX / 2;
+                const sy = iy * stepY + stepY / 2;
+                // Conversion écran -> monde
+                const wx = (sx - camera.offsetX) / camera.zoom + camera.x;
+                const wy = (sy - camera.offsetY) / camera.zoom + camera.y;
+                // Calcul du champ de gravité à ce point
+                const g = physicsController.calculateGravityAtPoint(wx, wy);
+                const ax = g.ax, ay = g.ay;
+                const a = Math.sqrt(ax * ax + ay * ay);
+                if (a < 1e-8) continue;
+                // Longueur de la flèche (adaptée à la maille écran)
+                const scale = Math.min(2000 * a, Math.min(stepX, stepY) * 0.8);
+                const dirX = ax / a, dirY = ay / a;
+                // Position de départ et d'arrivée (en pixels écran)
+                const ex = sx + dirX * scale;
+                const ey = sy + dirY * scale;
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(ex, ey);
+                ctx.strokeStyle = '#FF00FF';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                // Pointe de flèche
+                const angle = Math.atan2(ey - sy, ex - sx);
+                const headlen = 8;
+                ctx.beginPath();
+                ctx.moveTo(ex, ey);
+                ctx.lineTo(ex - headlen * Math.cos(angle - Math.PI/6), ey - headlen * Math.sin(angle - Math.PI/6));
+                ctx.lineTo(ex - headlen * Math.cos(angle + Math.PI/6), ey - headlen * Math.sin(angle + Math.PI/6));
+                ctx.closePath();
+                ctx.fillStyle = '#FF00FF';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
     }
 }
 

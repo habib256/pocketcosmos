@@ -11,6 +11,7 @@ class RenderingController {
         this.uiView = null;
         this.vectorsView = new VectorsView(); // Nouvelle vue pour les vecteurs
         this.showVectors = false; // Par défaut désactivé
+        this.showGravityField = false; // Par défaut désactivé
         
         // Référence au contrôleur de physique pour afficher les forces
         this.physicsController = null;
@@ -213,6 +214,13 @@ class RenderingController {
                 showTotalAccelerationVector: true
             });
         }
+        // Afficher le champ de gravité SI activé
+        if (this.vectorsView && this.showGravityField) {
+            this.vectorsView.render(ctx, rocketStateForView, camera, {
+                showGravityField: true,
+                physicsController: this.physicsController
+            });
+        }
         
         // Rendre l'interface utilisateur
         if (this.uiView) {
@@ -269,5 +277,10 @@ class RenderingController {
     toggleVectors() {
         this.showVectors = !this.showVectors;
         console.log(`[RenderingController] Affichage des vecteurs : ${this.showVectors ? 'activé' : 'désactivé'}`);
+    }
+    // Ajout : méthode pour basculer l'affichage du champ de gravité
+    toggleGravityField() {
+        this.showGravityField = !this.showGravityField;
+        console.log(`[RenderingController] Affichage du champ de gravité : ${this.showGravityField ? 'activé' : 'désactivé'}`);
     }
 } 
