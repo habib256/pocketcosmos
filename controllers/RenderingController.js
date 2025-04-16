@@ -12,6 +12,7 @@ class RenderingController {
         this.vectorsView = new VectorsView(); // Nouvelle vue pour les vecteurs
         this.showVectors = false; // Par défaut désactivé
         this.showGravityField = false; // Par défaut désactivé
+        this.gravityFieldMode = 0; // 0: rien, 1: flèches, 2: lignes
         
         // Référence au contrôleur de physique pour afficher les forces
         this.physicsController = null;
@@ -152,7 +153,7 @@ class RenderingController {
         // 1. Vecteur d'accélération totale (somme des forces)
         let accelerationVector = {x:0, y:0};
         if (this.physicsController && this.physicsController.lastRocketAcceleration) {
-            console.log('[DEBUG][RC] lastRocketAcceleration dans RenderingController:', this.physicsController.lastRocketAcceleration);
+            //console.log('[DEBUG][RC] lastRocketAcceleration dans RenderingController:', this.physicsController.lastRocketAcceleration);
             accelerationVector = this.physicsController.lastRocketAcceleration;
         }
 
@@ -195,7 +196,7 @@ class RenderingController {
             missionTargetVector
         };
         // LOG DEBUG pour le vecteur accélération (chaque frame)
-        console.log('[DEBUG][frame] accelerationVector transmis à VectorsView:', accelerationVector);
+        //console.log('[DEBUG][frame] accelerationVector transmis à VectorsView:', accelerationVector);
         // Rendre la fusée
         if (this.rocketView) {
             this.rocketView.render(ctx, rocketStateForView, camera);
@@ -214,10 +215,15 @@ class RenderingController {
                 showTotalAccelerationVector: true
             });
         }
-        // Afficher le champ de gravité SI activé
-        if (this.vectorsView && this.showGravityField) {
+        // Afficher le champ de gravité selon le mode
+        if (this.vectorsView && this.gravityFieldMode === 1) {
             this.vectorsView.render(ctx, rocketStateForView, camera, {
-                showGravityField: true,
+                showGravityField: 'arrows',
+                physicsController: this.physicsController
+            });
+        } else if (this.vectorsView && this.gravityFieldMode === 2) {
+            this.vectorsView.render(ctx, rocketStateForView, camera, {
+                showGravityField: 'lines',
                 physicsController: this.physicsController
             });
         }
@@ -280,7 +286,11 @@ class RenderingController {
     }
     // Ajout : méthode pour basculer l'affichage du champ de gravité
     toggleGravityField() {
-        this.showGravityField = !this.showGravityField;
-        console.log(`[RenderingController] Affichage du champ de gravité : ${this.showGravityField ? 'activé' : 'désactivé'}`);
+        this.gravityFieldMode = (this.gravityFieldMode + 1) % 3;
+        let msg = '';
+        if (this.gravityFieldMode === 0) msg = 'désactivé';
+        else if (this.gravityFieldMode === 1) msg = 'flèches';
+        else if (this.gravityFieldMode === 2) msg = 'lignes de champ';
+        console.log(`[RenderingController] Affichage du champ de gravité : ${msg}`);
     }
 } 

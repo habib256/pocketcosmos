@@ -215,7 +215,7 @@ class PhysicsController {
         this.physicsVectors.setTotalAcceleration(accX, accY);
         // Ajout log pour debug accélération fusée
         if (typeof accX === 'number' && typeof accY === 'number') {
-            console.log(`[RocketAccel] a = {x: ${accX.toExponential(2)}, y: ${accY.toExponential(2)}} module = ${(Math.sqrt(accX*accX+accY*accY)).toExponential(2)}`);
+           // console.log(`[RocketAccel] a = {x: ${accX.toExponential(2)}, y: ${accY.toExponential(2)}} module = ${(Math.sqrt(accX*accX+accY*accY)).toExponential(2)}`);
         }
     }
 
@@ -275,7 +275,7 @@ class PhysicsController {
         }
         // Ajout log pour debug champ de gravité
         if (Math.abs(ax) > 0 || Math.abs(ay) > 0) {
-            console.log(`[GravityField] G@(${x.toFixed(0)},${y.toFixed(0)}) = {ax: ${ax.toExponential(2)}, ay: ${ay.toExponential(2)}}`);
+           // console.log(`[GravityField] G@(${x.toFixed(0)},${y.toFixed(0)}) = {ax: ${ax.toExponential(2)}, ay: ${ay.toExponential(2)}}`);
         }
         return { ax, ay };
     }
@@ -306,5 +306,17 @@ class PhysicsController {
             ay += a * dy / r;
         }
         return { x: ax, y: ay };
+    }
+
+    // Retourne la liste des corps célestes (modèles) pour l'affichage
+    getCelestialBodies() {
+        // On retourne les modèles avec position et rayon
+        return this.celestialBodies.map(cb => {
+            return {
+                x: cb.model.position.x,
+                y: cb.model.position.y,
+                radius: cb.model.radius
+            };
+        });
     }
 } 
