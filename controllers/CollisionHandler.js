@@ -206,18 +206,11 @@ class CollisionHandler {
         if (this.physicsController.rocketModel && this.physicsController.rocketModel.isDestroyed) {
             return;
         }
-        try {
-            const collisionSound = new Audio('assets/sound/collision.mp3');
-            const maxVolume = 1.0;
-            const minVolume = 0.3;
-            const volumeScale = Math.min((impactVelocity - 2.5) / 10, 1); // Normaliser entre 0 et 1
-            collisionSound.volume = minVolume + volumeScale * (maxVolume - minVolume);
-            collisionSound.play().catch(error => {
-                console.error("Erreur lors de la lecture du son de collision:", error);
-            });
-        } catch (error) {
-            console.error("Erreur lors de la lecture du fichier collision.mp3:", error);
-        }
+        const maxVolume = 1.0;
+        const minVolume = 0.3;
+        const volumeScale = Math.min((impactVelocity - 2.5) / 10, 1); // Normaliser entre 0 et 1
+        const volume = minVolume + volumeScale * (maxVolume - minVolume);
+        AudioManager.play('collision', 'assets/sound/collision.mp3', { volume });
     }
 
     // Note: otherBody ici peut être le corps physique ou un objet modèle simulé

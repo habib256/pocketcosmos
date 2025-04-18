@@ -119,7 +119,8 @@ class InputController {
             'KeyM': 'decreaseThrustMultiplier',
             'i': 'toggleAI',            // Activer/désactiver l'IA
             'I': 'toggleAI',
-            'KeyI': 'toggleAI'
+            'KeyI': 'toggleAI',
+            'k': 'toggleTraining',
         };
         
         // Initialiser les événements du clavier, souris, tactile et joystick
@@ -253,6 +254,7 @@ class InputController {
             action = this.keyMap[event.code];
         }
         if (action) {
+            console.log('[InputController] handleKeyDown : action =', action, ', key =', event.key);
             // Ne bloque pas les touches système (F1-F12, Ctrl, Alt, Meta)
             const isFunctionKey = event.key && event.key.startsWith('F') && event.key.length <= 3;
             if (!event.ctrlKey && !event.metaKey && !event.altKey && !isFunctionKey) {
@@ -267,6 +269,14 @@ class InputController {
             // Ajout : toggleAI
             if (action === 'toggleAI') {
                 this.eventBus.emit('TOGGLE_AI_CONTROL');
+            }
+            // Ajout : toggleTraining (pour la touche K)
+            if (action === 'toggleTraining') {
+                if (!this._toggleTrainingLock) {
+                    this._toggleTrainingLock = true;
+                    this.eventBus.emit('INPUT_KEYPRESS', { action, key: event.key });
+                    setTimeout(() => { this._toggleTrainingLock = false; }, 200); // anti double-tap
+                }
             }
         }
     }
@@ -299,7 +309,8 @@ class InputController {
                         action === 'rotateLeft' || action === 'rotateRight' || 
                         action === 'zoomIn' || action === 'zoomOut') {
                         this.eventBus.emit('INPUT_KEYDOWN', { action, key });
-                    } else if (action !== 'pauseGame') {
+                    } else if (action !== 'pauseGame' && action !== 'toggleTraining') {
+                        // On ignore toggleTraining ici pour éviter le double toggle
                         this.eventBus.emit('INPUT_KEYPRESS', { action, key });
                         this.keys[key] = false;
                     }

@@ -110,6 +110,7 @@ class RocketAgent {
     // S'abonner aux événements pertinents
     subscribeToEvents() {
         this.eventBus.subscribe('ROCKET_STATE_UPDATED', (data) => this.updateRocketData(data));
+        this.eventBus.subscribe('UNIVERSE_STATE_UPDATED', (data) => this.updateCelestialBodies(data));
         this.eventBus.subscribe('TOGGLE_AI_CONTROL', () => this.toggleActive());
         this.eventBus.subscribe('TOGGLE_TRAINING', () => this.toggleTraining());
         this.eventBus.subscribe('ROCKET_CRASHED', () => this.handleCrash());
@@ -119,11 +120,9 @@ class RocketAgent {
     // Activer/désactiver l'agent
     toggleActive() {
         this.isActive = !this.isActive;
-        console.log(`Agent IA ${this.isActive ? 'activé' : 'désactivé'}`);
-        
+        console.log(`[RocketAgent] toggleActive() appelé. isActive = ${this.isActive}, isTraining = ${this.isTraining}`);
         // Publier l'état de l'agent
         this.eventBus.emit('AI_CONTROL_CHANGED', { active: this.isActive });
-        
         // Réinitialiser l'état si l'agent est activé
         if (this.isActive) {
             this.lastState = null;
@@ -135,23 +134,39 @@ class RocketAgent {
     // Activer/désactiver l'entraînement
     toggleTraining() {
         this.isTraining = !this.isTraining;
-        console.log(`Entraînement ${this.isTraining ? 'activé' : 'désactivé'}`);
+        console.log(`[RocketAgent] toggleTraining() appelé. Entraînement ${this.isTraining ? 'activé' : 'désactivé'}`);
         this.eventBus.emit('TRAINING_CHANGED', { active: this.isTraining });
     }
     
     // Mettre à jour les données de l'état de la fusée
     updateRocketData(data) {
-        this.rocketData = data.rocket;
-        this.celestialBodyData = data.celestialBody;
-        this.moonData = data.moon;
-        
+        console.log('[RocketAgent] Données brutes reçues de ROCKET_STATE_UPDATED :', data);
+        // Construction manuelle de rocketData à partir des propriétés reçues
+        this.rocketData = {
+            x: data.position?.x,
+            y: data.position?.y,
+            vx: data.velocity?.x,
+            vy: data.velocity?.y,
+            angle: data.angle,
+            angularVelocity: data.angularVelocity || 0,
+            fuel: data.fuel,
+            health: data.health,
+            isLanded: data.isLanded,
+            isDestroyed: data.isDestroyed
+        };
+        // Utiliser les dernières valeurs connues pour les corps célestes
+        // (elles sont mises à jour via UNIVERSE_STATE_UPDATED)
+        // Log de debug sur la validité des données reçues
+        console.log('[RocketAgent] rocketData construit :', this.rocketData);
+        console.log('[RocketAgent] celestialBodyData courant :', this.celestialBodyData);
+        console.log('[RocketAgent] moonData courant :', this.moonData);
         // Si l'agent est actif, prendre une décision
         if (this.isActive && this.rocketData) {
             if (this.isTraining) {
-                // Mode apprentissage par renforcement
+                console.log('[RocketAgent] Appel de step() (mode entraînement)');
                 this.step();
             } else {
-                // Mode manuel ou prédiction sans apprentissage
+                console.log('[RocketAgent] Appel de makeDecision() (mode non-entraînement)');
                 this.makeDecision();
             }
         }
@@ -159,6 +174,7 @@ class RocketAgent {
     
     // Étape d'apprentissage par renforcement
     step() {
+        console.log('[RocketAgent] step() appelé - isTraining:', this.isTraining, 'isActive:', this.isActive);
         // Construire l'état actuel
         const currentState = this.buildState();
         
@@ -309,6 +325,7 @@ class RocketAgent {
     
     // Gestion d'un crash
     handleCrash() {
+        console.log(`[RocketAgent] handleCrash() appelé. isActive = ${this.isActive}, isTraining = ${this.isTraining}`);
         if (!this.isActive || !this.isTraining) return;
         
         // Si nous avons un état et une action précédents, ajouter une expérience terminale
@@ -341,6 +358,7 @@ class RocketAgent {
     
     // Gestion d'un succès
     handleSuccess() {
+        console.log(`[RocketAgent] handleSuccess() appelé. isActive = ${this.isActive}, isTraining = ${this.isTraining}`);
         if (!this.isActive || !this.isTraining) return;
         
         // Si nous avons un état et une action précédents, ajouter une expérience terminale
@@ -477,6 +495,7 @@ class RocketAgent {
     
     // Algorithme de prise de décision principal (pour le mode non-entraînement)
     makeDecision() {
+        console.log('[RocketAgent] makeDecision() appelé, objectif:', this.currentObjective);
         switch (this.currentObjective) {
             case 'orbit':
                 this.maintainOrbit();
@@ -562,10 +581,19 @@ class RocketAgent {
     // Émettre une commande de contrôle (comme si c'était une entrée utilisateur)
     emitControl(action) {
         if (!this.isActive) return;
-        
+
+        // Patch anti-boucle infinie : ne pas émettre thrustForward si la fusée est posée et déjà à fond
+        if (action === 'thrustForward' && this.rocketData && this.rocketData.isLanded) {
+            // On suppose que la puissance max est 1000 (à adapter si besoin)
+            const mainThruster = this.rocketData.thrusters?.main;
+            if (mainThruster && mainThruster.power >= 1000) {
+                console.warn('[RocketAgent] Boucle évitée : thrustForward ignoré car déjà à fond et fusée posée.');
+                return;
+            }
+        }
+        console.log(`[RocketAgent] Action IA émise : ${action}`);
         // Émettre l'action comme si elle venait du contrôleur d'entrée
         this.eventBus.emit('INPUT_KEYDOWN', { action, key: 'AI' });
-        
         // Émettre aussi un événement spécifique à l'IA pour affichage/débogage
         this.eventBus.emit('AI_CONTROL_ACTION', { action });
     }
@@ -582,5 +610,29 @@ class RocketAgent {
     update(deltaTime) {
         // Pour l'instant, rien à faire ici
         // Les décisions sont prises en réponse aux événements
+    }
+    
+    // Mettre à jour les données des corps célestes (planète principale et lune)
+    updateCelestialBodies(data) {
+        // On cherche la planète principale (Terre) et la lune (Lune) dans la liste
+        if (!data.celestialBodies) return;
+        const earth = data.celestialBodies.find(b => b.name === 'Terre');
+        const moon = data.celestialBodies.find(b => b.name === 'Lune');
+        this.celestialBodyData = earth ? {
+            x: earth.position.x,
+            y: earth.position.y,
+            radius: earth.radius,
+            mass: earth.mass
+        } : null;
+        this.moonData = moon ? {
+            x: moon.position.x,
+            y: moon.position.y,
+            radius: moon.radius,
+            mass: moon.mass
+        } : null;
+        console.log('[RocketAgent] Mise à jour des corps célestes :', {
+            celestialBodyData: this.celestialBodyData,
+            moonData: this.moonData
+        });
     }
 }

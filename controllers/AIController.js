@@ -7,7 +7,10 @@ class AIController {
 
         // Écoute les commandes d'activation/désactivation IA
         this.eventBus.subscribe('TOGGLE_AI_CONTROL', () => this.toggleAI());
-        this.eventBus.subscribe('TOGGLE_TRAINING', () => this.toggleTraining());
+        this.eventBus.subscribe('TOGGLE_TRAINING', () => {
+            console.log('[AIController] Réception de TOGGLE_TRAINING');
+            this.toggleTraining();
+        });
         // (Optionnel) expose d'autres méthodes ou écoute d'autres événements
     }
 

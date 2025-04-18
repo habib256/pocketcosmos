@@ -27,11 +27,9 @@ class GameController {
         this.renderingController = null;
         this.aiController = null; // Remplace rocketAgent
         
-        // État du jeu
-        this.isRunning = false;
-        this.isPaused = false;
-        this.lastTimestamp = 0;
-        this.elapsedTime = 0;
+        // État du jeu (délégué à StateManager)
+        // this.lastTimestamp = 0;
+        // this.elapsedTime = 0;
         
         // Canvas et contexte
         this.canvas = null;
@@ -44,9 +42,6 @@ class GameController {
         this.dragStartRocketX = 0;
         this.dragStartRocketY = 0;
 
-        // Crédits gagnés - Initialiser à 10
-        this.totalCreditsEarned = 10;
-
         // Initialiser la caméra
         this.cameraModel = new CameraModel();
         
@@ -58,8 +53,8 @@ class GameController {
 
         // Ajout : pause automatique si l'utilisateur quitte l'onglet
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden && !this.isPaused) {
-                this.isPaused = true;
+            if (document.hidden && !StateManager.isPaused) {
+                StateManager.pause();
                 // console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
                 // On peut aussi émettre un événement si besoin :
                 // this.eventBus.emit('GAME_PAUSED');
@@ -137,9 +132,11 @@ class GameController {
     
     // Gérer les événements d'entrée
     handleKeyDown(data) {
+        // Log de debug pour toutes les actions reçues (IA ou joueur)
+        console.log(`[GameController] handleKeyDown : action = ${data.action}, key = ${data.key}`);
         // Si en pause, n'importe quelle flèche doit reprendre le jeu (hors P/Escape)
-        if (this.isPaused && (data.action === 'thrustForward' || data.action === 'thrustBackward' || data.action === 'rotateLeft' || data.action === 'rotateRight')) {
-            this.isPaused = false;
+        if (StateManager.isPaused && (data.action === 'thrustForward' || data.action === 'thrustBackward' || data.action === 'rotateLeft' || data.action === 'rotateRight')) {
+            StateManager.resume();
             console.log("Jeu repris par flèche");
             return;
         }
@@ -180,8 +177,8 @@ class GameController {
     handleKeyUp(data) {
         // Toggle pause sur relâchement de P ou Escape
         if (data.action === 'pauseGame') {
-            this.isPaused = !this.isPaused;
-            console.log(this.isPaused ? "Jeu mis en pause (toggle par P/Escape)" : "Jeu repris (toggle par P/Escape)");
+            StateManager.togglePause();
+            console.log(StateManager.isPaused ? "Jeu mis en pause (toggle par P/Escape)" : "Jeu repris (toggle par P/Escape)");
             return;
         }
         switch (data.action) {
@@ -222,8 +219,8 @@ class GameController {
     
     handleKeyPress(data) {
         // Ne plus gérer la pause ici pour P/Escape
-        if (this.isPaused) {
-            this.isPaused = false;
+        if (StateManager.isPaused) {
+            StateManager.resume();
             console.log("Jeu repris par keypress");
             return;
         }
@@ -231,8 +228,8 @@ class GameController {
         switch (data.action) {
             case 'pauseGame':
                 // Toujours sortir de la pause si on est en pause
-                if (this.isPaused) {
-                    this.isPaused = false;
+                if (StateManager.isPaused) {
+                    StateManager.resume();
                     console.log("Jeu repris par touche P");
                 } else {
                     this.togglePause();
@@ -267,11 +264,15 @@ class GameController {
             case 'toggleAI':
                 this.toggleAIControl();
                 break;
+            case 'toggleTraining':
+                console.log('[GameController] Touche K pressée : émission de TOGGLE_TRAINING');
+                this.eventBus.emit('TOGGLE_TRAINING', {});
+                break;
         }
     }
     
     handleMouseDown(data) {
-        if (this.isPaused) return;
+        if (StateManager.isPaused) return;
         
         this.isDragging = true;
         this.dragStartX = data.x;
@@ -284,7 +285,7 @@ class GameController {
     }
     
     handleMouseMove(data) {
-        if (!this.isDragging || this.isPaused) return;
+        if (!this.isDragging || StateManager.isPaused) return;
         
         const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
         const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
@@ -307,7 +308,7 @@ class GameController {
     }
     
     handleWheel(data) {
-        if (this.isPaused) return;
+        if (StateManager.isPaused) return;
         
         if (this.cameraModel) {
             const zoomFactor = 1 + RENDER.ZOOM_SPEED;
@@ -787,28 +788,28 @@ class GameController {
     
     // Démarrer la boucle de jeu
     start() {
-        this.isRunning = true;
-        this.lastTimestamp = performance.now();
+        StateManager.start();
+        TimeManager.init();
+        ScoreManager.reset();
         requestAnimationFrame(this.gameLoop.bind(this));
     }
     
     // Mettre le jeu en pause
     togglePause() {
-        this.isPaused = !this.isPaused;
+        StateManager.togglePause();
     }
     
     // La boucle de jeu principale
     gameLoop(timestamp) {
-        if (!this.isRunning) return;
+        if (!StateManager.isRunning) return;
 
-        const deltaTime = (timestamp - this.lastTimestamp) / 1000; // Convertir en secondes
-        this.lastTimestamp = timestamp;
+        const deltaTime = TimeManager.update(timestamp);
 
         // Si le jeu est en pause, ne rien faire d'autre que de demander la prochaine frame
-        if (this.isPaused) {
+        if (StateManager.isPaused) {
             // Mettre à jour le rendu même en pause pour afficher le message "PAUSE"
             if (this.renderingController) {
-                this.renderingController.render(this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, [], this.totalCreditsEarned);
+                this.renderingController.render(this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, StateManager.isPaused, this.cameraModel, [], ScoreManager.get());
             }
             requestAnimationFrame(this.gameLoop.bind(this));
             return;
@@ -884,10 +885,10 @@ class GameController {
                 this.rocketModel,
                 this.universeModel,
                 this.particleSystemModel,
-                this.isPaused,
+                StateManager.isPaused,
                 this.cameraModel,
                 activeMissions, // Passer les missions actives récupérées
-                this.totalCreditsEarned // Passer les crédits
+                ScoreManager.get() // Passer les crédits
             );
         }
 
@@ -917,8 +918,6 @@ class GameController {
             this.rocketModel.reset();
             // Réinitialiser le cargo (VIDE initialement)
             this.rocketModel.cargo = new RocketCargo(); 
-            // Réinitialiser les crédits à 10
-            this.totalCreditsEarned = 10;
 
             // --- Repositionner la fusée sur Terre ---            
             const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
@@ -963,9 +962,10 @@ class GameController {
         }
 
         // Réinitialiser le temps et l'état de pause
-        this.lastTimestamp = performance.now();
-        this.elapsedTime = 0;
-        this.isPaused = false;
+        // this.lastTimestamp = performance.now();
+        // this.elapsedTime = 0;
+        TimeManager.reset();
+        StateManager.resume();
 
         // --- Nettoyer la trace et ajouter le premier point --- 
         if (this.traceView) {
@@ -996,11 +996,12 @@ class GameController {
 
         console.log("Fusée réinitialisée.");
         this._lastRocketDestroyed = false;
+        ScoreManager.reset();
     }
     
     // Nettoyer les ressources
     cleanup() {
-        this.isRunning = false;
+        StateManager.stop();
         
         // Désabonner des événements
         if (this.eventBus) {
@@ -1190,8 +1191,8 @@ class GameController {
                 console.log(`%c[GameController] ${completedMissions.length} mission(s) complétée(s) !`, 'color: lightgreen;');
                 completedMissions.forEach(mission => {
                     // Ajouter les récompenses au total
-                    this.totalCreditsEarned += mission.reward;
-                    console.log(`%c[GameController] +${mission.reward} crédits gagnés ! Total: ${this.totalCreditsEarned}`, 'color: gold;');
+                    ScoreManager.add(mission.reward);
+                    console.log(`%c[GameController] +${mission.reward} crédits gagnés ! Total: ${ScoreManager.get()}`,'color: gold;');
                     // Log déchargement du cargo
                     console.log(`%c[GameController] Cargo déchargé pour la mission ${mission.id}`, 'color: orange;');
                     // Émettre les événements de succès (si nécessaire pour l'UI ou autre)
@@ -1252,7 +1253,7 @@ class GameController {
 
     handleJoystickAxisChanged(data) {
         // Cet événement n'est déclenché qu'une fois lorsque l'axe change d'état (0 -> valeur ou valeur -> 0)
-        if (!this.rocketModel || this.isPaused) return;
+        if (!this.rocketModel || StateManager.isPaused) return;
 
         const axisThreshold = this.inputController ? this.inputController.axisThreshold : 0.1;
 
@@ -1295,7 +1296,7 @@ class GameController {
     
     // NOUVELLE MÉTHODE : Gère les axes maintenus
     handleJoystickAxisHeld(data) {
-         if (!this.cameraModel || this.isPaused) return;
+         if (!this.cameraModel || StateManager.isPaused) return;
          
          switch(data.action) {
              case 'zoomAxis': // Mappé à l'axe 3
@@ -1341,7 +1342,7 @@ class GameController {
     }
 
     handleJoystickButtonDown(data) {
-        if (!this.rocketModel || this.isPaused) return;
+        if (!this.rocketModel || StateManager.isPaused) return;
 
         switch (data.action) {
             case 'boost': 

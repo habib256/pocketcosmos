@@ -10,9 +10,9 @@ class ThrusterPhysics {
         this.assistedAngularDamping = this.PHYSICS.ASSISTED_CONTROLS.ASSISTED_ANGULAR_DAMPING;
         this.rotationStabilityFactor = this.PHYSICS.ASSISTED_CONTROLS.ROTATION_STABILITY_FACTOR;
 
-        // Son du propulseur principal
-        this.mainThrusterSound = null;
-        this.mainThrusterSoundPlaying = false;
+        // Son du propulseur principal (délégué à AudioManager)
+        // this.mainThrusterSound = null;
+        // this.mainThrusterSoundPlaying = false;
 
         this._lastThrustCalculation = null;
     }
@@ -175,30 +175,12 @@ class ThrusterPhysics {
 
     // Jouer le son du propulseur principal
     playMainThrusterSound() {
-        try {
-            if (!this.mainThrusterSound) {
-                this.mainThrusterSound = new Audio('assets/sound/rocketthrustmaxx.mp3');
-                this.mainThrusterSound.loop = true;
-                this.mainThrusterSound.volume = 0.7;
-            }
-            if (!this.mainThrusterSoundPlaying) {
-                this.mainThrusterSound.play().catch(error => {
-                    console.error("Erreur lors de la lecture du son du propulseur principal:", error);
-                });
-                this.mainThrusterSoundPlaying = true;
-            }
-        } catch (error) {
-            console.error("Erreur lors de la création/lecture du son du propulseur principal:", error);
-        }
+        AudioManager.play('mainThruster', 'assets/sound/rocketthrustmaxx.mp3', { loop: true, volume: 0.7 });
     }
 
     // Arrêter le son du propulseur principal
     stopMainThrusterSound() {
-        if (this.mainThrusterSoundPlaying && this.mainThrusterSound) {
-            this.mainThrusterSound.pause();
-            this.mainThrusterSound.currentTime = 0;
-            this.mainThrusterSoundPlaying = false;
-        }
+        AudioManager.stop('mainThruster');
     }
 
     // Activer/désactiver les contrôles assistés

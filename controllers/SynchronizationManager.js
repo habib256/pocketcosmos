@@ -81,7 +81,7 @@ class SynchronizationManager {
             if (landedOnModel) {
                 const mainThrusterPower = rocketModel.thrusters.main.power;
                 // Définir un seuil clair pour le décollage
-                const TAKEOFF_THRUST_THRESHOLD = 50; // Ex: 50% de puissance
+                const TAKEOFF_THRUST_THRESHOLD = 0; // Décollage dès qu'il y a de la poussée
                 const isTryingToLiftOff = mainThrusterPower > TAKEOFF_THRUST_THRESHOLD;
 
                 if (isTryingToLiftOff) {
@@ -256,17 +256,10 @@ class SynchronizationManager {
         if (rocketModel.isLanded) {
             // Si la vérification montre qu'on n'est PLUS posé sur AUCUN corps
             if (!isNowConsideredLanded) {
-                 // Vérifier si ce n'est pas dû à une tentative de décollage en cours
-                 if (rocketModel.thrusters.main.power <= 50) {
-                     console.log(`État de décollage confirmé (périodique) de ${rocketModel.landedOn}`);
-                     rocketModel.isLanded = false;
-                     rocketModel.landedOn = null;
-                     rocketModel.relativePosition = null;
-                 } else {
-                     // Décollage en cours, l'état a probablement déjà été mis à jour par handleLanded...
-                     // Ne rien faire ici pour éviter conflit.
-                 }
-            // Si la vérification montre qu'on est posé, mais sur un AUTRE corps (très improbable, mais gérons le cas)
+                console.log(`État de décollage confirmé (périodique) de ${rocketModel.landedOn}`);
+                rocketModel.isLanded = false;
+                rocketModel.landedOn = null;
+                rocketModel.relativePosition = null;
             } else if (currentLandedOnBody !== rocketModel.landedOn) {
                  console.warn(`Changement de corps d'atterrissage détecté (périodique): ${rocketModel.landedOn} -> ${currentLandedOnBody}`);
                  rocketModel.landedOn = currentLandedOnBody;

@@ -126,17 +126,22 @@ class RocketModel {
     }
     
     setThrusterPower(thrusterName, power) {
+        // Log de debug pour chaque changement de puissance de propulseur
+        const before = this.thrusters[thrusterName] ? this.thrusters[thrusterName].power : undefined;
         // Si plus de carburant ou fusée détruite, aucun thruster ne doit fonctionner
         if (this.fuel <= 0 || this.isDestroyed) {
             if (this.thrusters[thrusterName]) {
                 this.thrusters[thrusterName].power = 0;
             }
+            console.log(`[RocketModel] setThrusterPower: ${thrusterName}, demandé: ${power}, appliqué: 0, fuel: ${this.fuel}, isDestroyed: ${this.isDestroyed}, isLanded: ${this.isLanded}`);
             return;
         }
         if (this.thrusters[thrusterName]) {
             // Limiter la puissance entre 0 et la puissance maximale du propulseur
             const maxPower = this.thrusters[thrusterName].maxPower;
-            this.thrusters[thrusterName].power = Math.max(0, Math.min(maxPower, power));
+            const applied = Math.max(0, Math.min(maxPower, power));
+            this.thrusters[thrusterName].power = applied;
+            console.log(`[RocketModel] setThrusterPower: ${thrusterName}, demandé: ${power}, appliqué: ${applied}, fuel: ${this.fuel}, isDestroyed: ${this.isDestroyed}, isLanded: ${this.isLanded}`);
         }
     }
     
