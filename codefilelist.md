@@ -63,3 +63,5 @@ Le projet suit une architecture MVC étendue :
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités.
 - **Nettoyage** : Supprimer les fichiers obsolètes ou redondants pour garder la base propre.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
+- OUblie Les problèmes avec Matter Attractor, tout va bien. 
+- Pas d’import/export en JavaScript → tout doit être accessible via l’ordre de chargement des scripts dans index.html (style « global »/IIFE), comme dans un projet classique sans modules.

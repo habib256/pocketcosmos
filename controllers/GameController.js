@@ -1,4 +1,5 @@
 // import missionManager from './MissionManager.js'; // Supprimer cette ligne
+// import AIController from './AIController.js';
 
 class GameController {
     constructor(eventBus, missionManager) {
@@ -24,7 +25,7 @@ class GameController {
         this.physicsController = null;
         this.particleController = null;
         this.renderingController = null;
-        this.rocketAgent = null;
+        this.aiController = null; // Remplace rocketAgent
         
         // État du jeu
         this.isRunning = false;
@@ -98,6 +99,9 @@ class GameController {
         }
 
         this._lastRocketDestroyed = false;
+
+        // Instanciation de l'AIController
+        this.aiController = new AIController(this.eventBus);
     }
     
     // S'abonner aux événements de l'EventBus
@@ -554,7 +558,7 @@ class GameController {
     setControllers(controllers) {
         this.inputController = controllers.inputController;
         this.renderingController = controllers.renderingController;
-        this.rocketAgent = controllers.rocketAgent;
+        this.aiController = controllers.aiController;
     }
     
     // Configurer les modèles
@@ -846,8 +850,8 @@ class GameController {
         }
 
         // Mise à jour de l'agent IA (si actif)
-        if (this.rocketAgent && this.rocketAgent.isActive) {
-            this.rocketAgent.update(deltaTime);
+        if (this.aiController && this.aiController.isActive) {
+            this.aiController.update(deltaTime);
         }
 
         // Mise à jour de la trace
@@ -1118,7 +1122,7 @@ class GameController {
 
     // Méthode pour activer/désactiver le contrôle par IA
     toggleAIControl() {
-        if (!this.rocketAgent) return;
+        if (!this.aiController) return;
         
         // Émettre l'événement pour activer/désactiver l'agent
         this.eventBus.emit('TOGGLE_AI_CONTROL', {});

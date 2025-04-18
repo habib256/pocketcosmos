@@ -171,7 +171,7 @@ class UniverseView {
 
     // Ajoute une méthode de rendu principale si elle n'existe pas déjà
     render(ctx, camera, physicsController) {
-        console.log('[DEBUG] UniverseView.render appelé, physicsController:', !!physicsController);
+       // console.log('[DEBUG] UniverseView.render appelé, physicsController:', !!physicsController);
         this.renderBackground(ctx, camera);
         // Les autres appels de rendu (étoiles, corps célestes, etc.) doivent être faits ici dans l'ordre voulu
     }

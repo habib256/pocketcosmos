@@ -264,6 +264,10 @@ class InputController {
             if (action === 'toggleGravityField') {
                 this.eventBus.emit('toggleGravityField');
             }
+            // Ajout : toggleAI
+            if (action === 'toggleAI') {
+                this.eventBus.emit('TOGGLE_AI_CONTROL');
+            }
         }
     }
     
