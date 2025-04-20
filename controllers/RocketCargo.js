@@ -38,7 +38,7 @@ class RocketCargo {
 
     /**
      * Ajoute un élément à la cargaison, en respectant la capacité maximale.
-     * @param {string} type - Type de cargo (ex: "Fuel", "Supplies")
+     * @param {string} type - Type de cargo (ex: "🛢️", "🔧", "🍎")
      * @param {number} quantity - Quantité à ajouter
      * @returns {boolean} - True si l'ajout (partiel ou total) a réussi, false si impossible (déjà plein).
      */

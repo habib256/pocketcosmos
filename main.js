@@ -117,6 +117,10 @@ function showInstructions() {
         document.body.removeChild(instructions);
         // Jouer le son de compte à rebours après avoir fermé les instructions
         playCountdownSound();
+        // Passer à l'état PLAYING
+        if (gameController && gameController.stateManager) {
+            gameController.stateManager.setState(StateManager.STATES.PLAYING);
+        }
     };
     instructions.appendChild(closeButton);
     document.body.appendChild(instructions);

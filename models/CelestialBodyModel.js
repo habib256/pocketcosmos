@@ -31,6 +31,10 @@ class CelestialBodyModel {
         // Caractéristiques supplémentaires (généralisées)
         this.satellites = []; // Peut toujours contenir des satellites si nécessaire pour la logique du jeu
         // La propriété 'moon' est supprimée
+        
+        // Points cibles pour les missions (ex: points d'atterrissage ou de passage)
+        // Chaque point est un objet: { id: string, angle: number, missionId: string }
+        this.targetPoints = []; 
     }
     
     setVelocity(vx, vy) {
