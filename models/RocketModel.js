@@ -389,7 +389,7 @@ class RocketModel {
         */
 
         // --- Gérer les corps mobiles (en orbite) --- //
-        console.log(`[Debug Orbit Follow] Updating for ${this.attachedTo || this.landedOn} (${celestialBody?.name}). Body Angle: ${celestialBody?.currentOrbitAngle}, Relative Orbital Angle: ${this.relativePosition?.angleRelatifOrbital}`);
+        //console.log(`[Debug Orbit Follow] Updating for ${this.attachedTo || this.landedOn} (${celestialBody?.name}). Body Angle: ${celestialBody?.currentOrbitAngle}, Relative Orbital Angle: ${this.relativePosition?.angleRelatifOrbital}`);
 
         if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
             // Recalculer l'angle absolu basé sur l'orbite actuelle du corps et l'angle relatif enregistré
