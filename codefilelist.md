@@ -8,13 +8,42 @@
 │   ├── image/        # Images (fusée, planètes, etc.)
 │   └── screenshots/  # Captures d'écran du jeu
 ├── controllers/      # Logique de contrôle, gestion des états et interactions
-├── models/           # Représentation des données et de l'état (fusée, univers, etc.)
+│   ├── BodyFactory.js
+│   ├── CollisionHandler.js
+│   ├── EventBus.js
+│   ├── GameController.js
+│   ├── InputController.js
+│   ├── MissionManager.js
+│   ├── ParticleController.js
+│   ├── PhysicsController.js
+│   ├── PhysicsVectors.js
+│   ├── RenderingController.js
+│   ├── RocketAgent.js
+│   ├── RocketCargo.js
+│   ├── SynchronizationManager.js
+│   └── ThrusterPhysics.js
+├── models/           # Représentation des données et de l'état
+│   ├── CameraModel.js
+│   ├── CelestialBodyModel.js
+│   ├── ParticleModel.js
+│   ├── ParticleSystemModel.js
+│   ├── RocketModel.js
+│   └── UniverseModel.js
 ├── views/            # Rendu visuel des modèles sur le canvas
+│   ├── CelestialBodyView.js
+│   ├── ParticleView.js
+│   ├── RocketView.js
+│   ├── TraceView.js
+│   ├── UniverseView.js
+│   ├── VectorsView.js
+│   └── UIView.js
 ├── constants.js      # Constantes globales (physique, rendu, configuration fusée)
 ├── EventTypes.js     # Centralisation des clés d'événements de l'EventBus
-├── main.js           # Point d'entrée : Initialisation de l'application et des composants
 ├── index.html        # Structure HTML, chargement des librairies et scripts
+├── main.js           # Point d'entrée : Initialisation de l'application et des composants
 ├── README.md         # Informations générales sur le projet
+├── .gitignore        # Fichiers et dossiers ignorés par Git
+├── LICENSE           # Licence du projet
 └── favicon.*         # Icônes du site
 ```
 
@@ -66,76 +95,34 @@ Le projet suit une architecture MVC étendue :
 - **GameController.js** : Boucle de jeu, gestion des états principaux.
 - **RenderingController.js** : Rendu global, gestion du toggle des vecteurs.
 
-## Notes Importantes
-- **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre d'inclusion est crucial.
-- **Calculs physiques** : !! L'accélération F/m (somme des forces sur la fusée divisée par sa masse) est calculée indépendamment de Matter.js !! Le calcul des forces de gravité est ensuite envoyé à matter-attractor. Et c'est MatterJS qui calcule l'état physique suivant pour cette simulation. MatterJS doit être au centre de la détection des collisions entre objets comme la fusée et d'autres objets spatiaux de petites tailles. Pour les planètes et les lunes, Les collisions avec la fusée sont toujours gérée par MatterJS mais les états détruits et posés sont gérés par le fichier SynchronizationManager.js
-- **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus doit servir pour découpler les système MVC du système IA. Il y a encore pas mal de boulot à faire dans cette direction.
-- **Nettoyage** : Supprimer les fichiers obsolètes ou redondants pour garder la base propre dès que possible.
+## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
+- **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre d'inclusion est crucial. Il ne doit pas y avoir d'import ES6
+- **Calculs physiques** : !! L'accélération F/m est calculée dans `PhysicsController` (méthode `calculateGravityAccelerationAt`) avant l'appel à `Engine.update()` de Matter.js. Le plugin `matter-attractors` gère ensuite l'application de la gravité. Matter.js reste responsable des collisions et du mouvement. Pour les planètes et les lunes, les collisions sont gérées par Matter.js tandis que `SynchronizationManager.js` traite les états ou la fusée est détruite ou posée.
+- **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus sert pour découpler le système MVC afin de l'interfacer avec le système IA. Surtout pas d'imports ES6 on utilise window.EVENTS dans tous les contrôleurs et ailleurs pour accéder à l'EventBus.
+- **Nettoyage** : Supprimer les fichiers obsolètes ou redondants dès que possible pour garder la base de code la plus propre possible.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
 
-## Gestion des événements très hétérogène
-Mélange de noms d'événements :
-INPUT_KEYDOWN vs toggleGravityField (pas de préfixe DOMAINE_).
-Certains événements émis directement depuis InputController plutôt que passés par un adaptateur.
-→ Créez un fichier EventTypes.js qui regroupe tous vos clés d'événements. Par exemple :
-```js
-export const EVENTS = {
-  INPUT: {
-    KEYDOWN: 'INPUT_KEYDOWN',
-    KEYUP: 'INPUT_KEYUP',
-    KEYPRESS: 'INPUT_KEYPRESS',
-    WHEEL: 'INPUT_WHEEL',
-    MOUSEDOWN: 'INPUT_MOUSEDOWN',
-    MOUSEMOVE: 'INPUT_MOUSEMOVE',
-    MOUSEUP: 'INPUT_MOUSEUP',
-    TOUCHSTART: 'INPUT_TOUCHSTART',
-    TOUCHMOVE: 'INPUT_TOUCHMOVE',
-    TOUCHEND: 'INPUT_TOUCHEND',
-    GAMEPAD_CONNECTED: 'INPUT_GAMEPAD_CONNECTED',
-    GAMEPAD_DISCONNECTED: 'INPUT_GAMEPAD_DISCONNECTED',
-    JOYSTICK_AXIS_CHANGED: 'INPUT_JOYSTICK_AXIS_CHANGED',
-    JOYSTICK_AXIS_HELD: 'INPUT_JOYSTICK_AXIS_HELD',
-    JOYSTICK_AXIS_RELEASED: 'INPUT_JOYSTICK_AXIS_RELEASED',
-    JOYSTICK_BUTTON_DOWN: 'INPUT_JOYSTICK_BUTTON_DOWN',
-    JOYSTICK_BUTTON_UP: 'INPUT_JOYSTICK_BUTTON_UP',
-    KEYMAP_CHANGED: 'INPUT_KEYMAP_CHANGED',
-    KEYMAP_RESET: 'INPUT_KEYMAP_RESET'
-  },
-  PHYSICS: {
-    UPDATED: 'PHYSICS_UPDATED',
-    COLLISION: 'PHYSICS_COLLISION'
-  },
-  RENDER: {
-    UPDATE: 'RENDER_UPDATE',
-    TOGGLE_VECTORS: 'RENDER_TOGGLE_VECTORS',
-    TOGGLE_GRAVITY_FIELD: 'RENDER_TOGGLE_GRAVITY_FIELD'
-  },
-  SIMULATION: {
-    UPDATED: 'SIMULATION_UPDATED'
-  },
-  UI: {
-    UPDATE: 'UI_UPDATE',
-    CREDITS_UPDATED: 'UI_UPDATE_CREDITS'
-  },
-  ROCKET: {
-    STATE_UPDATED: 'ROCKET_STATE_UPDATED',
-    LANDED: 'ROCKET_LANDED'
-  },
-  UNIVERSE: {
-    STATE_UPDATED: 'UNIVERSE_STATE_UPDATED'
-  },
-  PARTICLE_SYSTEM: {
-    UPDATED: 'PARTICLE_SYSTEM_UPDATED'
-  },
-  SYSTEM: {
-    CONTROLLERS_SETUP: 'CONTROLLERS_SETUP'
-  },
-  MISSION: {
-    FAILED: 'MISSION_FAILED',
-    COMPLETED: 'MISSION_COMPLETED'
-  },
-  AI: {
-    TOGGLE: 'TOGGLE_AI_CONTROL'
-  }
-};
-```
+
+
+
+////////  PROCHAINES ETAPES ///////
+
+Découplage et patterns
+Éviter les scripts "monolithiques" : chaque controller un peu trop gros (plus de 600 lignes) (GameController.js ...) devrait être refactorisé
+
+Préférer les événements Matter.js (engine.on('beforeUpdate'), world.on('collisionStart')) pour déclencher la synchronisation et la gestion des collisions, plutôt que de poller ou de vérifier manuellement dans SynchronizationManager.
+
+Moteur physique & optimisation
+Déléguer au plugin matter-attractors tout le calcul de gravité : ajouter les attracteurs (planètes, lunes) comme bodies statiques dotés de la propriété plugin.attractors.
+
+En cas de nombreux corps : envisager une structure de type Barnes-Hut pour le calcul de champ gravitationnel
+
+Performance Canvas & UX
+S'assurer d'utiliser requestAnimationFrame pour le rendu, et ne pas mélanger avec setInterval.
+Regrouper au maximum les appels de dessin sur le canvas (batching).
+Pour la vue trace/particules, recycler les objets (object pooling) plutôt que de créer/supprimer à chaque frame.
+Extension & évolutivité
+Si vous envisagez d'étendre la logique IA (RocketAgent), isoler l'environnement de simulation dans un module "headless" pour pouvoir faire tourner de l'entraînement sans affichage.
+Prévoir un "GamepadController" dédié pour centraliser lecture et mapping, plutôt que de tester ad hoc sur https://hardwaretester.com.
+
+

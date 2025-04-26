@@ -349,6 +349,15 @@ class GameController {
                 gravityVector: this.calculateGravityVector(),
                 thrustVectors: this.calculateThrustVectors(),
                 totalThrustVector: this.calculateTotalThrustVector(),
+                // Accélération totale = accélération gravitationnelle + (force de poussée / masse)
+                accelerationVector: (() => {
+                    const grav = this.calculateGravityVector() || { x: 0, y: 0 };
+                    const thrust = this.calculateTotalThrustVector() || { x: 0, y: 0 };
+                    return {
+                        x: grav.x + thrust.x / this.rocketModel.mass,
+                        y: grav.y + thrust.y / this.rocketModel.mass
+                    };
+                })(),
                 lunarAttraction: this.calculateLunarAttractionVector(),
                 earth: {
                     distance: this.calculateEarthDistance(),
@@ -770,8 +779,8 @@ class GameController {
         
         this.particleController = new ParticleController(this.particleSystemModel);
         
-        // Initialiser les événements
-        this.eventBus.emit(EVENTS.SYSTEM.CONTROLLERS_SETUP, {});
+        // Initialiser les événements et partager physicsController
+        this.eventBus.emit(EVENTS.SYSTEM.CONTROLLERS_SETUP, { physicsController: this.physicsController });
     }
     
     // Démarrer la boucle de jeu

@@ -55,6 +55,11 @@ class RenderingController {
                 }
             })
         );
+        window.controllerContainer.track(
+            this.eventBus.subscribe(EVENTS.SYSTEM.CONTROLLERS_SETUP, ({ physicsController }) => {
+                this.physicsController = physicsController;
+            })
+        );
     }
     
     // Initialiser les vues
@@ -205,9 +210,9 @@ class RenderingController {
         }
         // Afficher le champ de gravité selon le mode
         if (this.vectorsView && this.gravityFieldMode === 1) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'arrows' });
+            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'arrows', physicsController: this.physicsController });
         } else if (this.vectorsView && this.gravityFieldMode === 2) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'lines' });
+            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'lines', physicsController: this.physicsController });
         }
         
         // Rendre l'interface utilisateur

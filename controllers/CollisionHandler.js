@@ -13,7 +13,7 @@ class CollisionHandler {
 
         // --- Ajout pour détection mission accomplie ---
         if (this.physicsController.eventBus) {
-            this.physicsController.eventBus.subscribe('MISSION_COMPLETED', () => {
+            this.physicsController.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
                 // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
                 const gameController = window.gameController;
                 if (gameController && gameController.particleController && gameController.canvas) {

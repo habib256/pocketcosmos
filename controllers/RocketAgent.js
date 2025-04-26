@@ -108,11 +108,11 @@ class RocketAgent {
     
     // S'abonner aux événements pertinents
     subscribeToEvents() {
-        this.eventBus.subscribe('ROCKET_STATE_UPDATED', (data) => this.updateRocketData(data));
-        this.eventBus.subscribe('TOGGLE_AI_CONTROL', () => this.toggleActive());
-        this.eventBus.subscribe('TOGGLE_TRAINING', () => this.toggleTraining());
-        this.eventBus.subscribe('ROCKET_CRASHED', () => this.handleCrash());
-        this.eventBus.subscribe('MISSION_ACCOMPLISHED', () => this.handleSuccess());
+        this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data));
+        this.eventBus.subscribe(window.EVENTS.AI.TOGGLE, () => this.toggleActive());
+        this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining());
+        this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash());
+        this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess());
     }
     
     // Activer/désactiver l'agent
@@ -121,7 +121,7 @@ class RocketAgent {
         console.log(`Agent IA ${this.isActive ? 'activé' : 'désactivé'}`);
         
         // Publier l'état de l'agent
-        this.eventBus.emit('AI_CONTROL_CHANGED', { active: this.isActive });
+        this.eventBus.emit(window.EVENTS.AI.CONTROL_CHANGED, { active: this.isActive });
         
         // Réinitialiser l'état si l'agent est activé
         if (this.isActive) {
@@ -135,7 +135,7 @@ class RocketAgent {
     toggleTraining() {
         this.isTraining = !this.isTraining;
         console.log(`Entraînement ${this.isTraining ? 'activé' : 'désactivé'}`);
-        this.eventBus.emit('TRAINING_CHANGED', { active: this.isTraining });
+        this.eventBus.emit(window.EVENTS.AI.TRAINING_CHANGED, { active: this.isTraining });
     }
     
     // Mettre à jour les données de l'état de la fusée
@@ -546,10 +546,10 @@ class RocketAgent {
         if (!this.isActive) return;
         
         // Émettre l'action comme si elle venait du contrôleur d'entrée
-        this.eventBus.emit('INPUT_KEYDOWN', { action, key: 'AI' });
+        this.eventBus.emit(window.EVENTS.INPUT.KEYDOWN, { action, key: 'AI' });
         
         // Émettre aussi un événement spécifique à l'IA pour affichage/débogage
-        this.eventBus.emit('AI_CONTROL_ACTION', { action });
+        this.eventBus.emit(window.EVENTS.AI.CONTROL_ACTION, { action });
     }
     
     // Ajouter la méthode update appelée par GameController pour éviter l'erreur

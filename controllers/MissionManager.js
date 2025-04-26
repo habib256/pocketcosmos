@@ -41,7 +41,7 @@ class MissionManager {
             return;
         }
         // this.eventBus.subscribe('MISSION_SUCCESS', (data) => this.completeMission(data)); // SUPPRIMÉ
-        this.eventBus.subscribe('MISSION_FAILED', (data) => this.failMission(data));
+        this.eventBus.subscribe(EVENTS.MISSION.FAILED, data => this.failMission(data));
     }
 
     /**
@@ -157,7 +157,7 @@ class MissionManager {
             // TODO: Remettre la cargaison à zéro (nécessite une référence à RocketCargo)
             
             // Optionnel: Publier un événement pour l'UI ou autre logique
-            this.eventBus.emit('MISSION_ABORTED', { mission });
+            this.eventBus.emit(EVENTS.MISSION.FAILED, { mission });
         }
     }
 }
