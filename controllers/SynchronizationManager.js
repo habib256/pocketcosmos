@@ -121,6 +121,7 @@ class SynchronizationManager {
                             console.log(`[SyncManager] Position relative sur ${landedOnModel.name} calculée/recalculée.`);
                         }
                         // Toujours mettre à jour la position absolue du MODÈLE en utilisant la position actuelle du parent
+                        console.log(`[SyncManager] Calling updateAbsolutePosition for ${rocketModel.landedOn}. Model:`, landedOnModel);
                         rocketModel.updateAbsolutePosition(landedOnModel);
                         // Forcer la position PHYSIQUE à correspondre au modèle mis à jour
                         this.Body.setPosition(rocketBody, rocketModel.position);

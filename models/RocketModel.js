@@ -307,8 +307,14 @@ class RocketModel {
     updateRelativePosition(celestialBody) {
         if (!celestialBody) return;
 
+        // AJOUT LOG DE DEBUG
+        console.log(`[updateRelativePosition] Called for ${celestialBody.name}. Current landedOn: ${this.landedOn}, attachedTo: ${this.attachedTo}`);
+
         // Vérifie si la fusée est liée à CE corps céleste (soit par atterrissage, soit par destruction dessus)
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
+
+        // AJOUT LOG DE DEBUG
+        console.log(`[updateRelativePosition] isRelatedToBody: ${isRelatedToBody}`);
 
         if (isRelatedToBody) {
             const dx = this.position.x - celestialBody.position.x;
@@ -322,12 +328,16 @@ class RocketModel {
             // Calculer l'angle relatif par rapport à l'orbite du corps céleste
             // S'assurer que currentOrbitAngle existe et est un nombre
             let angleRelatifOrbital = angleToBody;
+            // AJOUT LOG DE DEBUG
+            console.log(`[updateRelativePosition] Calculating relative angle. Body Angle: ${celestialBody.currentOrbitAngle}`);
             if (typeof celestialBody.currentOrbitAngle === 'number') {
                 angleRelatifOrbital = angleToBody - celestialBody.currentOrbitAngle;
                 // Normaliser l'angle entre -PI et PI si nécessaire (optionnel)
                 // angleRelatifOrbital = (angleRelatifOrbital + Math.PI * 3) % (Math.PI * 2) - Math.PI;
             }
 
+            // AJOUT LOG DE DEBUG
+            console.log("[updateRelativePosition] Assigning this.relativePosition");
             this.relativePosition = {
                 x: dx,
                 y: dy,
@@ -357,14 +367,15 @@ class RocketModel {
      * @param {object} celestialBody - Le modèle du corps céleste auquel la fusée est attachée.
      */
     updateAbsolutePosition(celestialBody) {
-        // Vérifier si la fusée est attachée à CE corps céleste et si les données relatives existent
-        if (!celestialBody || !this.relativePosition || this.attachedTo !== celestialBody.name) {
+        // Vérifier si la fusée est attachée ou posée sur CE corps céleste et si les données relatives existent
+        if (!celestialBody || !this.relativePosition || (this.attachedTo !== celestialBody.name && this.landedOn !== celestialBody.name)) {
             return;
         }
 
         // Sauvegarder l'angle actuel au cas où (surtout pour les débris)
         const originalAngle = this.angle;
 
+        /* COMMENTED OUT: Bloc Terre Fixe - semble indésirable si Terre orbite
         // --- Gérer le cas spécial Terre "fixe" --- //
         if (this.relativePosition.isFixedOnEarth && celestialBody.name === 'Terre') {
             // Si la Terre ne bouge pas (ou si on veut un point fixe dessus),
@@ -375,8 +386,11 @@ class RocketModel {
             // this.angle = this.relativePosition.angle; // L'angle initial est conservé
             return; // Sortir tôt
         }
+        */
 
         // --- Gérer les corps mobiles (en orbite) --- //
+        console.log(`[Debug Orbit Follow] Updating for ${this.attachedTo || this.landedOn} (${celestialBody?.name}). Body Angle: ${celestialBody?.currentOrbitAngle}, Relative Orbital Angle: ${this.relativePosition?.angleRelatifOrbital}`);
+
         if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
             // Recalculer l'angle absolu basé sur l'orbite actuelle du corps et l'angle relatif enregistré
             const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
