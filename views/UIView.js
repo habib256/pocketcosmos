@@ -352,38 +352,53 @@ class UIView {
 
         ctx.save();
         const boxWidth = 125;
-        const boxPadding = 8;
-        const lineHeight = 16; // Hauteur de ligne de base
+        const boxPadding = 6 ;
+        const lineHeight = 15; // Hauteur de ligne de base
         const boxX = canvas.width - boxWidth - 15;
         const boxY = 15;
         let currentY = boxY + boxPadding; // Position Y courante pour dessiner
+        let sectionStartY = currentY;
 
         // --- Section Crédits ---
-        const creditsStartY = currentY;
+        sectionStartY = currentY;
+        // Note: _renderCreditsSection n'a pas besoin de retourner currentY car elle est simple
         this._renderCreditsSection(ctx, boxX, boxPadding, currentY, lineHeight, totalCreditsEarned);
-        currentY += lineHeight * 1.8; // Espace après crédits
-        const creditsEndY = currentY - lineHeight * 0.5;
+        currentY += lineHeight * 1.8; // Espace après crédits (fixe pour cette section)
+        let creditsEndY = currentY - lineHeight * 0.7;
+        this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding,1, this.colors.frameBorder, 3, sectionStartY, creditsEndY);
 
         // --- Section Missions ---
-        const missionsStartY = currentY;
-        currentY = this._renderMissionsSection(ctx, boxX, boxPadding, currentY, lineHeight, missions, rocketModel);
-        const missionsEndY = currentY - lineHeight * 0.5;
+        const missionsRenderNeeded = missions && missions.length > 0 || (rocketModel && rocketModel.isDestroyed);
+        if (missionsRenderNeeded) {
+            sectionStartY = currentY;
+            let missionsEndY = this._renderMissionsSection(ctx, boxX, boxPadding, currentY, lineHeight, missions, rocketModel);
+            // Ajouter un petit padding au bottom avant de dessiner le cadre
+            missionsEndY -= lineHeight * 0.2;
+             this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, sectionStartY, missionsEndY);
+             currentY = missionsEndY + lineHeight * 0.5; // Mettre à jour currentY pour la section suivante
+        }
 
         // --- Section Cargo ---
-        const cargoStartY = currentY;
-        currentY = this._renderCargoSection(ctx, boxX, boxPadding, currentY, lineHeight, rocketModel);
-        const cargoEndY = currentY - lineHeight * 0.3;
+        const cargoRenderNeeded = rocketModel && rocketModel.cargo && rocketModel.cargo.getCargoList().length > 0;
+        if (cargoRenderNeeded) {
+             sectionStartY = currentY;
+             let cargoEndY = this._renderCargoSection(ctx, boxX, boxPadding, currentY, lineHeight, rocketModel);
+             // Ajouter un petit padding au bottom avant de dessiner le cadre
+             cargoEndY -= lineHeight * 0.3;
+             this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, sectionStartY, cargoEndY);
+             currentY = cargoEndY + lineHeight * 0.3; // Mettre à jour currentY au cas où il y aurait d'autres sections
+        }
 
-        // --- Dessiner les cadres pour chaque section ---
-        this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, creditsStartY, creditsEndY);
-        // Ne dessiner le cadre Missions que s'il y a du contenu ou un statut à afficher
-        if (missions && missions.length > 0 || (rocketModel && rocketModel.isDestroyed)) {
-             this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, missionsStartY, missionsEndY);
-        }
-        // Ne dessiner le cadre Cargo que s'il y a du contenu
-        if (rocketModel && rocketModel.cargo && rocketModel.cargo.getCargoList().length > 0) {
-            this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, cargoStartY, cargoEndY);
-        }
+        // --- Dessiner les cadres pour chaque section --- (Déplacé DANS chaque section)
+        // this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, creditsStartY, creditsEndY);
+        // // Ne dessiner le cadre Missions que s'il y a du contenu ou un statut à afficher
+        // if (missions && missions.length > 0 || (rocketModel && rocketModel.isDestroyed)) {
+        //      this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, missionsStartY, missionsEndY);
+        // }
+        // // Ne dessiner le cadre Cargo que s'il y a du contenu
+        // if (rocketModel && rocketModel.cargo && rocketModel.cargo.getCargoList().length > 0) {
+        //     this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, cargoStartY, cargoEndY);
+        // }
 
         ctx.restore();
     }
@@ -486,24 +501,40 @@ class UIView {
         currentY += lineHeight * 1.3;
 
         const cargoList = rocketModel.cargo.getCargoList();
+        const iconsPerLine = 5; // Nombre d'icônes par ligne
+        const iconSpacing = 20; // Espacement horizontal entre les icônes
+        const iconStartX = boxX + boxPadding + 5;
+        const iconYIncrement = lineHeight * 1.1; // Espacement vertical entre les lignes d'icônes
+        let lastLineY = currentY; // Suivre le Y de la dernière ligne où une icône est dessinée
+
         cargoList.forEach(item => {
             const icon = this._getCargoIcon(item.type);
             if (icon) { // Affichage par icônes
-                const iconsPerLine = 5;
-                const totalIcons = item.quantity;
-                let linesNeeded = Math.ceil(totalIcons / iconsPerLine);
                 ctx.font = `14px ${this.fontFamily}`; // Taille pour icônes
-                for(let i=0; i<linesNeeded; i++){
-                     const iconsToShow = Math.min(iconsPerLine, totalIcons - (i * iconsPerLine));
-                     const cargoText = icon.repeat(iconsToShow);
-                     ctx.fillText(cargoText, boxX + boxPadding + 5, currentY);
-                     currentY += lineHeight * 1.1; // Espacement réduit pour les icônes
-                }
+                let iconCount = 0;
+                let currentLineX = iconStartX;
+                let currentLineY = currentY;
+
+                if (item.quantity > 0) {
+                    for (let i = 0; i < item.quantity; i++) {
+                        if (iconCount > 0 && iconCount % iconsPerLine === 0) { // Commence une nouvelle ligne
+                            iconCount = 0;
+                            currentLineX = iconStartX;
+                            lastLineY += iconYIncrement; // Met à jour le Y pour la nouvelle ligne
+                        }
+                        ctx.fillText(icon, currentLineX, lastLineY); // Dessine sur la ligne actuelle (potentiellement nouvelle)
+                        currentLineX += iconSpacing;
+                        iconCount++;
+                    }
+                    // Mettre à jour currentY pour la prochaine section ou item, en se basant sur la dernière ligne utilisée
+                    currentY = lastLineY + iconYIncrement; // Met à jour currentY pour être en dessous de la dernière ligne dessinée
+                } // Si item.quantity est 0, currentY reste inchangé pour cet item.
+
             } else { // Affichage texte pour les autres types
                 ctx.font = `12px ${this.fontFamily}`;
                 const cargoText = ` - ${item.type}: ${item.quantity}`;
                 ctx.fillText(cargoText, boxX + boxPadding, currentY);
-                currentY += lineHeight;
+                currentY += lineHeight; // Espacement normal pour le texte
             }
         });
          return currentY; // Retourne la position Y finale
