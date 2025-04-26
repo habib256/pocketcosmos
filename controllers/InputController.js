@@ -145,9 +145,9 @@ class InputController {
     // Méthode factorisée pour configurer les événements souris
     setupMouseEvents() {
         const mouseEvents = [
-            { name: 'mousedown', eventType: 'INPUT_MOUSEDOWN' },
-            { name: 'mousemove', eventType: 'INPUT_MOUSEMOVE' },
-            { name: 'mouseup', eventType: 'INPUT_MOUSEUP' }
+            { name: 'mousedown', eventType: EVENTS.INPUT.MOUSEDOWN },
+            { name: 'mousemove', eventType: EVENTS.INPUT.MOUSEMOVE },
+            { name: 'mouseup', eventType: EVENTS.INPUT.MOUSEUP }
         ];
         
         mouseEvents.forEach(event => {
@@ -166,24 +166,18 @@ class InputController {
         // Événements tactiles pour appareils mobiles avec passive: true pour de meilleures performances
         window.addEventListener('touchstart', (event) => {
             const touch = event.touches[0];
-            this.eventBus.emit('INPUT_TOUCHSTART', {
-                x: touch.clientX,
-                y: touch.clientY
-            });
+            this.eventBus.emit(EVENTS.INPUT.TOUCHSTART, { x: touch.clientX, y: touch.clientY });
             // Pas de preventDefault() pour permettre passive: true
         }, { passive: true });
         
         window.addEventListener('touchmove', (event) => {
             const touch = event.touches[0];
-            this.eventBus.emit('INPUT_TOUCHMOVE', {
-                x: touch.clientX,
-                y: touch.clientY
-            });
+            this.eventBus.emit(EVENTS.INPUT.TOUCHMOVE, { x: touch.clientX, y: touch.clientY });
             // Pas de preventDefault() pour permettre passive: true
         }, { passive: true });
         
         window.addEventListener('touchend', (event) => {
-            this.eventBus.emit('INPUT_TOUCHEND', {});
+            this.eventBus.emit(EVENTS.INPUT.TOUCHEND, {});
             // Pas de preventDefault() pour permettre passive: true
         }, { passive: true });
     }
@@ -220,7 +214,7 @@ class InputController {
         this.gamepad = gamepad;
         this.gamepadState.axes = Array(this.gamepad.axes.length).fill(0);
         this.gamepadState.buttons = Array(this.gamepad.buttons.length).fill({ pressed: false, value: 0 });
-        this.eventBus.emit('INPUT_GAMEPAD_CONNECTED', { id: this.gamepad.id });
+        this.eventBus.emit(EVENTS.INPUT.GAMEPAD_CONNECTED, { id: this.gamepad.id });
         this.noGamepadLogged = false;
     }
 
@@ -231,7 +225,7 @@ class InputController {
             this.gamepad = null;
             this.gamepadState.axes.fill(0);
             this.gamepadState.buttons.fill({ pressed: false, value: 0 });
-            this.eventBus.emit('INPUT_GAMEPAD_DISCONNECTED', { id: gamepadId });
+            this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: gamepadId });
             this.noGamepadLogged = false;
         }
     }
@@ -259,10 +253,10 @@ class InputController {
                 event.preventDefault();
             }
             // Émettre l'événement correspondant
-            this.eventBus.emit('INPUT_KEYDOWN', { action, key: event.key });
+            this.eventBus.emit(EVENTS.INPUT.KEYDOWN, { action, key: event.key });
             // Ajout : toggleGravityField
             if (action === 'toggleGravityField') {
-                this.eventBus.emit('toggleGravityField');
+                this.eventBus.emit(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD);
             }
         }
     }
@@ -280,7 +274,7 @@ class InputController {
             event.preventDefault();
             
             // Émettre l'événement correspondant
-            this.eventBus.emit('INPUT_KEYUP', { action, key: event.key });
+            this.eventBus.emit(EVENTS.INPUT.KEYUP, { action, key: event.key });
         }
     }
     
@@ -294,9 +288,9 @@ class InputController {
                     if (action === 'thrustForward' || action === 'thrustBackward' || 
                         action === 'rotateLeft' || action === 'rotateRight' || 
                         action === 'zoomIn' || action === 'zoomOut') {
-                        this.eventBus.emit('INPUT_KEYDOWN', { action, key });
+                        this.eventBus.emit(EVENTS.INPUT.KEYDOWN, { action, key });
                     } else if (action !== 'pauseGame') {
-                        this.eventBus.emit('INPUT_KEYPRESS', { action, key });
+                        this.eventBus.emit(EVENTS.INPUT.KEYPRESS, { action, key });
                         this.keys[key] = false;
                     }
                 }
@@ -323,7 +317,7 @@ class InputController {
                 if (adjustedValue !== adjustedPrevValue) {
                     this.gamepadState.axes[i] = value;
                     if (action) {
-                        this.eventBus.emit('INPUT_JOYSTICK_AXIS_CHANGED', {
+                        this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, {
                             action: action,
                             axis: i,
                             value: adjustedValue
@@ -334,7 +328,7 @@ class InputController {
                 // 2. Gérer l'événement MAINTENU (pour les axes mappés)
                 if (action && adjustedValue !== 0) {
                     currentHeldAxes[i] = true;
-                    this.eventBus.emit('INPUT_JOYSTICK_AXIS_HELD', {
+                    this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_HELD, {
                         action: action,
                         axis: i,
                         value: adjustedValue
@@ -346,7 +340,7 @@ class InputController {
                 if (this.heldAxes[axisIndex] && !currentHeldAxes[axisIndex]) {
                     const action = this.gamepadMap.axes[axisIndex];
                     if (action) {
-                        this.eventBus.emit('INPUT_JOYSTICK_AXIS_RELEASED', {
+                        this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, {
                             action: action,
                             axis: parseInt(axisIndex, 10)
                         });
@@ -364,8 +358,8 @@ class InputController {
                     this.gamepadState.buttons[i] = { pressed: button.pressed, value: button.value };
                     const action = this.gamepadMap.buttons[i];
                     if (action) {
-                        const eventName = button.pressed ? 'INPUT_JOYSTICK_BUTTON_DOWN' : 'INPUT_JOYSTICK_BUTTON_UP';
-                        this.eventBus.emit(eventName, {
+                        const eventType = button.pressed ? EVENTS.INPUT.JOYSTICK_BUTTON_DOWN : EVENTS.INPUT.JOYSTICK_BUTTON_UP;
+                        this.eventBus.emit(eventType, {
                             action: action,
                             button: i,
                             value: button.value
@@ -380,7 +374,7 @@ class InputController {
     
     // Gérer les événements de la souris
     handleWheel(event) {
-        this.eventBus.emit('INPUT_WHEEL', {
+        this.eventBus.emit(EVENTS.INPUT.WHEEL, {
             delta: event.deltaY
         });
     }
@@ -404,12 +398,12 @@ class InputController {
     // Configurer une nouvelle touche pour une action
     mapKey(key, action) {
         this.keyMap[key] = action;
-        this.eventBus.emit('INPUT_KEYMAP_CHANGED', { key, action });
+        this.eventBus.emit(EVENTS.INPUT.KEYMAP_CHANGED, { key, action });
     }
     
     // Réinitialiser la configuration des touches
     resetKeyMap() {
         this.keyMap = { ...InputController.DEFAULT_KEY_MAP };
-        this.eventBus.emit('INPUT_KEYMAP_RESET', {});
+        this.eventBus.emit(EVENTS.INPUT.KEYMAP_RESET, {});
     }
 } 

@@ -45,15 +45,15 @@ class RenderingController {
     }
     
     subscribeToEvents() {
-        this.eventBus.subscribe('ROCKET_STATE_UPDATED', (state) => {
+        this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (state) => {
             this.updateRocketState(state);
         });
         
-        this.eventBus.subscribe('UNIVERSE_STATE_UPDATED', (state) => {
+        this.eventBus.subscribe(EVENTS.UNIVERSE.STATE_UPDATED, (state) => {
             this.updateUniverseState(state);
         });
         
-        this.eventBus.subscribe('PARTICLE_SYSTEM_UPDATED', (state) => {
+        this.eventBus.subscribe(EVENTS.PARTICLE_SYSTEM.UPDATED, (state) => {
             this.updateParticleSystemState(state);
         });
     }
