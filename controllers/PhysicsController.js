@@ -170,9 +170,6 @@ class PhysicsController {
 
         // 7. Vérification périodique de l'état d'atterrissage
         this.synchronizationManager.checkRocketLandedStatusPeriodically(this.rocketModel, this.universeModel);
-
-        // 8. Calculer les exigences de poussée (pour le debug)
-        this.thrusterPhysics.calculateThrustRequirements(this.rocketModel, this.universeModel);
     }
 
     // Calculer la force gravitationnelle totale pour la visualisation (debug)

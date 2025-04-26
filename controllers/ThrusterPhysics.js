@@ -1,20 +1,18 @@
 class ThrusterPhysics {
     constructor(physicsController, Body, ROCKET, PHYSICS) {
         this.physicsController = physicsController; // Pour accéder à rocketModel, rocketBody, assistedControls etc.
-        this.Body = Body;
-        this.ROCKET = ROCKET;
-        this.PHYSICS = PHYSICS;
+        this.Body = Body; // Module Matter.Body pour appliquer forces/vitesses
+        this.ROCKET = ROCKET; // Constantes spécifiques à la fusée (poussée, fuel, etc.)
+        this.PHYSICS = PHYSICS; // Constantes physiques générales (gravité, multiplicateurs globaux, etc.)
 
-        // Contrôles assistés
+        // Paramètres pour les contrôles assistés (depuis constants.js)
         this.angularDamping = this.PHYSICS.ASSISTED_CONTROLS.NORMAL_ANGULAR_DAMPING;
         this.assistedAngularDamping = this.PHYSICS.ASSISTED_CONTROLS.ASSISTED_ANGULAR_DAMPING;
         this.rotationStabilityFactor = this.PHYSICS.ASSISTED_CONTROLS.ROTATION_STABILITY_FACTOR;
 
-        // Son du propulseur principal
+        // Gestion du son du propulseur principal
         this.mainThrusterSound = null;
         this.mainThrusterSoundPlaying = false;
-
-        this._lastThrustCalculation = null;
     }
 
     // Mettre à jour et appliquer toutes les forces des propulseurs
@@ -59,27 +57,37 @@ class ThrusterPhysics {
         // Calculer la force et la consommation de base
         switch (thrusterName) {
             case 'main':
-                thrustForce = this.ROCKET.MAIN_THRUST * (powerPercentage / 100) * 1.5 * this.PHYSICS.THRUST_MULTIPLIER;
+                // Force = Poussée de base * % puissance * Efficacité * Multiplicateur Global
+                thrustForce = this.ROCKET.MAIN_THRUST * (powerPercentage / 100)
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.MAIN // Utilisation de la constante
+                              * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.MAIN;
                 break;
             case 'rear':
-                thrustForce = this.ROCKET.REAR_THRUST * (powerPercentage / 100) * 1.5 * this.PHYSICS.THRUST_MULTIPLIER;
+                thrustForce = this.ROCKET.REAR_THRUST * (powerPercentage / 100)
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.REAR // Utilisation de la constante
+                              * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.REAR;
                 break;
             case 'left':
             case 'right':
-                thrustForce = this.ROCKET.LATERAL_THRUST * (powerPercentage / 100) * 3 * this.PHYSICS.THRUST_MULTIPLIER;
+                thrustForce = this.ROCKET.LATERAL_THRUST * (powerPercentage / 100)
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.LATERAL // Utilisation de la constante
+                              * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.LATERAL;
                 break;
         }
 
-        // Vérifier le carburant
+        // Vérifier s'il reste du carburant et en consommer
+        // Si le réservoir est vide, la poussée est nulle
         if (rocketModel.fuel <= 0) {
             thrustForce = 0;
         } else {
+            // Calculer le carburant nécessaire pour cette frame
             const fuelUsed = fuelConsumption * (powerPercentage / 100);
+            // Essayer de consommer le carburant via le modèle
             if (!rocketModel.consumeFuel(fuelUsed)) {
-                thrustForce = 0; // Plus de carburant
+                thrustForce = 0; // La consommation a échoué (plus assez de fuel)
             }
         }
 
@@ -92,59 +100,65 @@ class ThrusterPhysics {
             }
         }
 
-        // Si pas de poussée, on sort
+        // Si pas de poussée (fuel épuisé ou puissance nulle), on arrête ici
         if (thrustForce <= 0) {
-            // Nettoyer le vecteur de poussée pour la visualisation
-            if (rocketBody.thrustVectors && rocketBody.thrustVectors[thrusterName]) {
-                delete rocketBody.thrustVectors[thrusterName];
-            }
-             // S'assurer que les forces de debug sont à zéro aussi
+            // Nettoyer le vecteur de poussée pour la visualisation de debug
+            // (Suppression de rocketBody.thrustVectors inutile car géré par physicsVectors)
              if (this.physicsController.physicsVectors) {
                  this.physicsController.physicsVectors.clearThrustForce(thrusterName);
              }
             return;
         }
 
-        // Calculer le point d'application et l'angle
-        const leverX = thruster.position.x;
-        const leverY = thruster.position.y;
+        // --- Calcul de la position d'application et de la direction de la force ---
+        const thrusterDef = this.ROCKET.THRUSTER_POSITIONS[thrusterName.toUpperCase()]; // Utiliser les définitions de constants.js
+        const distance = thrusterDef.distance;
+        const angleOffset = thrusterDef.angle;
+
+        // Position relative du propulseur par rapport au centre de la fusée
+        const leverX = Math.cos(angleOffset) * distance;
+        const leverY = Math.sin(angleOffset) * distance;
+
+        // Convertir la position relative en coordonnées mondiales en tenant compte de l'angle de la fusée
         const offsetX = Math.cos(rocketModel.angle) * leverX - Math.sin(rocketModel.angle) * leverY;
         const offsetY = Math.sin(rocketModel.angle) * leverX + Math.cos(rocketModel.angle) * leverY;
+        // Point d'application absolu de la force dans le monde
         const position = { x: rocketBody.position.x + offsetX, y: rocketBody.position.y + offsetY };
 
+        // Calcul de l'angle absolu de la poussée dans le monde
         let thrustAngle;
+        // Les propulseurs latéraux poussent perpendiculairement à leur position
         if (thrusterName === 'left' || thrusterName === 'right') {
-            const propAngle = Math.atan2(leverY, leverX);
+            // Angle de la position du propulseur par rapport au centre de la fusée
+            const propAngleRel = Math.atan2(leverY, leverX);
+            // Direction perpendiculaire (PI/2 pour gauche, -PI/2 pour droite)
             const perpDirection = thrusterName === 'left' ? Math.PI/2 : -Math.PI/2;
-            thrustAngle = rocketModel.angle + propAngle + perpDirection;
+            // Angle final = Angle de la fusée + Angle relatif du propulseur + Direction perpendiculaire
+            thrustAngle = rocketModel.angle + propAngleRel + perpDirection;
         } else {
-            thrustAngle = rocketModel.angle + (thrusterName === 'main' ? -Math.PI/2 : Math.PI/2);
+            // Les propulseurs principaux et arrières poussent selon l'axe de la fusée
+            // Angle final = Angle de la fusée + Décalage angulaire du propulseur (défini dans constants.js)
+            thrustAngle = rocketModel.angle + angleOffset;
         }
 
+        // Composantes X et Y de la force de poussée
         const thrustX = Math.cos(thrustAngle) * thrustForce;
         const thrustY = Math.sin(thrustAngle) * thrustForce;
 
-        // Stocker pour le débogage (via PhysicsDebugger)
+        // Stocker le vecteur force pour le débogage/visualisation via PhysicsDebugger/VectorsView
         if (this.physicsController.physicsVectors) {
              this.physicsController.physicsVectors.setThrustForce(thrusterName, thrustX, thrustY);
         }
 
-        // Appliquer la force
+        // Appliquer la force au corps physique de la fusée
+        // La force est appliquée au point 'position' calculé précédemment
         this.Body.applyForce(rocketBody, position, { x: thrustX, y: thrustY });
 
         // Gérer le décollage si le propulseur principal est actif et que la fusée est posée
         if (thrusterName === 'main' && rocketModel.isLanded && thrustForce > 0) {
+            // Applique une impulsion initiale pour vaincre l'inertie/gravité au sol
             this.handleLiftoff(rocketModel, rocketBody);
         }
-
-        // Stocker les vecteurs pour RocketView (pourrait être déplacé dans PhysicsDebugger aussi)
-        if (!rocketBody.thrustVectors) rocketBody.thrustVectors = {};
-        rocketBody.thrustVectors[thrusterName] = {
-            position: { x: offsetX, y: offsetY },
-            x: Math.cos(thrustAngle),
-            y: Math.sin(thrustAngle),
-            magnitude: thrustForce
-        };
     }
 
     // Gère l'impulsion initiale du décollage
@@ -154,22 +168,26 @@ class ThrusterPhysics {
 
         rocketModel.isLanded = false;
         rocketModel.landedOn = null;
-        rocketModel.relativePosition = null; // Oublier la position relative
+        rocketModel.relativePosition = null; // Oublier la position relative au sol
 
-        // Appliquer une forte impulsion vers le haut (perpendiculaire à la surface)
-        const impulseForce = 5.0; // Force augmentée
-        const angle = rocketBody.angle - Math.PI / 2; // Direction vers le haut de la fusée
+        // Appliquer une forte impulsion vers le haut (axe de la fusée) pour simuler le décollage
+        // Augmentation de la force pour un effet plus marqué
+        const impulseForce = 5.0; // Force d'impulsion initiale
+        // L'angle "vers le haut" de la fusée est son angle - 90 degrés (PI/2 radians)
+        const liftOffAngle = rocketBody.angle - Math.PI / 2;
+        // L'impulsion est appliquée dans la direction opposée à cet angle (vers le haut de la fusée)
         const impulse = {
-            x: Math.cos(angle) * -impulseForce, // Négatif car la force pousse dans la direction opposée à l'angle
-            y: Math.sin(angle) * -impulseForce
+            x: Math.cos(liftOffAngle) * -impulseForce,
+            y: Math.sin(liftOffAngle) * -impulseForce
         };
+        // Appliquer cette force instantanée (impulsion) au centre de la fusée
         this.Body.applyForce(rocketBody, rocketBody.position, impulse);
 
-        // Ajouter une vitesse initiale pour aider à s'échapper
-        const initialVelMagnitude = 2.0;
+        // Donner une légère vitesse initiale vers le haut pour aider à quitter le sol
+        const initialVelMagnitude = 2.0; // Vitesse initiale ajoutée
         this.Body.setVelocity(rocketBody, {
-            x: rocketBody.velocity.x + Math.cos(angle) * -initialVelMagnitude,
-            y: rocketBody.velocity.y + Math.sin(angle) * -initialVelMagnitude
+            x: rocketBody.velocity.x + Math.cos(liftOffAngle) * -initialVelMagnitude,
+            y: rocketBody.velocity.y + Math.sin(liftOffAngle) * -initialVelMagnitude
         });
     }
 
@@ -218,64 +236,25 @@ class ThrusterPhysics {
         return assistedControls;
     }
 
-    // Appliquer la stabilisation de rotation si nécessaire
+    // Appliquer la stabilisation de rotation si les contrôles assistés sont actifs
     applyRotationStabilization(rocketModel) {
         const rocketBody = this.physicsController.rocketBody;
-        if (this.physicsController.assistedControls && rocketBody && !rocketModel.isLanded) {
+        // Ne s'applique qu'en vol (pas au sol) et si l'assistance est activée
+        if (this.physicsController.assistedControls && rocketBody && !rocketModel.isLanded) { 
+            // Vérifier si les propulseurs latéraux (qui contrôlent la rotation) sont inactifs
             const leftActive = rocketModel.thrusters.left.power > 0;
             const rightActive = rocketModel.thrusters.right.power > 0;
 
-            if (!leftActive && !rightActive && Math.abs(rocketBody.angularVelocity) > 0.001) {
+            // Si aucun contrôle de rotation manuel n'est appliqué et que la fusée tourne
+            // (avec une marge pour éviter les micro-corrections inutiles)
+            if (!leftActive && !rightActive && Math.abs(rocketBody.angularVelocity) > 0.001) { 
+                // Calculer une force de stabilisation proportionnelle et opposée à la vitesse angulaire
+                // Le facteur 'rotationStabilityFactor' contrôle l'intensité de la stabilisation
                 const stabilizationForce = -rocketBody.angularVelocity * this.rotationStabilityFactor;
-                this.Body.setAngularVelocity(rocketBody,
-                    rocketBody.angularVelocity + stabilizationForce);
+                // Appliquer directement un changement de vitesse angulaire (comme un léger couple inverse)
+                // Note: Matter.js n'a pas de 'applyTorque' direct, donc on modifie la vitesse angulaire
+                this.Body.setAngularVelocity(rocketBody, rocketBody.angularVelocity + stabilizationForce);
             }
         }
     }
-
-     // Calculer et afficher les exigences de poussée pour le décollage (peut être déplacé dans une classe d'analyse/debug?)
-     calculateThrustRequirements(rocketModel, universeModel) {
-         // Ne calculer qu'une fois toutes les N secondes pour éviter de surcharger la console
-         if (!this._lastThrustCalculation || Date.now() - this._lastThrustCalculation > 5000) { // Augmenté à 5s
-             this._lastThrustCalculation = Date.now();
-
-             if (!universeModel || !universeModel.celestialBodies || !rocketModel || rocketModel.mass <= 0) return;
-
-             // Trouver le corps céleste le plus proche ou celui sur lequel on est posé
-             let nearestBody = null;
-             let minDistanceSq = Infinity;
-
-             if (rocketModel.landedOn) {
-                 nearestBody = universeModel.celestialBodies.find(body => body.name === rocketModel.landedOn);
-             } else {
-                 for (const body of universeModel.celestialBodies) {
-                     const dx = body.position.x - rocketModel.position.x;
-                     const dy = body.position.y - rocketModel.position.y;
-                     const distanceSq = dx * dx + dy * dy;
-                     if (distanceSq < minDistanceSq) {
-                         minDistanceSq = distanceSq;
-                         nearestBody = body;
-                     }
-                 }
-             }
-
-             if (!nearestBody) return;
-
-             const dx = nearestBody.position.x - rocketModel.position.x;
-             const dy = nearestBody.position.y - rocketModel.position.y;
-             const distanceSquared = Math.max(dx * dx + dy * dy, 1); // Éviter la division par zéro
-
-             // Calculer la force gravitationnelle (approximation locale)
-             // Note: Utilise PHYSICS.G qui peut être différent de la constante du plugin
-             const gravitationalForce = this.PHYSICS.G * nearestBody.mass * rocketModel.mass / distanceSquared;
-
-             // Force du propulseur principal à pleine puissance avec multiplicateur
-             const mainThrusterForce = this.ROCKET.MAIN_THRUST * 1.5 * this.PHYSICS.THRUST_MULTIPLIER;
-
-             // Rapport poussée/poids (TWR - Thrust to Weight Ratio)
-             const twr = mainThrusterForce / gravitationalForce;
-
-             const canLiftOff = twr > 1;
-         }
-     }
 }

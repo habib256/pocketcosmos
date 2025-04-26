@@ -110,6 +110,14 @@ const ROCKET = {
         RIGHT: 20              // Puissance maximale du propulseur droit 
     },
     
+    // NOUVEAU : Multiplicateurs d'efficacité spécifiques par type de propulseur
+    // Ces valeurs modulent la force de base définie dans *_THRUST
+    THRUSTER_EFFECTIVENESS: {
+        MAIN: 1.5,            // Multiplicateur pour le propulseur principal
+        REAR: 1.5,            // Multiplicateur pour le propulseur arrière
+        LATERAL: 3.0          // Multiplicateur pour les propulseurs latéraux
+    },
+
     // Positionnement des propulseurs
     THRUSTER_POSITIONS: {
         MAIN: { angle: -Math.PI/2, distance: 30 },    // Propulseur principal 
