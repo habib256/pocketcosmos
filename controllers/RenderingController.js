@@ -117,7 +117,7 @@ class RenderingController {
     }
     
     // Méthode principale de rendu
-    render(ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0) {
+    render(time, ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0) {
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
@@ -125,7 +125,12 @@ class RenderingController {
         if (this.universeView) {
             this.universeView.renderBackground(ctx, camera);
             if (this.physicsController) {
-                this.universeView.render(ctx, camera, this.physicsController);
+                // Appelle la méthode render de UniverseView en passant les étoiles, corps célestes et le temps
+                // Note: Assure-toi que particleController et gameController sont bien accessibles ici
+                // et que les chemins d'accès (.getStars(), .universe.celestialBodies) sont corrects.
+                const stars = this.particleController ? this.particleController.getStars() : [];
+                const celestialBodies = this.gameController && this.gameController.universe ? this.gameController.universe.celestialBodies : [];
+                this.universeView.render(ctx, camera, stars, celestialBodies, time);
             }
         }
         

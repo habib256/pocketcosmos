@@ -868,23 +868,17 @@ class GameController {
             }
         }
 
-
-        // Rendu graphique
+        // 7. Rendu
         if (this.renderingController) {
+            // Assurer que this.cameraModel est bien défini
+            if (!this.cameraModel) {
+                console.error("CameraModel n'est pas initialisé dans GameController!");
+                return; // Ou gérer l'erreur autrement
+            }
             // Récupérer les missions actives pour le rendu (si missionManager existe)
             const activeMissions = this.missionManager ? this.missionManager.getActiveMissions() : [];
-            // Passer tous les arguments nécessaires à render
-            this.renderingController.render(
-                this.ctx,
-                this.canvas,
-                this.rocketModel,
-                this.universeModel,
-                this.particleSystemModel,
-                this.isPaused,
-                this.cameraModel,
-                activeMissions, // Passer les missions actives récupérées
-                this.totalCreditsEarned // Passer les crédits
-            );
+            // Passer tous les arguments nécessaires à render, y compris currentTime
+            this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, activeMissions, this.totalCreditsEarned);
         }
 
         // Demander la prochaine frame d'animation
@@ -1258,7 +1252,7 @@ class GameController {
                  // et s'arrêter quand l'axe revient à 0.
                 const rotateValue = data.value;
                 const power = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.RIGHT; // Utilise la puissance DROITE
-                console.log(`%c[GC Joystick Rotate - CHANGED] Axe 0: ${rotateValue.toFixed(2)}`, 'color: purple');
+              //  console.log(`%c[GC Joystick Rotate - CHANGED] Axe 0: ${rotateValue.toFixed(2)}`, 'color: purple');
                 if (rotateValue < 0) { 
                     this.rocketModel.setThrusterPower('right', power); 
                     this.rocketModel.setThrusterPower('left', 0);

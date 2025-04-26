@@ -1,178 +1,301 @@
+/**
+ * Gère le rendu de l'arrière-plan de l'univers, des étoiles et des corps célestes.
+ * Coordonne également l'affichage de la trace de la fusée via une vue dédiée.
+ * Cette classe dépend d'une instance de `CelestialBodyView` et `TraceView`
+ * qui doivent lui être fournies via les setters correspondants.
+ * Elle utilise également les constantes définies dans `constants.js` (namespace RENDER).
+ *
+ * Note importante sur la caméra :
+ * Cette vue ne gère PAS l'état de la caméra (position, zoom). L'objet `camera`
+ * (contenant x, y, zoom, width, height, offsetX, offsetY) doit être fourni
+ * à toutes les méthodes qui en ont besoin (render, worldToScreen, etc.).
+ * C'est généralement le `RenderingController` qui gère la caméra principale.
+ */
 class UniverseView {
+    /**
+     * @param {HTMLCanvasElement} canvas - L'élément canvas sur lequel dessiner.
+     */
     constructor(canvas) {
+        /** @type {HTMLCanvasElement} */
         this.canvas = canvas;
-        this.camera = new CameraModel();
+        /** @type {CelestialBodyView | null} Vue pour dessiner les corps célestes. */
         this.celestialBodyView = null;
+        /** @type {TraceView | null} Vue pour dessiner la trace de la fusée. */
         this.traceView = null;
     }
-    
-    // Initialise la taille du canvas
-    setCanvasSize(width, height) {
-        this.camera.width = width;
-        this.camera.height = height;
-        this.camera.offsetX = width / 2;
-        this.camera.offsetY = height / 2;
+
+    /**
+     * Injecte la vue responsable du rendu des corps célestes.
+     * @param {CelestialBodyView} view - L'instance de CelestialBodyView.
+     */
+    setCelestialBodyView(view) {
+        this.celestialBodyView = view;
     }
-    
-    // Définit la position de la caméra
-    setCameraPosition(x, y) {
-        this.camera.x = x;
-        this.camera.y = y;
+
+    /**
+     * Injecte la vue responsable du rendu de la trace de la fusée.
+     * @param {TraceView} view - L'instance de TraceView.
+     */
+    setTraceView(view) {
+        this.traceView = view;
     }
-    
-    // Définit le zoom de la caméra
-    setCameraZoom(zoom) {
-        this.camera.zoom = Math.max(RENDER.MIN_ZOOM, Math.min(RENDER.MAX_ZOOM, zoom));
-    }
-    
-    // Centre la caméra sur une position spécifique
-    centerOn(x, y) {
-        this.camera.x = x;
-        this.camera.y = y;
-    }
-    
-    // Convertit des coordonnées du monde en coordonnées écran
-    worldToScreen(worldX, worldY) {
+
+    /**
+     * Convertit les coordonnées du monde (simulation) en coordonnées de l'écran (canvas).
+     * @param {number} worldX - Coordonnée X dans le monde.
+     * @param {number} worldY - Coordonnée Y dans le monde.
+     * @param {CameraModel} camera - L'objet caméra contenant (x, y, zoom, offsetX, offsetY).
+     * @returns {{x: number, y: number}} Les coordonnées correspondantes sur l'écran.
+     */
+    worldToScreen(worldX, worldY, camera) {
         return {
-            x: (worldX - this.camera.x) * this.camera.zoom + this.camera.offsetX,
-            y: (worldY - this.camera.y) * this.camera.zoom + this.camera.offsetY
+            x: (worldX - camera.x) * camera.zoom + camera.offsetX,
+            y: (worldY - camera.y) * camera.zoom + camera.offsetY
         };
     }
-    
-    // Convertit des coordonnées écran en coordonnées du monde
-    screenToWorld(screenX, screenY) {
+
+    /**
+     * Convertit les coordonnées de l'écran (canvas) en coordonnées du monde (simulation).
+     * @param {number} screenX - Coordonnée X sur l'écran.
+     * @param {number} screenY - Coordonnée Y sur l'écran.
+     * @param {CameraModel} camera - L'objet caméra contenant (x, y, zoom, offsetX, offsetY).
+     * @returns {{x: number, y: number}} Les coordonnées correspondantes dans le monde.
+     */
+    screenToWorld(screenX, screenY, camera) {
+        // Assurer que le zoom n'est pas zéro pour éviter la division par zéro
+        const zoom = camera.zoom === 0 ? 1 : camera.zoom;
         return {
-            x: (screenX - this.camera.offsetX) / this.camera.zoom + this.camera.x,
-            y: (screenY - this.camera.offsetY) / this.camera.zoom + this.camera.y
+            x: (screenX - camera.offsetX) / zoom + camera.x,
+            y: (screenY - camera.offsetY) / zoom + camera.y
         };
     }
-    
-    // Vérifie si un objet est visible à l'écran
-    isVisible(x, y, radius) {
-        const screen = this.worldToScreen(x, y);
-        const radiusOnScreen = radius * this.camera.zoom;
+
+    /**
+     * Vérifie si un objet sphérique (défini par sa position et son rayon dans le monde)
+     * est potentiellement visible à l'écran, en tenant compte de la caméra et d'une marge.
+     * Utile pour optimiser le rendu en ne dessinant que les objets visibles.
+     * @param {number} worldX - Coordonnée X du centre de l'objet dans le monde.
+     * @param {number} worldY - Coordonnée Y du centre de l'objet dans le monde.
+     * @param {number} radius - Rayon de l'objet dans le monde.
+     * @param {CameraModel} camera - L'objet caméra (x, y, zoom, width, height, offsetX, offsetY).
+     * @returns {boolean} Vrai si l'objet est potentiellement visible, faux sinon.
+     */
+    isVisible(worldX, worldY, radius, camera) {
+        const screen = this.worldToScreen(worldX, worldY, camera);
+        const radiusOnScreen = radius * camera.zoom;
+        // Utilise une marge proportionnelle au rayon à l'écran pour être plus tolérant
         const margin = radiusOnScreen * RENDER.MARGIN_FACTOR;
-        
+
         return (
             screen.x + margin >= 0 &&
-            screen.x - margin <= this.camera.width &&
+            screen.x - margin <= camera.width &&
             screen.y + margin >= 0 &&
-            screen.y - margin <= this.camera.height
+            screen.y - margin <= camera.height
         );
     }
-    
-    // Méthode pour appliquer les transformations de caméra au contexte
-    applyCameraTransform(ctx) {
-        ctx.translate(this.camera.offsetX, this.camera.offsetY);
-        ctx.scale(this.camera.zoom, this.camera.zoom);
-        ctx.translate(-this.camera.x, -this.camera.y);
+
+    /**
+     * Vérifie si un point donné en coordonnées **écran** est dans les limites du canvas,
+     * avec une marge de tolérance.
+     * @param {number} screenX - Coordonnée X à vérifier sur l'écran.
+     * @param {number} screenY - Coordonnée Y à vérifier sur l'écran.
+     * @returns {boolean} Vrai si le point est dans les limites visibles (avec marge).
+     */
+    isPointVisible(screenX, screenY) {
+        // Calcule une marge basée sur les dimensions du canvas pour éviter les artefacts sur les bords
+        const margin = RENDER.MARGIN_FACTOR * Math.max(this.canvas.width, this.canvas.height);
+        return screenX >= -margin && screenX <= this.canvas.width + margin &&
+               screenY >= -margin && screenY <= this.canvas.height + margin;
     }
-    
-    // Rendu du fond spatial (sans les étoiles)
-    renderBackground(ctx, camera) {
-        // Remplir le fond avec la couleur de l'espace
+
+
+    /**
+     * Applique les transformations (translation, échelle) au contexte de rendu 2D
+     * en fonction de l'état actuel de la caméra. Doit être appelée avant de dessiner
+     * les éléments du monde pour qu'ils apparaissent au bon endroit et à la bonne taille.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     * @param {CameraModel} camera - L'objet caméra (x, y, zoom, offsetX, offsetY).
+     */
+    applyCameraTransform(ctx, camera) {
+        ctx.translate(camera.offsetX, camera.offsetY);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+    }
+
+    /**
+     * Dessine le fond uni de l'espace.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     */
+    renderBackground(ctx) {
+        // Sauvegarde l'état actuel (transformations, styles)
+        ctx.save();
+        // Réinitialise la transformation pour dessiner le fond sur tout le canvas visible
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = RENDER.SPACE_COLOR;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Restaure l'état précédent
+        ctx.restore();
     }
-    
-    // Rendu des étoiles
+
+    /**
+     * Calcule et met à jour la luminosité des étoiles pour simuler un effet de scintillement.
+     * Modifie directement la propriété `brightness` des objets étoiles dans le tableau.
+     * @param {Array<Object>} stars - Le tableau contenant les objets étoiles (avec x, y).
+     * @param {number} time - Le temps actuel (par exemple, timestamp) pour animer le scintillement.
+     */
+    applyStarTwinkle(stars, time) {
+        if (!stars) return;
+
+        const twinkleFactor = RENDER.STAR_TWINKLE_FACTOR;
+        // Vitesse de scintillement, potentiellement basée sur une constante ou dynamique
+        const twinkleSpeed = RENDER.ZOOM_SPEED * 0.02; // Exemple: lié à ZOOM_SPEED
+
+        for (const star of stars) {
+            // Calcul simple basé sur sin() pour un effet périodique
+            const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
+            // Applique le scintillement à la luminosité de base
+            star.brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * twinkleFactor + RENDER.STAR_BRIGHTNESS_RANGE;
+            // S'assure que la luminosité reste dans une plage valide (ex: 0 à 1)
+            star.brightness = Math.max(0, Math.min(1, star.brightness));
+        }
+    }
+
+
+    /**
+     * Dessine les étoiles sur le canvas.
+     * Les étoiles ont une taille fixe indépendante du zoom.
+     * Leur luminosité peut varier (voir `applyStarTwinkle`).
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     * @param {CameraModel} camera - L'objet caméra.
+     * @param {Array<Object>} stars - Tableau d'objets étoile ({x, y, brightness}).
+     */
     renderStars(ctx, camera, stars) {
         if (!stars || stars.length === 0) return;
 
+        ctx.save();
+        // Réinitialise la transformation pour dessiner les étoiles directement en coordonnées écran
+        // (leur position perçue dépend de la caméra, mais leur rendu est en pixels fixes)
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
         for (const star of stars) {
-            // Convertir les coordonnées du monde en coordonnées de l'écran
-            const screenPos = {
-                x: (star.x - camera.x) * camera.zoom + camera.offsetX,
-                y: (star.y - camera.y) * camera.zoom + camera.offsetY
-            };
-            
-            // Vérifier si l'étoile est visible à l'écran
+            // Convertit la position monde en écran
+            const screenPos = this.worldToScreen(star.x, star.y, camera);
+
+            // Vérifie si le point est visible (en coordonnées écran)
             if (this.isPointVisible(screenPos.x, screenPos.y)) {
-                // Taille fixe pour les étoiles, indépendante du zoom
+                // Taille fixe pour les étoiles (ex: 1 pixel)
                 const size = 1;
-                
-                // Dessiner l'étoile
-                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness || 0.8})`;
+
+                // Utilise la luminosité calculée (ou une valeur par défaut)
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness || RENDER.STAR_BRIGHTNESS_BASE})`;
                 ctx.beginPath();
-                ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
-                ctx.fill();
+                // Dessine un petit cercle ou carré
+                // ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
+                // Utiliser fillRect est souvent plus performant pour des points de 1 pixel
+                ctx.fillRect(Math.floor(screenPos.x), Math.floor(screenPos.y), size, size);
+                // ctx.fill(); // Seulement si arc est utilisé
             }
         }
+        ctx.restore();
     }
-    
-    isPointVisible(x, y) {
-        const margin = RENDER.MARGIN_FACTOR * Math.max(this.canvas.width, this.canvas.height);
-        return x >= -margin && x <= this.canvas.width + margin &&
-               y >= -margin && y <= this.canvas.height + margin;
-    }
-    
-    // Rendu des corps célestes
+
+
+    /**
+     * Dessine les corps célestes en utilisant la vue injectée (`celestialBodyView`).
+     * Ne dessine que les corps visibles.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     * @param {CameraModel} camera - L'objet caméra.
+     * @param {Array<CelestialBodyModel>} celestialBodies - Tableau des modèles de corps célestes.
+     */
     renderCelestialBodies(ctx, camera, celestialBodies) {
         if (!celestialBodies || celestialBodies.length === 0 || !this.celestialBodyView) {
             return;
         }
 
         for (const body of celestialBodies) {
-            if (!body || !body.position) {
-                console.error("Corps céleste invalide", body);
+            // Vérification basique de l'existence et de la position
+            if (!body || typeof body.position?.x !== 'number' || typeof body.position?.y !== 'number') {
+                console.warn("Corps céleste invalide ou sans position:", body);
                 continue;
             }
-            this.celestialBodyView.render(ctx, body, camera);
-        }
-    }
-    
-    // Effet de scintillement pour les étoiles
-    applyStarTwinkle(ctx, stars, time) {
-        if (!stars) return;
-        
-        const twinkleFactor = RENDER.STAR_TWINKLE_FACTOR;
-        const twinkleSpeed = RENDER.ZOOM_SPEED * 0.02; // Vitesse de scintillement basée sur ZOOM_SPEED
-        
-        for (const star of stars) {
-            // Calculer un facteur de scintillement basé sur le temps et la position de l'étoile
-            const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
-            star.brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * twinkleFactor + RENDER.STAR_BRIGHTNESS_RANGE;
+            // Vérifie la visibilité avant de déléguer le rendu
+            if (this.isVisible(body.position.x, body.position.y, body.radius, camera)) {
+                 this.celestialBodyView.render(ctx, body, camera);
+            }
         }
     }
 
-    // Mettre à jour la trace avec la position de la fusée
-    updateTrace(rocketPosition) {
+
+    /**
+     * Met à jour la vue de la trace avec la nouvelle position de la fusée.
+     * La position est convertie en coordonnées écran avant d'être passée à `TraceView`.
+     * @param {{x: number, y: number}} rocketPosition - Position de la fusée dans le monde.
+     * @param {CameraModel} camera - L'objet caméra actuel.
+     */
+    updateTrace(rocketPosition, camera) {
         if (!this.traceView) return;
-        
-        const screenPos = this.worldToScreen(rocketPosition.x, rocketPosition.y);
-        this.traceView.update(screenPos);
+
+        // Convertit la position monde de la fusée en coordonnées écran
+        const screenPos = this.worldToScreen(rocketPosition.x, rocketPosition.y, camera);
+        this.traceView.update(screenPos); // TraceView travaille en coordonnées écran
     }
 
-    // Effacer la trace
+    /**
+     * Demande à la vue de la trace d'effacer l'historique des positions.
+     */
     clearTrace() {
         if (!this.traceView) return;
-        
         this.traceView.clear();
     }
 
-    // Basculer la visibilité de la trace
+    /**
+     * Demande à la vue de la trace de basculer sa visibilité.
+     */
     toggleTraceVisibility() {
         if (!this.traceView) return;
-        
         this.traceView.toggleVisibility();
     }
 
-    setUniverseModel(model) {
-        this.universeModel = model;
-    }
+    /**
+     * Méthode de rendu principale pour l'univers.
+     * Orchestre le dessin du fond, des étoiles et des corps célestes.
+     * Applique également l'effet de scintillement aux étoiles.
+     * IMPORTANT : Cette méthode suppose que les transformations de caméra (`applyCameraTransform`)
+     * sont gérées à l'extérieur (par exemple, par le RenderingController) AVANT d'appeler cette méthode,
+     * SAUF pour les éléments qui doivent être dessinés en coordonnées écran fixes (fond, étoiles).
+     *
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     * @param {CameraModel} camera - L'objet caméra.
+     * @param {Array<Object>} stars - Tableau d'objets étoile ({x, y, brightness}).
+     * @param {Array<CelestialBodyModel>} celestialBodies - Tableau des modèles de corps célestes.
+     * @param {number} time - Le temps actuel pour l'animation du scintillement.
+     */
+    render(ctx, camera, stars, celestialBodies, time) {
+       // 1. Dessiner le fond (ignore la transformation caméra actuelle)
+       this.renderBackground(ctx);
 
-    setCelestialBodyView(view) {
-        this.celestialBodyView = view;
-    }
-    
-    setTraceView(view) {
-        this.traceView = view;
-    }
+       // 2. Appliquer le scintillement aux données des étoiles (avant le dessin)
+       this.applyStarTwinkle(stars, time);
 
-    // Ajoute une méthode de rendu principale si elle n'existe pas déjà
-    render(ctx, camera, physicsController) {
-       // console.log('[DEBUG] UniverseView.render appelé, physicsController:', !!physicsController);
-        this.renderBackground(ctx, camera);
-        // Les autres appels de rendu (étoiles, corps célestes, etc.) doivent être faits ici dans l'ordre voulu
+       // 3. Dessiner les étoiles (ignore la transformation caméra actuelle, utilise worldToScreen)
+       this.renderStars(ctx, camera, stars);
+
+       // --- Début du dessin des éléments du MONDE ---
+       // Sauvegarde l'état actuel du contexte (avant transformation)
+       ctx.save();
+
+       // 4. Appliquer la transformation de la caméra pour dessiner les objets du monde
+       this.applyCameraTransform(ctx, camera);
+
+       // 5. Dessiner les corps célestes (utilisent maintenant le repère du monde transformé)
+       this.renderCelestialBodies(ctx, camera, celestialBodies);
+
+       // --- Fin du dessin des éléments du MONDE ---
+       // Restaure l'état du contexte (supprime la transformation caméra)
+       ctx.restore();
+
+       // Note: Le rendu de la trace (TraceView) est généralement géré séparément
+       // car il se superpose à tout le reste et travaille en coordonnées écran.
+       // Son rendu serait appelé par le RenderingController *après* cette méthode.
     }
 } 
