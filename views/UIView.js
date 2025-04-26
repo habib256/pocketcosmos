@@ -35,12 +35,6 @@ class UIView {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('PAUSE', canvas.width / 2, canvas.height / 2);
-        
-        ctx.font = '16px Arial';
-        ctx.fillStyle = this.colors.white;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Appuyez sur R pour recommencer', canvas.width / 2, canvas.height - 40);
     }
 
     renderRocketInfo(ctx, rocketModel) {
@@ -411,139 +405,184 @@ class UIView {
         // Ajouter un espace avant Cargo
         currentY += lineHeight * 0.5;
 
-        // --- Dessin du Titre Cargo (sur Canvas) --- 
+        // --- Dessin du Cargo --- 
         const cargoStartY = currentY;
         ctx.fillStyle = this.colors.white;
         ctx.font = 'bold 14px ' + this.fontFamily;
         ctx.fillText("Cargo:", boxX + boxPadding, currentY);
         currentY += lineHeight * 1.3; // Espace après titre
-        // NOTE : Le contenu actuel du cargo est géré par updateCargoDisplay (DOM)
-        // On a juste besoin de déterminer la position de fin pour le cadre.
-        // On peut estimer une hauteur ou laisser une hauteur fixe.
-        // Estimons une hauteur basée sur un nombre max d'items (ex: 3)
-        const estimatedCargoItems = 3;
-        const cargoEndY = cargoStartY + lineHeight * 1.3 + (estimatedCargoItems * lineHeight * 0.8); // Hauteur estimée
-        currentY = cargoEndY; // Mettre à jour currentY pour la fin de la boîte
+        
+        // Contenu Cargo
+        let cargoList = [];
+        try { 
+            if (rocketModel && rocketModel.cargo && typeof rocketModel.cargo.getCargoList === 'function') {
+                cargoList = rocketModel.cargo.getCargoList();
+            }
+        } catch (e) { console.warn("Impossible de récupérer la liste du cargo:", e); }
+        if (cargoList.length > 0) {
+            cargoList.forEach(item => {
+                let icon = null;
+                // AJOUT: Reconnaître l'icône astronaute
+                if (item.type === 'Fuel') icon = '🛢️';
+                else if (item.type === 'Wrench') icon = '🔧';
+                else if (item.type === '🧑‍🚀') icon = '🧑‍🚀'; // Reconnaître l'astronaute
+                
+                if (icon) { // Si c'est Fuel, Wrench ou Astronaute
+                    const iconsPerLine = 5;
+                    const totalIcons = item.quantity;
+                    let linesNeeded = Math.ceil(totalIcons / iconsPerLine);
+                    ctx.font = '14px ' + this.fontFamily; // S'assurer que la police est correcte pour les icônes
+                    for(let i=0; i<linesNeeded; i++){
+                         const iconsToShow = Math.min(iconsPerLine, totalIcons - (i * iconsPerLine));
+                         const cargoText = icon.repeat(iconsToShow);
+                         // Ajuster légèrement la position Y pour un meilleur alignement
+                         ctx.fillText(cargoText, boxX + boxPadding + 5, currentY); 
+                         currentY += lineHeight * 1.3; // Augmenter l'espacement vertical entre les lignes d'icônes
+                    }
+                } else { // Pour tous les autres types de cargo (texte)
+                    ctx.font = '12px ' + this.fontFamily; // Police plus petite pour le texte
+                    const cargoText = ` - ${item.type}: ${item.quantity}`; 
+                    ctx.fillText(cargoText, boxX + boxPadding, currentY);
+                    currentY += lineHeight; // Espacement normal pour le texte
+                }
+            });
+        } else {
+            ctx.fillText("Vide", boxX + boxPadding, currentY);
+            currentY += lineHeight;
+        }
+        const cargoEndY = currentY;
 
-        // --- Dessiner les Cadres (sur Canvas) --- 
+        // --- Dessiner les Cadres --- 
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; 
         ctx.lineWidth = 1;
-        this.drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, 'rgba(255, 255, 255, 0.8)', 3, creditsStartY, creditsEndY);
-        this.drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, 'rgba(255, 255, 255, 0.8)', 3, missionsStartY, missionsEndY);
-        this.drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, 'rgba(255, 255, 255, 0.8)', 3, cargoStartY, cargoEndY);
+        const drawSectionFrame = (startY, endY) => {
+            if (startY >= endY) return; // Ne pas dessiner si vide
+            const framePadding = boxPadding * 0.5;
+            const frameX = boxX + framePadding / 2;
+            const frameY = startY - framePadding;
+            const frameWidth = boxWidth - framePadding;
+            const frameHeight = (endY - startY) + framePadding * 1.5;
+            ctx.beginPath();
+            ctx.roundRect(frameX, frameY, frameWidth, frameHeight, 3);
+            ctx.stroke();
+        }
+
+        drawSectionFrame(creditsStartY, creditsEndY);
+        drawSectionFrame(missionsStartY, missionsEndY);
+        drawSectionFrame(cargoStartY, cargoEndY);
 
         // Réinitialiser les styles
         ctx.font = this.font;
         ctx.fillStyle = this.colors.white;
-        
-        // Retirer l'appel à updateCargoDisplay d'ici
-        // let cargoList = [];
-        // try { ... } catch (e) { ... }
-        // if (cargoList.length > 0) { this.updateCargoDisplay(cargoList); } else { ... }
     }
 
-    // --- AJOUT : Rendu du menu planétaire ---
-    renderPlanetMenu(ctx, canvas, planetName) {
-        // Style du menu
-        const menuWidth = 300;
-        const menuHeight = 200;
-        const menuX = (canvas.width - menuWidth) / 2;
-        const menuY = (canvas.height - menuHeight) / 2;
-        const padding = 20;
-        const titleFontSize = 24;
-        const optionFontSize = 18;
-        const lineHeight = 30;
+    /**
+     * Met à jour l'affichage des icônes de cargo.
+     * @param {Array<{type: string, quantity: number}>} cargoList - La liste du cargo.
+     */
+    updateCargoDisplay(cargoList = []) {
+        if (!this.cargoDisplayElement) return;
 
-        // Fond semi-transparent
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(menuX, menuY, menuWidth, menuHeight);
+        // Vider l'affichage actuel
+        this.cargoDisplayElement.innerHTML = '';
 
-        // Bordure
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(menuX, menuY, menuWidth, menuHeight);
+        // Boucler sur les items du cargo
+        cargoList.forEach(item => {
+            let icon = '';
+            let title = item.type;
+            let iconsPerLine = 5; // Nombre d'icônes par ligne par défaut
 
-        // Titre
-        ctx.fillStyle = 'white';
-        ctx.font = `bold ${titleFontSize}px ${this.fontFamily}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(planetName || 'Station Spatiale', menuX + menuWidth / 2, menuY + padding);
+            if (item.type === 'Fuel') { 
+                icon = '🛢️';
+                title = 'Fuel';
+            } else if (item.type === 'Wrench') { 
+                icon = '🔧';
+                title = 'Clé à molette';
+            } 
+            // Ajouter d'autres types ici si besoin
+            // else if (item.type === 'Autre') { ... }
 
-        // Options (Placeholder)
-        ctx.font = `${optionFontSize}px ${this.fontFamily}`;
-        let currentY = menuY + padding + titleFontSize + lineHeight;
-
-        // TODO: Ajouter la logique de sélection d'option
-        ctx.fillText("[1] Marchand", menuX + padding, currentY, menuWidth - 2 * padding);
-        currentY += lineHeight;
-        ctx.fillText("[2] Options", menuX + padding, currentY, menuWidth - 2 * padding);
-        currentY += lineHeight;
-        ctx.fillText("[Echap] Quitter", menuX + padding, currentY, menuWidth - 2 * padding);
-
-    }
-    // --- FIN AJOUT ---
-
-    render(ctx, canvas, rocketModel, universeModel, gameState, activeMissions = [], totalCreditsEarned = 0, planetMenuTarget = null) {
-        // --- Affichage des overlays basés sur l'état --- 
-        if (gameState === StateManager.STATES.PAUSED) {
-            this.renderPause(ctx, canvas);
-            // Pour la pause, on veut probablement quand même afficher l'UI dessous
-        } else if (gameState === StateManager.STATES.GAME_OVER) {
-            // Afficher l'écran Game Over D'ABORD
-            if (rocketModel) {
-                 this.renderCrashed(ctx, canvas, rocketModel);
+            if (icon) { // Si une icône est définie
+                let iconsAdded = 0;
+                while (iconsAdded < item.quantity) {
+                    const iconsToShow = Math.min(iconsPerLine, item.quantity - iconsAdded);
+                    const lineDiv = document.createElement('div'); // Utiliser une div pour chaque ligne d'icônes
+                    for (let i = 0; i < iconsToShow; i++) {
+                        const span = document.createElement('span');
+                        span.textContent = icon;
+                        span.title = title; 
+                        lineDiv.appendChild(span);
+                    }
+                    this.cargoDisplayElement.appendChild(lineDiv);
+                    iconsAdded += iconsToShow;
+                }
+            } else {
+                // Affichage texte pour les types inconnus
+                 const lineDiv = document.createElement('div'); // Mettre aussi dans une div
+                 const span = document.createElement('span');
+                 // Supprimer le tiret initial et ajuster le style
+                 span.textContent = `${item.type}: ${item.quantity}`;
+                 span.title = title;
+                 span.style.fontSize = '12px'; 
+                 span.style.verticalAlign = 'middle';
+                 lineDiv.appendChild(span);
+                 this.cargoDisplayElement.appendChild(lineDiv);
             }
-            // Puis on peut afficher les autres infos UI par-dessus si on veut
-        } else if (gameState === StateManager.STATES.MENU) {
-             // En mode MENU, ne rien afficher de l'UI de jeu?
-             // Ou afficher une version limitée?
-             // Pour l'instant, on ne dessine que ce qui est hors de ce bloc `else`.
-             // On pourrait ajouter un renderMenu(ctx, canvas) ici.
-             return; // Sortir tôt pour ne pas dessiner le reste de l'UI en mode MENU
-        } else if (gameState === StateManager.STATES.PLANET_MENU) {
-            // Afficher le menu planète PAR-DESSUS le reste si on veut voir le fond?
-            // Ou afficher SEULEMENT le menu?
-            // Pour l'instant, affichons juste le menu.
-            this.renderPlanetMenu(ctx, canvas, planetMenuTarget);
-            return; // Ne pas dessiner l'UI standard derrière pour le moment
+        });
+        
+        if (this.cargoDisplayElement.innerHTML === '') {
+             this.cargoDisplayElement.textContent = 'Vide'; // Afficher "Vide" si rien dans le cargo
         }
+    }
 
-        // --- Affichage standard (PLAYING, ou sous PAUSE/GAME_OVER) ---
-
-        // Afficher les infos de la fusée (santé, fuel, vitesse)
-        if (rocketModel && gameState !== StateManager.STATES.GAME_OVER) { // Ne pas afficher si game over?
-            this.renderRocketInfo(ctx, rocketModel);
-            
-            // Afficher l'état d'atterrissage (seulement si PLAYING?)
-            if (gameState === StateManager.STATES.PLAYING) {
+    render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions = [], totalCreditsEarned = 0) {
+        // --- Affichage du texte Mission Réussie (overlay UI) ---
+        if (window._missionSuccessTextTime && Date.now() - window._missionSuccessTextTime < 2500) {
+            ctx.save();
+            const elapsed = Date.now() - window._missionSuccessTextTime;
+            ctx.globalAlpha = 1 - (elapsed / 2500) * 0.5;
+            ctx.font = 'bold 54px Impact, Arial, sans-serif';
+            ctx.fillStyle = '#FFD700';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = '#FFEC80';
+            ctx.shadowBlur = 32;
+            ctx.strokeStyle = '#B8860B';
+            ctx.lineWidth = 5;
+            ctx.strokeText('Mission réussie', canvas.width / 2, 150);
+            ctx.fillText('Mission réussie', canvas.width / 2, 150);
+            ctx.restore();
+        }
+        if (isPaused) {
+            this.renderPause(ctx, canvas);
+        } else {
+            // Afficher les infos de la fusée (santé, fuel numérique, vitesse)
+            if (rocketModel) {
+                this.renderRocketInfo(ctx, rocketModel);
+                
+                // Afficher l'état d'atterrissage ou de crash
                 if (rocketModel.isLanded) {
                     this.renderLandingSuccess(ctx, canvas, rocketModel);
-                } 
-                // L'affichage crashé est géré par l'état GAME_OVER
-                // else if (rocketModel.isDestroyed) { ... }
-                else {
-                     // Optionnel: Afficher le guide d'atterrissage
-                     // this.renderLandingGuidance(ctx, canvas, rocketModel, universeModel);
+                } else if (rocketModel.isDestroyed) {
+                    this.renderCrashed(ctx, canvas, rocketModel);
+                } else {
+                    // Optionnel: Afficher le guide d'atterrissage
+                    // this.renderLandingGuidance(ctx, canvas, rocketModel, universeModel);
                 }
             }
-        }
-        
-        // Afficher les infos de la lune (toujours?)
-        if (universeModel) {
-            this.renderMoonInfo(ctx, canvas, rocketModel, universeModel);
-        }
-        
-        // Afficher le bouton des contrôles assistés (toujours?)
-        this.renderAssistedControlsButton(ctx, canvas);
+            
+            // Afficher les infos de la lune
+            if (universeModel) {
+                this.renderMoonInfo(ctx, canvas, rocketModel, universeModel);
+            }
+            
+            // Afficher le bouton des contrôles assistés
+            this.renderAssistedControlsButton(ctx, canvas);
 
-        // Afficher les missions, le cargo (titre) et les crédits (toujours?)
-        this.renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
-        
-        // Afficher l'overlay PAUSE par-dessus si on est en pause
-        if (gameState === StateManager.STATES.PAUSED) {
-             this.renderPause(ctx, canvas);
+            // Afficher les missions et le cargo et les crédits
+            this.renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
         }
+        
     }
     
     // Basculer l'affichage des informations lunaires
@@ -591,55 +630,5 @@ class UIView {
         ctx.roundRect(frameX, frameY, frameWidth, frameHeight, radius);
         ctx.stroke();
         ctx.restore(); 
-    }
-
-    /**
-     * Met à jour l'affichage des icônes de cargo dans l'élément HTML dédié.
-     * @param {Array<{type: string, quantity: number}>} cargoList - La liste du cargo.
-     */
-    updateCargoDisplay(cargoList = []) {
-        // Log pour vérifier l'appel et les données
-        console.log(`[UIView] updateCargoDisplay appelée avec:`, cargoList);
-
-        // Tentative de récupération de l'élément au cas où il n'était pas prêt lors de l'init
-        if (!this.cargoDisplayElement) {
-            this.cargoDisplayElement = document.getElementById('cargo-display');
-        }
-        
-        if (!this.cargoDisplayElement) {
-            console.error("[UIView] Élément #cargo-display non trouvé dans le DOM au moment de l'update !");
-            return;
-        }
-
-        console.log("[UIView] Élément #cargo-display trouvé.");
-
-        // Vider l'affichage actuel
-        this.cargoDisplayElement.innerHTML = ''; 
-
-        if (cargoList.length === 0) {
-            this.cargoDisplayElement.textContent = 'Vide'; // Afficher "Vide" si rien dans le cargo
-            return;
-        }
-
-        // Boucler sur les items du cargo et créer les éléments HTML
-        cargoList.forEach(item => {
-            const lineDiv = document.createElement('div'); 
-            lineDiv.style.marginBottom = '2px'; 
-            
-            const iconSpan = document.createElement('span');
-            iconSpan.textContent = item.type; // L'émoticône est le type
-            iconSpan.style.marginRight = '5px'; 
-            iconSpan.style.fontSize = '16px'; 
-            iconSpan.title = item.type; 
-            
-            const quantitySpan = document.createElement('span');
-            quantitySpan.textContent = `x ${item.quantity}`;
-            quantitySpan.style.fontSize = '12px'; 
-            quantitySpan.style.verticalAlign = 'middle'; 
-
-            lineDiv.appendChild(iconSpan);
-            lineDiv.appendChild(quantitySpan);
-            this.cargoDisplayElement.appendChild(lineDiv);
-        });
     }
 } 

@@ -19,9 +19,6 @@ class CelestialBodyView {
         // Dessiner le corps céleste
         this.drawBody(ctx, celestialBodyModel, camera);
         
-        // Dessiner les points cibles
-        this.drawTargetPoints(ctx, celestialBodyModel, camera);
-        
         // Dessiner les anneaux si le corps en possède
         if (celestialBodyModel.hasRings) {
             this.drawRings(ctx, celestialBodyModel, camera);
@@ -129,46 +126,6 @@ class CelestialBodyView {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(body.name, screenPos.x, screenPos.y);
-    }
-    
-    drawTargetPoints(ctx, body, camera) {
-        if (!body.targetPoints || body.targetPoints.length === 0) {
-            return; // Pas de points à dessiner
-        }
-
-        // Style des marqueurs
-        const markerRadiusBase = 4; // Rayon de base du marqueur
-        const markerColor = 'magenta';
-        const labelColor = 'white';
-        const labelFontSizeBase = 10;
-
-        body.targetPoints.forEach(point => {
-            // Calculer la position du point sur la surface en coordonnées monde
-            const pointWorldX = body.position.x + body.radius * Math.cos(point.angle);
-            const pointWorldY = body.position.y + body.radius * Math.sin(point.angle);
-
-            // Convertir en coordonnées écran
-            const screenPos = camera.worldToScreen(pointWorldX, pointWorldY);
-
-            // Ajuster la taille en fonction du zoom (avec limites)
-            const markerRadius = Math.max(1, Math.min(markerRadiusBase, markerRadiusBase * camera.zoom * 0.5));
-            const labelFontSize = Math.max(6, Math.min(labelFontSizeBase, labelFontSizeBase * camera.zoom * 0.5));
-
-            // Dessiner le marqueur (cercle)
-            ctx.fillStyle = markerColor;
-            ctx.beginPath();
-            ctx.arc(screenPos.x, screenPos.y, markerRadius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Dessiner l'ID du point (seulement si assez zoomé)
-            if (camera.zoom > 0.5) { // Seuil de zoom pour afficher le texte
-                ctx.fillStyle = labelColor;
-                ctx.font = `${labelFontSize}px Arial`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(point.id, screenPos.x, screenPos.y - markerRadius - 2); 
-            }
-        });
     }
     
     // Utilitaire pour éclaircir une couleur

@@ -4,24 +4,13 @@ class GameController {
     constructor(eventBus, missionManager) {
         // EventBus
         this.eventBus = eventBus;
-        // this.missionManager = missionManager; // Utilise la variable passée en argument
+        this.missionManager = missionManager; // Utilise la variable passée en argument
         
-        // --- AJOUT StateManager ---
-        this.stateManager = new StateManager(eventBus);
-        // ------------------------
-
         // Modèles
         this.rocketModel = null;
         this.universeModel = null;
         this.particleSystemModel = null;
-
-        // Créer le gestionnaire de missions AVEC les modèles (sera défini dans setupModels)
-        this.missionManager = null;
         
-        // --- AJOUT pour menu planète ---
-        this.currentPlanetMenuTarget = null; // Nom de la planète pour le menu
-        // -----------------------------
-
         // Vues
         this.rocketView = null;
         this.universeView = null;
@@ -39,6 +28,7 @@ class GameController {
         
         // État du jeu
         this.isRunning = false;
+        this.isPaused = false;
         this.lastTimestamp = 0;
         this.elapsedTime = 0;
         
@@ -67,10 +57,11 @@ class GameController {
 
         // Ajout : pause automatique si l'utilisateur quitte l'onglet
         document.addEventListener('visibilitychange', () => {
-            // Mettre en pause seulement si le jeu est en cours
-            if (document.hidden && this.stateManager.isState(StateManager.STATES.PLAYING)) {
-                this.stateManager.setState(StateManager.STATES.PAUSED);
+            if (document.hidden && !this.isPaused) {
+                this.isPaused = true;
                 // console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
+                // On peut aussi émettre un événement si besoin :
+                // this.eventBus.emit('GAME_PAUSED');
             }
         });
 
@@ -142,25 +133,11 @@ class GameController {
     
     // Gérer les événements d'entrée
     handleKeyDown(data) {
-        // Autoriser certaines actions même en pause ou game over (Zoom, Toggle Vectors?)
-        switch (data.action) {
-            case 'zoomIn':
-                this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
-                return; // Sortir pour ne pas vérifier l'état PLAYING
-            case 'zoomOut':
-                this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
-                return; // Sortir
-        }
-
-        // Si on n'est pas en train de jouer, ignorer les autres inputs de gameplay
-        // AJOUT: Aussi ignorer si on est dans le menu planète
-        if (!this.stateManager.isState(StateManager.STATES.PLAYING)) {
-             // Sauf si on est en pause et on appuie sur une touche de mouvement pour reprendre
-             if (this.stateManager.isState(StateManager.STATES.PAUSED) && 
-                 ['thrustForward', 'thrustBackward', 'rotateLeft', 'rotateRight'].includes(data.action)) {
-                 this.stateManager.setState(StateManager.STATES.PLAYING);
-             }
-            return; 
+        // Si en pause, n'importe quelle flèche doit reprendre le jeu (hors P/Escape)
+        if (this.isPaused && (data.action === 'thrustForward' || data.action === 'thrustBackward' || data.action === 'rotateLeft' || data.action === 'rotateRight')) {
+            this.isPaused = false;
+            console.log("Jeu repris par flèche");
+            return;
         }
         
         switch (data.action) {
@@ -184,6 +161,12 @@ class GameController {
                 this.rocketModel.setThrusterPower('right', ROCKET.THRUSTER_POWER.RIGHT);
                 this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
                 break;
+            case 'zoomIn':
+                this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
+                break;
+            case 'zoomOut':
+                this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
+                break;
         }
         
         // Émettre l'état mis à jour
@@ -191,23 +174,12 @@ class GameController {
     }
     
     handleKeyUp(data) {
-        // Toggle pause sur relâchement de P ou Escape (fonctionne dans tous les états ?)
+        // Toggle pause sur relâchement de P ou Escape
         if (data.action === 'pauseGame') {
-            this.togglePause(); // Utiliser la nouvelle méthode togglePause
+            this.isPaused = !this.isPaused;
+            console.log(this.isPaused ? "Jeu mis en pause (toggle par P/Escape)" : "Jeu repris (toggle par P/Escape)");
             return;
         }
-        
-        // Gérer Echap pour quitter PLANET_MENU
-        if (data.action === 'escapeMenu' && this.stateManager.isState(StateManager.STATES.PLANET_MENU)) {
-            this.stateManager.setState(StateManager.STATES.PLAYING);
-            this.currentPlanetMenuTarget = null; // Effacer la cible du menu
-            return;
-        }
-        
-        // Ignorer les relâchements de touches de gameplay si on n'est pas en train de jouer
-        // AJOUT: Ou si on est dans le menu planète
-        if (!this.stateManager.isState(StateManager.STATES.PLAYING)) return;
-
         switch (data.action) {
             case 'thrustForward':
                 if (!this.rocketModel) return;
@@ -245,32 +217,26 @@ class GameController {
     }
     
     handleKeyPress(data) {
-        // Gérer Reset (toujours disponible ?)
-        if (data.action === 'resetRocket') {
-            this.resetRocket();
+        // Ne plus gérer la pause ici pour P/Escape
+        if (this.isPaused) {
+            this.isPaused = false;
+            console.log("Jeu repris par keypress");
             return;
         }
 
-        // Gérer la pause (touche P ou Escape) - Peut-être déjà géré par KeyUp?
-        // Le togglePause dans KeyUp est probablement suffisant.
-        // if (data.action === 'pauseGame') { ... }
-
-        // Gérer les actions qui reprennent le jeu depuis PAUSE
-        if (this.stateManager.isState(StateManager.STATES.PAUSED)) {
-            // Reprendre si on appuie sur une touche (sauf celles déjà gérées comme pause/reset)
-             if (!['pauseGame', 'resetRocket'].includes(data.action)) {
-                 this.stateManager.setState(StateManager.STATES.PLAYING);
-                 console.log("Jeu repris par keypress");
-                 // Il faut peut-être traiter l'action ici si elle doit avoir lieu immédiatement
-             }
-             return; // Ne pas traiter les actions suivantes si on était en pause
-        }
-
-        // Ignorer les autres actions si on n'est pas en PLAYING
-        if (!this.stateManager.isState(StateManager.STATES.PLAYING)) return;
-
-        // Traiter les actions spécifiques à l'état PLAYING
         switch (data.action) {
+            case 'pauseGame':
+                // Toujours sortir de la pause si on est en pause
+                if (this.isPaused) {
+                    this.isPaused = false;
+                    console.log("Jeu repris par touche P");
+                } else {
+                    this.togglePause();
+                }
+                break;
+            case 'resetRocket':
+                this.resetRocket();
+                break;
             case 'centerCamera':
                 if (this.cameraModel && this.rocketModel) {
                     this.cameraModel.setTarget(this.rocketModel, 'rocket');
@@ -298,24 +264,10 @@ class GameController {
                 this.toggleAIControl();
                 break;
         }
-
-        // Gérer l'entrée dans le menu planète avec la touche 'E' (action 'interact')
-        if (data.action === 'interact' && this.stateManager.isState(StateManager.STATES.PLAYING) && this.rocketModel && this.rocketModel.isLanded) {
-            const planetName = this.rocketModel.landedOn;
-            if (planetName) { // S'assurer qu'on est bien posé quelque part
-                // TODO: Vérifier si la planète a des services/marchands?
-                this.currentPlanetMenuTarget = planetName;
-                this.stateManager.setState(StateManager.STATES.PLANET_MENU);
-                console.log(`Ouverture du menu pour ${planetName}`);
-                return;
-            }
-        }
     }
     
     handleMouseDown(data) {
-        // Glisser-déposer la caméra fonctionne même en pause ? Ou seulement en PLAYING?
-        // Pour l'instant, on le laisse actif sauf si GAME_OVER ou MENU?
-        if (this.stateManager.isState(StateManager.STATES.GAME_OVER) || this.stateManager.isState(StateManager.STATES.MENU)) return;
+        if (this.isPaused) return;
         
         this.isDragging = true;
         this.dragStartX = data.x;
@@ -328,9 +280,7 @@ class GameController {
     }
     
     handleMouseMove(data) {
-        if (!this.isDragging) return;
-        // Permettre le déplacement même en pause?
-        if (this.stateManager.isState(StateManager.STATES.GAME_OVER) || this.stateManager.isState(StateManager.STATES.MENU)) return;
+        if (!this.isDragging || this.isPaused) return;
         
         const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
         const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
@@ -346,9 +296,6 @@ class GameController {
     handleMouseUp(data) {
         this.isDragging = false;
         
-        // Vérifier clic sur bouton uniquement si UI interactive (pas GAME_OVER?)
-        if (this.stateManager.isState(StateManager.STATES.GAME_OVER) || this.stateManager.isState(StateManager.STATES.MENU)) return;
-
         // Vérifier si le clic est sur le bouton des contrôles assistés
         if (this.uiView && this.uiView.isPointInAssistedControlsButton(data.x, data.y)) {
             this.toggleAssistedControls();
@@ -356,8 +303,7 @@ class GameController {
     }
     
     handleWheel(data) {
-        // Zoom toujours actif ?
-        // if (this.stateManager.isState(StateManager.STATES.GAME_OVER)) return;
+        if (this.isPaused) return;
         
         if (this.cameraModel) {
             const zoomFactor = 1 + RENDER.ZOOM_SPEED;
@@ -390,10 +336,9 @@ class GameController {
             const cargoList = this.rocketModel.cargo ? this.rocketModel.cargo.getCargoList() : [];
 
             // Mettre à jour l'affichage du cargo dans l'UI
-            // RETIRÉ : Ne pas mettre à jour le DOM depuis ici, cause des problèmes de rafraîchissement
-            // if (this.uiView) {
-            //     this.uiView.updateCargoDisplay(cargoList);
-            // }
+            if (this.uiView) {
+                this.uiView.updateCargoDisplay(cargoList);
+            }
             
             // Émettre l'état de la fusée mis à jour
             this.eventBus.emit('ROCKET_STATE_UPDATED', {
@@ -617,26 +562,6 @@ class GameController {
         try {
             // Créer un modèle d'univers
             this.universeModel = new UniverseModel();
-            
-            // --- Création de la Fusée (AVANT MissionManager) ---
-            this.rocketModel = new RocketModel();
-            
-            // --- Instanciation MissionManager (APRÈS modèles requis) ---
-            // Assurez-vous que missionManager est passé correctement au constructeur GameController ou gérez-le différemment.
-            // Ici, on suppose qu'il n'est PAS passé et qu'on le crée ici.
-            if (!this.missionManager) { 
-                console.log("[GameController] Création de MissionManager...");
-                this.missionManager = new MissionManager(this.eventBus, this.universeModel, this.rocketModel);
-                 // Initialiser les missions après avoir créé le manager
-                 this.missionManager.resetMissions(); 
-            } else {
-                 console.log("[GameController] MissionManager déjà fourni, mise à jour des modèles...");
-                 // Si missionManager est fourni de l'extérieur, il faut lui passer les références
-                 this.missionManager.universeModel = this.universeModel;
-                 this.missionManager.rocketModel = this.rocketModel;
-                 // Assurez-vous que resetMissions est appelé quelque part
-                 // this.missionManager.resetMissions(); // Déplacé ou géré ailleurs
-            }
 
             // --- Création des Corps Célestes --- 
 
@@ -687,13 +612,6 @@ class GameController {
                 moonInitialAngle,         // Angle initial
                 MOON_ORBIT_SPEED          // Vitesse orbitale
             );
-            // Ajouter les points cibles spécifiques à la Lune
-            moon.targetPoints = [
-                { id: 'poleNord', angle: -Math.PI / 2 },    // Haut (-90 degrés)
-                { id: 'equateurEst', angle: 0 },           // Droite (0 degrés)
-                { id: 'poleSud', angle: Math.PI / 2 },      // Bas (90 degrés)
-                { id: 'equateurOuest', angle: Math.PI }     // Gauche (180 degrés)
-            ];
             moon.updateOrbit(0); // Calculer la position et la vélocité initiales
             this.universeModel.addCelestialBody(moon);
 
@@ -789,6 +707,21 @@ class GameController {
 
             // --- Fin Création des Corps Célestes ---
             
+            // --- Création de la Fusée ---
+            this.rocketModel = new RocketModel();
+
+            // Positionner la fusée sur la surface initiale de la Terre
+            const angleVersSoleil = Math.atan2(earth.position.y - sun.position.y, earth.position.x - sun.position.x);
+            const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
+            const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
+            this.rocketModel.setPosition(rocketStartX, rocketStartY);
+
+            // Donner à la fusée la vélocité initiale de la Terre
+            this.rocketModel.setVelocity(earth.velocity.x, earth.velocity.y);
+            
+            // Orienter la fusée vers le haut (loin de la Terre, dans la direction opposée au Soleil comme approximation)
+            this.rocketModel.setAngle(angleVersSoleil); 
+            
             // --- Fin Création de la Fusée ---
 
             // Créer le système de particules
@@ -850,25 +783,14 @@ class GameController {
     
     // Démarrer la boucle de jeu
     start() {
-        // L'état initial est MENU, la boucle démarre mais ne fait rien
-        // jusqu'à ce que l'état passe à PLAYING
         this.isRunning = true;
         this.lastTimestamp = performance.now();
-        // Pas besoin de définir l'état ici, il est déjà MENU par défaut
-        // this.stateManager.setState(StateManager.STATES.MENU);
         requestAnimationFrame(this.gameLoop.bind(this));
     }
     
-    // Mettre le jeu en pause ou reprendre
+    // Mettre le jeu en pause
     togglePause() {
-        if (this.stateManager.isState(StateManager.STATES.PLAYING)) {
-            this.stateManager.setState(StateManager.STATES.PAUSED);
-        } else if (this.stateManager.isState(StateManager.STATES.PAUSED)) {
-            // Retourne à l'état précédent qui était probablement PLAYING
-            this.stateManager.setState(StateManager.STATES.PLAYING); 
-            // Ou utiliser: this.stateManager.returnToPreviousState(); si on veut être plus générique
-        }
-        // Ne rien faire si GAME_OVER ou MENU
+        this.isPaused = !this.isPaused;
     }
     
     // La boucle de jeu principale
@@ -877,89 +799,91 @@ class GameController {
 
         const deltaTime = (timestamp - this.lastTimestamp) / 1000; // Convertir en secondes
         this.lastTimestamp = timestamp;
-        
-        const currentState = this.stateManager.getState();
 
-        // --- Logique spécifique à l'état --- 
-        if (currentState === StateManager.STATES.PLAYING) {
-            // Mettre à jour l'état des entrées (pour les keypress ponctuels)
-            if (this.inputController) {
-                this.inputController.update();
+        // Si le jeu est en pause, ne rien faire d'autre que de demander la prochaine frame
+        if (this.isPaused) {
+            // Mettre à jour le rendu même en pause pour afficher le message "PAUSE"
+            if (this.renderingController) {
+                this.renderingController.render(this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, [], this.totalCreditsEarned);
             }
-            
-            // Mettre à jour la caméra pour suivre sa cible
-            if (this.cameraModel) {
-                this.cameraModel.update(deltaTime);
-            }
-    
-            // Mettre à jour la position des émetteurs de particules
-            if (this.particleController && this.rocketModel) {
-                this.particleController.updateEmitterPositions(this.rocketModel);
-            }
-    
-            // Mettre à jour l'univers (orbites)
-            if (this.universeModel) {
-                this.universeModel.update(deltaTime);
-            }
-    
-            // Mise à jour de la physique
-            if (this.physicsController && this.rocketModel) {
-                this.physicsController.update(deltaTime);
-                // Émettre l'état mis à jour après la physique
-                this.emitUpdatedStates(); 
-            }
-    
-            // Mise à jour du système de particules
-            if (this.particleController) {
-                this.particleController.update(deltaTime);
-            }
-    
-            // Mise à jour de l'agent IA (si actif)
-            if (this.rocketAgent && this.rocketAgent.isActive) {
-                this.rocketAgent.update(deltaTime);
-            }
-    
-            // Mise à jour de la trace
-            if (this.traceView && this.traceView.isVisible) {
-                this.updateTrace();
-            }
-    
-            // Mettre à jour la logique des missions (arrivée aux points)
-            if (this.missionManager) {
-                this.missionManager.checkPointArrival();
-            }
-
-            // Vérification de l'état de la mission (déplacé ici pour n'être fait qu'en PLAYING ?)
-            // Mais l'échec peut survenir même en dehors de PLAYING (ex: mission time out?)
-            // Laissons la logique d'échec où elle est pour l'instant.
-            // if (this.rocketModel && this.missionManager) { ... } 
-
-        } else if (currentState === StateManager.STATES.PAUSED) {
-            // Logique spécifique à la pause (si nécessaire, ex: animer le menu pause)
-        } else if (currentState === StateManager.STATES.GAME_OVER) {
-            // Logique spécifique au game over (si nécessaire)
-        } else if (currentState === StateManager.STATES.MENU) {
-            // Logique spécifique au menu (si nécessaire)
-        } else if (currentState === StateManager.STATES.PLANET_MENU) {
-             // Pas de physique, pas de déplacement pendant l'interaction planétaire
-             // On pourrait vouloir mettre à jour certaines choses (ex: animation du menu)
+            requestAnimationFrame(this.gameLoop.bind(this));
+            return;
         }
-        // --- Fin Logique spécifique --- 
 
-        // Rendu graphique (toujours exécuté, mais dépend de l'état)
+        // Mettre à jour l'état des entrées (pour les keypress ponctuels)
+        if (this.inputController) {
+            this.inputController.update();
+        }
+
+        // Mettre à jour la caméra pour suivre sa cible
+        if (this.cameraModel) {
+            this.cameraModel.update(deltaTime);
+        }
+
+        // ---- AJOUT ----
+        // Mettre à jour la position des émetteurs de particules AVANT de mettre à jour les particules
+        if (this.particleController && this.rocketModel) {
+            this.particleController.updateEmitterPositions(this.rocketModel);
+        }
+        // -------------
+
+        // --- AJOUT : Mettre à jour l'univers (orbites des corps célestes) ---
+        if (this.universeModel) {
+            this.universeModel.update(deltaTime);
+        }
+        // ---------------------------------------------------------------
+
+        // Mise à jour de la physique
+        if (this.physicsController && this.rocketModel) {
+            this.physicsController.update(deltaTime);
+            // Émettre l'état mis à jour après la physique
+            this.emitUpdatedStates(); 
+        }
+
+        // Mise à jour du système de particules
+        if (this.particleController) {
+            this.particleController.update(deltaTime);
+        }
+
+        // Mise à jour de l'agent IA (si actif)
+        if (this.rocketAgent && this.rocketAgent.isActive) {
+            this.rocketAgent.update(deltaTime);
+        }
+
+        // Mise à jour de la trace
+        if (this.traceView && this.traceView.isVisible) {
+            this.updateTrace();
+        }
+
+        // Vérification de l'état de la mission
+        if (this.rocketModel && this.missionManager) {
+            const activeMissions = this.missionManager.getActiveMissions();
+            if (activeMissions.length > 0) {
+                const currentMission = activeMissions[0]; // Supposons une seule mission active
+
+                // Vérifier l'échec (crash)
+                if (this.rocketModel.isDestroyed && currentMission.status === 'pending') {
+                    this.eventBus.emit('MISSION_FAILED', { mission: currentMission });
+                }
+            }
+        }
+
+
+        // Rendu graphique
         if (this.renderingController) {
+            // Récupérer les missions actives pour le rendu (si missionManager existe)
             const activeMissions = this.missionManager ? this.missionManager.getActiveMissions() : [];
+            // Passer tous les arguments nécessaires à render
             this.renderingController.render(
                 this.ctx,
                 this.canvas,
                 this.rocketModel,
                 this.universeModel,
                 this.particleSystemModel,
-                currentState, // Passer l'état actuel
+                this.isPaused,
                 this.cameraModel,
-                activeMissions,
-                this.totalCreditsEarned,
-                this.currentPlanetMenuTarget // AJOUT: Passer la planète cible du menu
+                activeMissions, // Passer les missions actives récupérées
+                this.totalCreditsEarned // Passer les crédits
             );
         }
 
@@ -1037,7 +961,7 @@ class GameController {
         // Réinitialiser le temps et l'état de pause
         this.lastTimestamp = performance.now();
         this.elapsedTime = 0;
-        // this.isPaused = false; // Remplacé par stateManager
+        this.isPaused = false;
 
         // --- Nettoyer la trace et ajouter le premier point --- 
         if (this.traceView) {
@@ -1068,9 +992,6 @@ class GameController {
 
         console.log("Fusée réinitialisée.");
         this._lastRocketDestroyed = false;
-
-        // Définir l'état sur PLAYING après le reset
-        this.stateManager.setState(StateManager.STATES.PLAYING);
     }
     
     // Nettoyer les ressources
@@ -1126,12 +1047,8 @@ class GameController {
 
     // Gérer les mises à jour d'état de la fusée
     handleRocketStateUpdated(data) {
-        // Si la fusée est détruite ET que le jeu est en cours (PLAYING), passer à GAME_OVER
-        if (data.isDestroyed && !this._lastRocketDestroyed && this.stateManager.isState(StateManager.STATES.PLAYING)) {
-            console.log("Fusée détruite -> GAME_OVER");
-            this.stateManager.setState(StateManager.STATES.GAME_OVER);
-            // Log pour l'utilisateur déjà fait dans le modèle?
-            // console.log("Fusée détruite - Appuyez sur R pour réinitialiser");
+        if (data.isDestroyed && !this._lastRocketDestroyed) {
+            console.log("Fusée détruite - Appuyez sur R pour réinitialiser");
         }
         this._lastRocketDestroyed = !!data.isDestroyed;
     }
@@ -1262,7 +1179,7 @@ class GameController {
 
         // Vérifier et gérer la complétion de mission
         if (this.missionManager && this.rocketModel.cargo) {
-            const completedMissions = this.missionManager.checkDeliveryCompletion(this.rocketModel.cargo, data.landedOn);
+            const completedMissions = this.missionManager.checkMissionCompletion(this.rocketModel.cargo, data.landedOn);
             
             // Traiter les conséquences du succès ICI
             if (completedMissions.length > 0) {
@@ -1321,8 +1238,6 @@ class GameController {
              // Mettre à jour l'affichage UI du cargo immédiatement
             if (this.uiView) {
                 this.uiView.updateCargoDisplay(this.rocketModel.cargo.getCargoList());
-            } else {
-                console.warn("[GameController] Tentative de mise à jour de l'affichage du cargo, mais this.uiView n'est pas défini.");
             }
         } else {
             console.log(`%c[GameController] Aucune mission active au départ de ${location} trouvée. Pas de chargement automatique de cargo.`, 'color: gray;');
@@ -1333,7 +1248,7 @@ class GameController {
 
     handleJoystickAxisChanged(data) {
         // Cet événement n'est déclenché qu'une fois lorsque l'axe change d'état (0 -> valeur ou valeur -> 0)
-        if (!this.rocketModel || this.stateManager.isState(StateManager.STATES.PAUSED)) return;
+        if (!this.rocketModel || this.isPaused) return;
 
         const axisThreshold = this.inputController ? this.inputController.axisThreshold : 0.1;
 
@@ -1376,7 +1291,7 @@ class GameController {
     
     // NOUVELLE MÉTHODE : Gère les axes maintenus
     handleJoystickAxisHeld(data) {
-         if (!this.cameraModel || this.stateManager.isState(StateManager.STATES.PAUSED)) return;
+         if (!this.cameraModel || this.isPaused) return;
          
          switch(data.action) {
              case 'zoomAxis': // Mappé à l'axe 3
@@ -1422,7 +1337,7 @@ class GameController {
     }
 
     handleJoystickButtonDown(data) {
-        if (!this.rocketModel || this.stateManager.isState(StateManager.STATES.PAUSED)) return;
+        if (!this.rocketModel || this.isPaused) return;
 
         switch (data.action) {
             case 'boost': 
