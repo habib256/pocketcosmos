@@ -1,8 +1,16 @@
+/**
+ * Classe responsable du rendu visuel d'un corps céleste individuel (planète, lune, soleil) sur le canvas.
+ * Prend en entrée un modèle de données (`celestialBodyModel`) et un objet caméra pour gérer les transformations de coordonnées et le zoom.
+ */
 class CelestialBodyView {
-    constructor() {
-        // Pas besoin de stocker d'images dans cette version
-    }
+    // Le constructeur vide a été supprimé car inutile.
     
+    /**
+     * Point d'entrée principal pour dessiner un corps céleste et ses composants (atmosphère, anneaux, nom).
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de dessin du canvas.
+     * @param {object} celestialBodyModel - Le modèle de données contenant les propriétés du corps céleste (position, radius, color, name, hasRings, atmosphere).
+     * @param {Camera} camera - L'objet caméra pour la transformation des coordonnées monde/écran et la gestion du zoom.
+     */
     render(ctx, celestialBodyModel, camera) {
         if (!celestialBodyModel || !celestialBodyModel.position) {
             console.error("Modèle de corps céleste invalide", celestialBodyModel);
@@ -30,6 +38,12 @@ class CelestialBodyView {
         ctx.restore();
     }
     
+    /**
+     * Dessine le corps céleste principal (cercle ou effet spécial pour le Soleil).
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de dessin.
+     * @param {object} body - Le modèle de données du corps céleste.
+     * @param {Camera} camera - L'objet caméra.
+     */
     drawBody(ctx, body, camera) {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
@@ -70,6 +84,12 @@ class CelestialBodyView {
         ctx.stroke();
     }
     
+    /**
+     * Dessine l'atmosphère du corps céleste si elle existe.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de dessin.
+     * @param {object} body - Le modèle de données du corps céleste.
+     * @param {Camera} camera - L'objet caméra.
+     */
     drawAtmosphere(ctx, body, camera) {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
@@ -89,6 +109,12 @@ class CelestialBodyView {
         ctx.stroke();
     }
     
+    /**
+     * Dessine les anneaux du corps céleste s'il en possède.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de dessin.
+     * @param {object} body - Le modèle de données du corps céleste.
+     * @param {Camera} camera - L'objet caméra.
+     */
     drawRings(ctx, body, camera) {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         
@@ -112,6 +138,13 @@ class CelestialBodyView {
         ctx.restore();
     }
     
+    /**
+     * Dessine le nom du corps céleste au centre de celui-ci.
+     * Exclut spécifiquement Phobos et Deimos.
+     * @param {CanvasRenderingContext2D} ctx - Le contexte de dessin.
+     * @param {object} body - Le modèle de données du corps céleste.
+     * @param {Camera} camera - L'objet caméra.
+     */
     drawName(ctx, body, camera) {
         // Ne pas afficher le nom pour Phobos et Deimos
         if (body.name === 'Phobos' || body.name === 'Deimos') {
@@ -128,7 +161,12 @@ class CelestialBodyView {
         ctx.fillText(body.name, screenPos.x, screenPos.y);
     }
     
-    // Utilitaire pour éclaircir une couleur
+    /**
+     * Fonction utilitaire pour calculer une version légèrement plus claire d'une couleur hexadécimale.
+     * Utilisée pour le contour des corps célestes.
+     * @param {string} hexColor - La couleur au format hexadécimal (ex: '#FF0000').
+     * @returns {string} La couleur éclaircie au format hexadécimal.
+     */
     getLighterColor(hexColor) {
         // Convertir la couleur hex en RGB
         let r = parseInt(hexColor.substr(1, 2), 16);
