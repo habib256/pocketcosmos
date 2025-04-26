@@ -105,32 +105,32 @@ class GameController {
     
     // S'abonner aux événements de l'EventBus
     subscribeToEvents() {
-        this.eventBus.subscribe('INPUT_KEYDOWN', (data) => this.handleKeyDown(data));
-        this.eventBus.subscribe('INPUT_KEYUP', (data) => this.handleKeyUp(data));
-        this.eventBus.subscribe('INPUT_KEYPRESS', (data) => this.handleKeyPress(data));
-        this.eventBus.subscribe('INPUT_MOUSEDOWN', (data) => this.handleMouseDown(data));
-        this.eventBus.subscribe('INPUT_MOUSEMOVE', (data) => this.handleMouseMove(data));
-        this.eventBus.subscribe('INPUT_MOUSEUP', (data) => this.handleMouseUp(data));
-        this.eventBus.subscribe('INPUT_WHEEL', (data) => this.handleWheel(data));
+        this.eventBus.subscribe(EVENTS.INPUT.KEYDOWN, (data) => this.handleKeyDown(data));
+        this.eventBus.subscribe(EVENTS.INPUT.KEYUP, (data) => this.handleKeyUp(data));
+        this.eventBus.subscribe(EVENTS.INPUT.KEYPRESS, (data) => this.handleKeyPress(data));
+        this.eventBus.subscribe(EVENTS.INPUT.MOUSEDOWN, (data) => this.handleMouseDown(data));
+        this.eventBus.subscribe(EVENTS.INPUT.MOUSEMOVE, (data) => this.handleMouseMove(data));
+        this.eventBus.subscribe(EVENTS.INPUT.MOUSEUP, (data) => this.handleMouseUp(data));
+        this.eventBus.subscribe(EVENTS.INPUT.WHEEL, (data) => this.handleWheel(data));
         
         // Événement pour les vecteurs (une seule méthode)
-        this.eventBus.subscribe('toggleVectors', () => this.toggleVectors());
+        this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors());
         // Ajout : événement pour le champ de gravité
-        this.eventBus.subscribe('toggleGravityField', () => this.toggleGravityField());
+        this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField());
         
         // Événement pour les mises à jour d'état de la fusée
-        this.eventBus.subscribe('ROCKET_STATE_UPDATED', (data) => this.handleRocketStateUpdated(data));
+        this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data));
         // Événement lorsque la fusée atterrit
-        this.eventBus.subscribe('ROCKET_LANDED', (data) => this.handleRocketLanded(data));
+        this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data));
 
         // --- Abonnements Joystick ---
-        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_CHANGED', (data) => this.handleJoystickAxisChanged(data));
-        this.eventBus.subscribe('INPUT_JOYSTICK_BUTTON_DOWN', (data) => this.handleJoystickButtonDown(data));
-        this.eventBus.subscribe('INPUT_JOYSTICK_BUTTON_UP', (data) => this.handleJoystickButtonUp(data));
-        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_HELD', (data) => this.handleJoystickAxisHeld(data));
-        this.eventBus.subscribe('INPUT_JOYSTICK_AXIS_RELEASED', (data) => this.handleJoystickAxisReleased(data));
-        this.eventBus.subscribe('INPUT_GAMEPAD_CONNECTED', () => { /* On pourrait afficher un message */ });
-        this.eventBus.subscribe('INPUT_GAMEPAD_DISCONNECTED', () => { /* On pourrait afficher un message */ });
+        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data));
+        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_DOWN, (data) => this.handleJoystickButtonDown(data));
+        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_UP, (data) => this.handleJoystickButtonUp(data));
+        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data));
+        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data));
+        this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ });
+        this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ });
         // --- Fin Abonnements Joystick ---
     }
     
@@ -330,32 +330,11 @@ class GameController {
         }
     }
     
-    // Émettre les états mis à jour pour les vues
+    // Émettre un seul événement pour l'état complet de la simulation
     emitUpdatedStates() {
+        const simulationState = {};
         if (this.rocketModel) {
-            // Calculer les vecteurs de gravité et de poussée pour le rendu
-            const gravityVector = this.calculateGravityVector();
-            const thrustVectors = this.calculateThrustVectors();
-            const totalThrustVector = this.calculateTotalThrustVector();
-            
-            // Calculer le vecteur d'attraction lunaire
-            const lunarAttraction = this.calculateLunarAttractionVector();
-            
-            // Calculer la distance à la Terre et le vecteur d'attraction terrestre
-            const earthDistance = this.calculateEarthDistance();
-            const earthAttractionVector = this.calculateEarthAttractionVector();
-            
-            // Récupérer la liste du cargo
-            const cargoList = this.rocketModel.cargo ? this.rocketModel.cargo.getCargoList() : [];
-
-            // L'affichage UI se met à jour via la boucle de rendu principale,
-            // pas besoin d'un appel explicite ici.
-            // if (this.uiView) {
-            //     this.uiView.updateCargoDisplay(cargoList);
-            // }
-            
-            // Émettre l'état de la fusée mis à jour
-            this.eventBus.emit('ROCKET_STATE_UPDATED', {
+            simulationState.rocket = {
                 position: { ...this.rocketModel.position },
                 velocity: { ...this.rocketModel.velocity },
                 angle: this.rocketModel.angle,
@@ -365,21 +344,20 @@ class GameController {
                 isDestroyed: this.rocketModel.isDestroyed,
                 landedOn: this.rocketModel.landedOn,
                 attachedTo: this.rocketModel.attachedTo,
-                relativePosition: this.rocketModel.relativePosition ? {...this.rocketModel.relativePosition} : null,
+                relativePosition: this.rocketModel.relativePosition ? { ...this.rocketModel.relativePosition } : null,
                 thrusters: { ...this.rocketModel.thrusters },
-                gravityVector,
-                thrustVectors,
-                totalThrustVector,
-                lunarAttractionVector: lunarAttraction ? lunarAttraction.vector : null,
-                lunarDistance: lunarAttraction ? lunarAttraction.distance : null,
-                earthDistance: earthDistance,
-                earthAttractionVector: earthAttractionVector
-            });
+                gravityVector: this.calculateGravityVector(),
+                thrustVectors: this.calculateThrustVectors(),
+                totalThrustVector: this.calculateTotalThrustVector(),
+                lunarAttraction: this.calculateLunarAttractionVector(),
+                earth: {
+                    distance: this.calculateEarthDistance(),
+                    attractionVector: this.calculateEarthAttractionVector()
+                }
+            };
         }
-        
         if (this.universeModel) {
-            // S'assurer que les corps célestes sont envoyés correctement
-            this.eventBus.emit('UNIVERSE_STATE_UPDATED', {
+            simulationState.universe = {
                 celestialBodies: this.universeModel.celestialBodies.map(body => ({
                     name: body.name,
                     mass: body.mass,
@@ -390,15 +368,16 @@ class GameController {
                     atmosphere: { ...body.atmosphere }
                 })),
                 stars: this.universeModel.stars
-            });
+            };
         }
-        
         if (this.particleSystemModel) {
-            this.eventBus.emit('PARTICLE_SYSTEM_UPDATED', {
+            simulationState.particles = {
                 emitters: this.particleSystemModel.emitters,
                 debrisParticles: this.particleSystemModel.debrisParticles
-            });
+            };
         }
+        // Émettre l'état complet en un seul event
+        this.eventBus.emit(EVENTS.SIMULATION.UPDATED, simulationState);
     }
     
     // Calculer le vecteur de gravité pour le rendu
@@ -792,7 +771,7 @@ class GameController {
         this.particleController = new ParticleController(this.particleSystemModel);
         
         // Initialiser les événements
-        this.eventBus.emit('CONTROLLERS_SETUP', {});
+        this.eventBus.emit(EVENTS.SYSTEM.CONTROLLERS_SETUP, {});
     }
     
     // Démarrer la boucle de jeu
@@ -882,7 +861,7 @@ class GameController {
 
                 // Vérifier l'échec (crash)
                 if (this.rocketModel.isDestroyed && currentMission.status === 'pending') {
-                    this.eventBus.emit('MISSION_FAILED', { mission: currentMission });
+                    this.eventBus.emit(EVENTS.MISSION.FAILED, { mission: currentMission });
                 }
             }
         }
@@ -1137,7 +1116,7 @@ class GameController {
         if (!this.rocketAgent) return;
         
         // Émettre l'événement pour activer/désactiver l'agent
-        this.eventBus.emit('TOGGLE_AI_CONTROL', {});
+        this.eventBus.emit(EVENTS.AI.TOGGLE, {});
         console.log('Basculement du contrôle IA');
     }
 
@@ -1209,8 +1188,8 @@ class GameController {
                     // Log déchargement du cargo
                     console.log(`%c[GameController] Cargo déchargé pour la mission ${mission.id}`, 'color: orange;');
                     // Émettre les événements de succès (si nécessaire pour l'UI ou autre)
-                    this.eventBus.emit('UI_UPDATE_CREDITS', { reward: mission.reward }); 
-                    this.eventBus.emit('MISSION_COMPLETED', { mission: mission }); // Passer la mission complétée
+                    this.eventBus.emit(EVENTS.UI.CREDITS_UPDATED, { reward: mission.reward }); 
+                    this.eventBus.emit(EVENTS.MISSION.COMPLETED, { mission: mission }); // Passer la mission complétée
                 });
             }
             // FIN MODIFICATION

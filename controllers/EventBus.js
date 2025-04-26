@@ -26,11 +26,17 @@ class EventBus {
          * Utiliser un Set garantit que chaque callback n'est enregistré qu'une seule fois par type d'événement.
          */
         this.listeners = new Map();
+        /**
+         * @private
+         * @type {Map<string, Set<Function>>}
+         * Stocke les callbacks wildcard pour les patterns (ex: 'PHYSICS.*').
+         */
+        this.wildcardListeners = new Map();
     }
     
     /**
      * Abonne une fonction callback à un type d'événement spécifique.
-     * Lorsque l'événement spécifié est émis via `emit`, le callback sera exécuté.
+     * Supporte les patterns wildcard (ex: 'PHYSICS.*').
      *
      * @param {string} eventType - Le nom unique du type d'événement auquel s'abonner (ex: 'INPUT_KEYDOWN', 'ROCKET_CRASHED').
      * @param {Function} callback - La fonction à exécuter lorsque l'événement est émis. Cette fonction recevra les données passées à `emit`.
@@ -41,10 +47,17 @@ class EventBus {
      * unsubscribeKeydown(); // Se désabonne de l'événement INPUT_KEYDOWN
      */
     subscribe(eventType, callback) {
-        if (!this.listeners.has(eventType)) {
-            this.listeners.set(eventType, new Set());
+        if (eventType.includes('*')) {
+            if (!this.wildcardListeners.has(eventType)) {
+                this.wildcardListeners.set(eventType, new Set());
+            }
+            this.wildcardListeners.get(eventType).add(callback);
+        } else {
+            if (!this.listeners.has(eventType)) {
+                this.listeners.set(eventType, new Set());
+            }
+            this.listeners.get(eventType).add(callback);
         }
-        this.listeners.get(eventType).add(callback);
         
         // Retourner une fonction pour se désabonner facilement
         return () => this.unsubscribe(eventType, callback);
@@ -53,6 +66,18 @@ class EventBus {
     // Alias pour subscribe, compatible avec la syntaxe utilisée dans PhysicsController
     on(eventType, callback) {
         return this.subscribe(eventType, callback);
+    }
+    
+    /**
+     * Abonne un callback pour être exécuté une seule fois.
+     */
+    once(eventType, callback) {
+        const wrapper = (data) => {
+            callback(data);
+            unsubscribe();
+        };
+        const unsubscribe = this.subscribe(eventType, wrapper);
+        return unsubscribe;
     }
     
     /**
@@ -65,7 +90,13 @@ class EventBus {
      * @param {Function} callback - La fonction callback exacte à supprimer de l'abonnement.
      */
     unsubscribe(eventType, callback) {
-        if (this.listeners.has(eventType)) {
+        if (eventType.includes('*')) {
+            if (this.wildcardListeners.has(eventType)) {
+                const set = this.wildcardListeners.get(eventType);
+                set.delete(callback);
+                if (set.size === 0) this.wildcardListeners.delete(eventType);
+            }
+        } else if (this.listeners.has(eventType)) {
             const listenersForEvent = this.listeners.get(eventType);
             listenersForEvent.delete(callback);
 
@@ -91,18 +122,30 @@ class EventBus {
      * eventBus.emit('ROCKET_STATE_UPDATED', { position: new Vector(10, 20), fuel: 500 });
      */
     emit(eventType, data) {
+        let notified = false;
+        // Écouteurs exacts
         if (this.listeners.has(eventType)) {
-            // Utiliser [...spread] pour cloner le Set permet d'éviter des problèmes si un callback
-            // modifie la liste des auditeurs (subscribe/unsubscribe) pendant l'itération.
-            const listenersToNotify = [...this.listeners.get(eventType)];
-            for (const callback of listenersToNotify) {
-                try {
-                    callback(data);
-                } catch (error) {
-                    console.error(`Erreur dans un callback EventBus pour l'événement "${eventType}":`, error);
-                    // Selon la criticité, on pourrait vouloir arrêter ou juste logguer.
+            const toNotify = [...this.listeners.get(eventType)];
+            for (const cb of toNotify) {
+                try { cb(data); notified = true; }
+                catch(err) { console.error(`Erreur EventBus [${eventType}]:`, err); }
+            }
+        }
+        // Écouteurs wildcard
+        for (const [pattern, cbs] of this.wildcardListeners) {
+            // transformer pattern en regex
+            const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+            const regex = new RegExp(`^${escaped}$`);
+            if (regex.test(eventType)) {
+                for (const cb of [...cbs]) {
+                    try { cb(data); notified = true; }
+                    catch(err) { console.error(`Erreur EventBus [${pattern} -> ${eventType}]:`, err); }
                 }
             }
+        }
+        // Warning si aucun listener
+        if (!notified) {
+            console.warn(`EventBus: aucun auditeur pour l'événement "${eventType}"`);
         }
     }
     

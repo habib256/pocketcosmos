@@ -59,12 +59,6 @@ function init() {
     // Initialiser le GameController (qui crée PhysicsController, etc.) avec le canvas.
     gameController.init(canvas);
     
-    // Connecter le PhysicsController (maintenant créé dans GameController) au RenderingController
-    // pour que ce dernier puisse afficher les informations physiques (ex: vecteurs).
-    if (gameController.physicsController && gameController.renderingController) {
-        gameController.renderingController.setPhysicsController(gameController.physicsController);
-    }
-    
     // Afficher les instructions de jeu à l'utilisateur.
     showInstructions();
 }

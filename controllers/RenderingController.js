@@ -14,10 +14,6 @@ class RenderingController {
         this.showGravityField = false; // Par défaut désactivé
         this.gravityFieldMode = 0; // 0: rien, 1: flèches, 2: lignes
         
-        // Référence au contrôleur de physique pour afficher les forces
-        this.physicsController = null;
-        console.log('[DEBUG][RC] RenderingController instancié, physicsController:', this.physicsController);
-        
         // États des modèles pour le rendu
         this.rocketState = {
             position: { x: 0, y: 0 },
@@ -45,16 +41,17 @@ class RenderingController {
     }
     
     subscribeToEvents() {
-        this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (state) => {
-            this.updateRocketState(state);
-        });
-        
-        this.eventBus.subscribe(EVENTS.UNIVERSE.STATE_UPDATED, (state) => {
-            this.updateUniverseState(state);
-        });
-        
-        this.eventBus.subscribe(EVENTS.PARTICLE_SYSTEM.UPDATED, (state) => {
-            this.updateParticleSystemState(state);
+        this.eventBus.subscribe(EVENTS.SIMULATION.UPDATED, (simState) => {
+            // Mettre à jour tous les sous-états à partir du payload unique
+            if (simState.rocket) {
+                this.updateRocketState(simState.rocket);
+            }
+            if (simState.universe) {
+                this.updateUniverseState(simState.universe);
+            }
+            if (simState.particles) {
+                this.updateParticleSystemState(simState.particles);
+            }
         });
     }
     
@@ -111,27 +108,15 @@ class RenderingController {
         };
     }
     
-    // Définir le contrôleur de physique
-    setPhysicsController(physicsController) {
-        this.physicsController = physicsController;
-    }
-    
     // Méthode principale de rendu
     render(time, ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Rendre le fond
+        // Rendre le fond et les corps séparément, en utilisant uniquement les états internes
         if (this.universeView) {
             this.universeView.renderBackground(ctx, camera);
-            if (this.physicsController) {
-                // Appelle la méthode render de UniverseView en passant les étoiles, corps célestes et le temps
-                // Note: Assure-toi que particleController et gameController sont bien accessibles ici
-                // et que les chemins d'accès (.getStars(), .universe.celestialBodies) sont corrects.
-                const stars = this.particleController ? this.particleController.getStars() : [];
-                const celestialBodies = this.gameController && this.gameController.universe ? this.gameController.universe.celestialBodies : [];
-                this.universeView.render(ctx, camera, stars, celestialBodies, time);
-            }
+            this.universeView.render(ctx, camera, this.universeState.stars, this.universeState.celestialBodies, time);
         }
         
         // Rendre les étoiles
@@ -149,18 +134,14 @@ class RenderingController {
             this.traceView.render(ctx, camera);
         }
         
-        // Rendre les particules
+        // Rendre les particules en découplé
         if (this.particleView) {
-            this.particleView.renderParticles(ctx, particleSystemModel, camera, rocketModel);
+            this.particleView.renderParticles(ctx, this.particleSystemState, camera, this.rocketState);
         }
         
-        // Calculs des vecteurs pour l'affichage
-        // 1. Vecteur d'accélération totale (somme des forces)
-        let accelerationVector = {x:0, y:0};
-        if (this.physicsController && this.physicsController.lastRocketAcceleration) {
-            //console.log('[DEBUG][RC] lastRocketAcceleration dans RenderingController:', this.physicsController.lastRocketAcceleration);
-            accelerationVector = this.physicsController.lastRocketAcceleration;
-        }
+        // Calcul des vecteurs, remplacer l'utilisation de physicsController par rocketState
+        // 1. Vecteur d'accélération totale calculé par la simulation
+        const accelerationVector = this.rocketState.accelerationVector || { x: 0, y: 0 };
 
         // 2. Vecteurs de mission (départ et arrivée)
         let missionStartVector = null;
@@ -222,15 +203,9 @@ class RenderingController {
         }
         // Afficher le champ de gravité selon le mode
         if (this.vectorsView && this.gravityFieldMode === 1) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, {
-                showGravityField: 'arrows',
-                physicsController: this.physicsController
-            });
+            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'arrows' });
         } else if (this.vectorsView && this.gravityFieldMode === 2) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, {
-                showGravityField: 'lines',
-                physicsController: this.physicsController
-            });
+            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'lines' });
         }
         
         // Rendre l'interface utilisateur
