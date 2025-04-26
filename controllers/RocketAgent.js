@@ -21,7 +21,6 @@ class RocketAgent {
         // Données du modèle
         this.rocketData = null;
         this.celestialBodyData = null;
-        this.moonData = null;
 
         // Objectif actuel de l'agent
         this.currentObjective = 'orbit'; // 'orbit', 'land', 'takeoff'
@@ -143,7 +142,6 @@ class RocketAgent {
     updateRocketData(data) {
         this.rocketData = data.rocket;
         this.celestialBodyData = data.celestialBody;
-        this.moonData = data.moon;
         
         // Si l'agent est actif, prendre une décision
         if (this.isActive && this.rocketData) {
@@ -481,12 +479,6 @@ class RocketAgent {
             case 'orbit':
                 this.maintainOrbit();
                 break;
-            case 'land':
-                this.landOnPlanet();
-                break;
-            case 'takeoff':
-                this.takeOff();
-                break;
             default:
                 this.maintainOrbit();
         }
@@ -549,16 +541,6 @@ class RocketAgent {
         }
     }
     
-    // Logique pour atterrir sur la planète
-    landOnPlanet() {
-        // À implémenter
-    }
-    
-    // Logique pour décoller
-    takeOff() {
-        // À implémenter
-    }
-    
     // Émettre une commande de contrôle (comme si c'était une entrée utilisateur)
     emitControl(action) {
         if (!this.isActive) return;
@@ -568,19 +550,5 @@ class RocketAgent {
         
         // Émettre aussi un événement spécifique à l'IA pour affichage/débogage
         this.eventBus.emit('AI_CONTROL_ACTION', { action });
-    }
-    
-    // Arrêter une commande de contrôle
-    stopControl(action) {
-        if (!this.isActive) return;
-        
-        // Émettre l'action comme si le contrôleur d'entrée avait relâché la touche
-        this.eventBus.emit('INPUT_KEYUP', { action, key: 'AI' });
-    }
-    
-    // Mise à jour régulière (peut être appelée par GameController)
-    update(deltaTime) {
-        // Pour l'instant, rien à faire ici
-        // Les décisions sont prises en réponse aux événements
     }
 }
