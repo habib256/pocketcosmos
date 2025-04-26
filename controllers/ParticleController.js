@@ -159,7 +159,8 @@ class ParticleController {
         
         const pos = rocketModel.position;
         const angle = rocketModel.angle;
-        const radius = this.particleSystemModel.radius;
+        // Récupérer la demi-largeur directement depuis les constantes, car 'radius' n'est plus dans le modèle.
+        const halfRocketWidth = ROCKET.WIDTH / 2;
         
         // Vérifier que les émetteurs existent avant de les mettre à jour
         if (this.particleSystemModel.emitters.main) {
@@ -173,12 +174,12 @@ class ParticleController {
         }
         
         if (this.particleSystemModel.emitters.left) {
-            this.particleSystemModel.updateEmitterPosition('left', pos.x - Math.cos(angle) * radius, pos.y - Math.sin(angle) * radius);
+            this.particleSystemModel.updateEmitterPosition('left', pos.x - Math.cos(angle) * halfRocketWidth, pos.y - Math.sin(angle) * halfRocketWidth);
             this.particleSystemModel.updateEmitterAngle('left', angle + Math.PI);
         }
         
         if (this.particleSystemModel.emitters.right) {
-            this.particleSystemModel.updateEmitterPosition('right', pos.x + Math.cos(angle) * radius, pos.y + Math.sin(angle) * radius);
+            this.particleSystemModel.updateEmitterPosition('right', pos.x + Math.cos(angle) * halfRocketWidth, pos.y + Math.sin(angle) * halfRocketWidth);
             this.particleSystemModel.updateEmitterAngle('right', angle);
         }
     }

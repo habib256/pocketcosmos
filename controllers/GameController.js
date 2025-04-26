@@ -818,7 +818,7 @@ class GameController {
         if (this.isPaused) {
             // Mettre à jour le rendu même en pause pour afficher le message "PAUSE"
             if (this.renderingController) {
-                this.renderingController.render(this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, [], this.totalCreditsEarned);
+                this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, [], this.totalCreditsEarned);
             }
             requestAnimationFrame(this.gameLoop.bind(this));
             return;

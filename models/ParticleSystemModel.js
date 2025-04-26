@@ -1,25 +1,48 @@
+/**
+ * Modèle de données pour le système de particules de la fusée.
+ * Stocke l'état des différents émetteurs (propulseurs) et des particules de débris.
+ *
+ * Ce modèle est principalement géré par `ParticleController` et utilisé par `ParticleView` pour le rendu.
+ * Il dépend des constantes définies dans `constants.js` (PARTICLES, ROCKET).
+ *
+ * @important Ce modèle ne contient PAS la logique de création, mise à jour ou dessin des particules.
+ * Il sert uniquement de conteneur d'état pour les émetteurs et les débris.
+ */
 class ParticleSystemModel {
+    /**
+     * Initialise le modèle du système de particules.
+     */
     constructor() {
-        // Facteur pour convertir la consommation en nombre de particules
-        const PARTICLES_PER_FUEL_UNIT = 20; 
-        
-        // Émetteurs de particules
+        /**
+         * @private
+         * @description Facteur global pour lier le nombre de particules générées à la consommation de carburant.
+         * Utilisé pour calculer `particleCountPerEmit` pour chaque émetteur.
+         * @type {number}
+         */
+        const PARTICLES_PER_FUEL_UNIT = 20;
+
+        /**
+         * @description Stocke la configuration et l'état de chaque émetteur de particules associé aux propulseurs.
+         * Chaque clé (`main`, `left`, `right`, `rear`) représente un émetteur.
+         * @type {Object<string, {position: {x: number, y: number}, angle: number, particles: Array<object>, isActive: boolean, particleSpeed: number, colorStart: string, colorEnd: string, particleLifetimeBase: number, particleCountPerEmit: number, spread: number, particleSpeedVar: number, particleLifetimeVar: number, powerLevel: number}>}
+         */
         this.emitters = {
             main: {
-                position: { x: 0, y: 0 },
-                angle: Math.PI/2,
-                particles: [],
-                isActive: false,
-                powerLevel: 100,
+                position: { x: 0, y: 0 }, // Position absolue (mise à jour par ParticleController)
+                angle: Math.PI / 2,        // Angle absolu (mis à jour par ParticleController)
+                particles: [],             // Liste des particules actives pour cet émetteur
+                isActive: false,           // L'émetteur est-il en train d'émettre ?
+                powerLevel: 100,           // Niveau de puissance (0-100), utilisé par ParticleController
+                // --- Propriétés issues de constants.js --- //
                 particleSpeed: PARTICLES.EMITTER.MAIN.SPEED,
                 colorStart: PARTICLES.EMITTER.MAIN.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.MAIN.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.MAIN.LIFETIME,
-                // Calcul basé sur la consommation
-                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.MAIN * PARTICLES_PER_FUEL_UNIT)), 
-                spread: 0.4,
-                particleSpeedVar: 0.3,
-                particleLifetimeVar: 0.5
+                // Nombre de particules à émettre par tick (basé sur la conso. carburant)
+                particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.MAIN * PARTICLES_PER_FUEL_UNIT)),
+                spread: 0.4,               // Angle de dispersion des particules (radians)
+                particleSpeedVar: 0.3,     // Variation aléatoire de la vitesse
+                particleLifetimeVar: 0.5   // Variation aléatoire de la durée de vie
             },
             left: {
                 position: { x: 0, y: 0 },
@@ -31,7 +54,7 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.LATERAL.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.LATERAL.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.LATERAL.LIFETIME,
-                 // Calcul basé sur la consommation (divisé par 5)
+                // Divisé par 5 car la conso est plus faible (ajustement empirique)
                 particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
@@ -47,7 +70,6 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.LATERAL.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.LATERAL.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.LATERAL.LIFETIME,
-                 // Calcul basé sur la consommation (divisé par 5)
                 particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.LATERAL * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
@@ -55,7 +77,7 @@ class ParticleSystemModel {
             },
             rear: {
                 position: { x: 0, y: 0 },
-                angle: -Math.PI/2,
+                angle: -Math.PI / 2,
                 particles: [],
                 isActive: false,
                 powerLevel: 100,
@@ -63,90 +85,106 @@ class ParticleSystemModel {
                 colorStart: PARTICLES.EMITTER.REAR.COLOR_START,
                 colorEnd: PARTICLES.EMITTER.REAR.COLOR_END,
                 particleLifetimeBase: PARTICLES.EMITTER.REAR.LIFETIME,
-                 // Calcul basé sur la consommation (divisé par 5)
                 particleCountPerEmit: Math.max(1, Math.round(ROCKET.FUEL_CONSUMPTION.REAR * PARTICLES_PER_FUEL_UNIT / 5)),
                 spread: 0.3,
                 particleSpeedVar: 0.3,
                 particleLifetimeVar: 0.5
             }
         };
-        
-        // Particules de débris pour les collisions
+
+        /**
+         * @description Stocke les particules de débris générées lors des collisions ou destructions.
+         * Ces particules sont indépendantes des émetteurs de propulseurs.
+         * @type {Array<object>}
+         */
         this.debrisParticles = [];
-        
-        // Rayon de la fusée pour le positionnement des émetteurs
-        this.radius = ROCKET.WIDTH / 2;
+
+        // La propriété `radius` a été supprimée car non utilisée dans ce modèle.
+        // La propriété `powerLevel` est CONSERVÉE car elle est utilisée par ParticleController.
     }
-    
-    // Mettre à jour la position d'un émetteur
+
+    /**
+     * Met à jour la position absolue d'un émetteur spécifique.
+     * Appelé par `ParticleController` pour synchroniser avec la position de la fusée.
+     * @param {string} emitterName - Nom de l'émetteur (`main`, `left`, `right`, `rear`).
+     * @param {number} x - Nouvelle coordonnée X.
+     * @param {number} y - Nouvelle coordonnée Y.
+     */
     updateEmitterPosition(emitterName, x, y) {
         if (this.emitters[emitterName]) {
             this.emitters[emitterName].position.x = x;
             this.emitters[emitterName].position.y = y;
         }
     }
-    
-    // Mettre à jour l'angle d'un émetteur
+
+    /**
+     * Met à jour l'angle absolu d'un émetteur spécifique.
+     * Appelé par `ParticleController` pour synchroniser avec l'orientation de la fusée.
+     * @param {string} emitterName - Nom de l'émetteur.
+     * @param {number} angle - Nouvel angle en radians.
+     */
     updateEmitterAngle(emitterName, angle) {
         if (this.emitters[emitterName]) {
             this.emitters[emitterName].angle = angle;
         }
     }
-    
-    // Activer/désactiver un émetteur
+
+    /**
+     * Active ou désactive un émetteur de particules.
+     * @important Cette méthode vérifie l'état de la fusée (`rocketModel`) pour empêcher
+     * l'activation si la fusée est détruite ou n'a plus de carburant.
+     * Crée une dépendance avec `RocketModel`.
+     *
+     * @param {string} emitterName - Nom de l'émetteur.
+     * @param {boolean} isActive - `true` pour activer, `false` pour désactiver.
+     * @param {RocketModel|null} [rocketModel=null] - Le modèle actuel de la fusée pour vérifier son état (destruction, carburant).
+     */
     setEmitterActive(emitterName, isActive, rocketModel = null) {
-        // Si la fusée est détruite, on ne doit pas activer l'émetteur
-        if (isActive && rocketModel && rocketModel.isDestroyed) {
-            if (this.emitters[emitterName]) {
-                this.emitters[emitterName].isActive = false;
-            }
-            return;
-        }
-        // AJOUT : Si plus d'essence, désactiver l'émetteur
-        if (isActive && rocketModel && rocketModel.fuel !== undefined && rocketModel.fuel <= 0) {
-            if (this.emitters[emitterName]) {
-                this.emitters[emitterName].isActive = false;
-            }
-            return;
-        }
-        if (this.emitters[emitterName]) {
+        if (!this.emitters[emitterName]) return; // Sécurité
+
+        // Conditions pour forcer la désactivation
+        const forceInactive = isActive && rocketModel && (rocketModel.isDestroyed || rocketModel.fuel <= 0);
+
+        if (forceInactive) {
+            this.emitters[emitterName].isActive = false;
+        } else {
             this.emitters[emitterName].isActive = isActive;
         }
     }
-    
-    // Régler le niveau de puissance d'un émetteur
+
+    /**
+     * Définit le niveau de puissance d'un émetteur spécifique.
+     * Utilisé par `ParticleController` pour moduler l'émission de particules (nombre, vitesse, etc.).
+     * @param {string} emitterName - Nom de l'émetteur.
+     * @param {number} powerLevel - Niveau de puissance (0-100).
+     */
     setEmitterPowerLevel(emitterName, powerLevel) {
         if (this.emitters[emitterName]) {
             this.emitters[emitterName].powerLevel = Math.max(0, Math.min(100, powerLevel));
         }
     }
-    
-    // Ajouter une particule de débris
+
+    /**
+     * Ajoute une particule de débris à la liste.
+     * Typiquement appelé par `ParticleController` suite à un événement de collision/destruction.
+     * @param {object} particle - L'objet représentant la particule de débris (structure définie par ParticleController).
+     */
     addDebrisParticle(particle) {
         this.debrisParticles.push(particle);
     }
-    
-    // Supprimer toutes les particules
+
+    /**
+     * Réinitialise l'état du système de particules.
+     * Vide toutes les listes de particules (émetteurs et débris) et désactive tous les émetteurs.
+     * Appelé typiquement au début d'une nouvelle partie ou lors d'un reset du jeu.
+     */
     reset() {
-        // Vider toutes les particules
         for (const emitterName in this.emitters) {
             this.emitters[emitterName].particles = [];
             this.emitters[emitterName].isActive = false;
         }
-        
-        // Vider les particules de débris
         this.debrisParticles = [];
     }
-    
-    // Effacer toutes les particules
-    clearAllParticles() {
-        this.particles = [];
-        
-        // Désactiver tous les émetteurs
-        for (const emitterName in this.emitters) {
-            if (this.emitters.hasOwnProperty(emitterName)) {
-                this.emitters[emitterName].isActive = false;
-            }
-        }
-    }
+
+    // La méthode `clearAllParticles` a été supprimée car redondante avec `reset`.
 } 
