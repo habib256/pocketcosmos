@@ -1,31 +1,52 @@
+/**
+ * Représente l'état de la fusée dans la simulation.
+ * Contient les données physiques (position, vitesse, masse, etc.),
+ * l'état des ressources (carburant, santé) et l'état opérationnel
+ * (atterri, détruit, propulseurs actifs).
+ * Ce modèle est destiné à être géré par les contrôleurs (PhysicsController, GameController)
+ * et affiché par les vues (RocketView, VectorsView).
+ * Il utilise les constantes définies dans `constants.js`.
+ */
 class RocketModel {
+    /**
+     * Initialise un nouveau modèle de fusée avec les valeurs par défaut de `constants.js`.
+     */
     constructor() {
         // Identité
         this.name = 'Rocket';
         
         // Position et mouvement
+        /** @type {{x: number, y: number}} Position actuelle (centre de masse) */
         this.position = { x: 0, y: 0 };
+        /** @type {{x: number, y: number}} Vitesse actuelle */
         this.velocity = { x: 0, y: 0 };
+        /** @type {{x: number, y: number}} Accélération actuelle (calculée par PhysicsController) */
         this.acceleration = { x: 0, y: 0 };
+        /** @type {number} Angle actuel en radians (0 = droite, PI/2 = bas) */
         this.angle = 0;
+        /** @type {number} Vitesse angulaire actuelle en radians/s */
         this.angularVelocity = 0;
         
         // Propriétés physiques
+        /** @type {number} Masse en kg (depuis ROCKET.MASS) */
         this.mass = ROCKET.MASS;
+        /** @type {number} Largeur de la hitbox (depuis ROCKET.WIDTH) */
         this.width = ROCKET.WIDTH;
+        /** @type {number} Hauteur de la hitbox (depuis ROCKET.HEIGHT) */
         this.height = ROCKET.HEIGHT;
+        /** @type {number} Friction (depuis ROCKET.FRICTION) */
         this.friction = ROCKET.FRICTION;
+        /** @type {number} Moment d'inertie (calculé à partir de la masse) */
         this.momentOfInertia = ROCKET.MASS * 1.5;
-        this.radius = ROCKET.WIDTH / 2;
+        // this.radius a été supprimé car il est calculable via this.width / 2
         
         // Propulsion
-        // Les positions des propulseurs sont définies en coordonnées polaires dans constants.js
-        // L'angle définit la direction depuis le centre de la fusée (0 = droite, PI/2 = bas, PI = gauche, 3PI/2 = haut)
-        // La distance définit l'éloignement du propulseur par rapport au centre de la fusée
-        // Ces positions influencent:
-        //  1. Le point d'application des forces, ce qui affecte la rotation et la stabilité
-        //  2. La direction de la poussée qui est perpendiculaire pour les propulseurs latéraux
-        //  3. Le moment (couple) créé lors de l'activation des propulseurs
+        // Les positions et angles des propulseurs sont définis dans constants.js
+        // et utilisés par ThrusterPhysics pour appliquer les forces et le couple.
+        /**
+         * @type {Object<string, {power: number, maxPower: number, position: {x: number, y: number}, angle: number}>}
+         * État de chaque propulseur : puissance actuelle (0 à maxPower), puissance max, position relative au centre, angle.
+         */
         this.thrusters = {
             main: {
                 power: 0,
@@ -66,19 +87,53 @@ class RocketModel {
         };
         
         // État
+        /** @type {number} Quantité de carburant restante (depuis ROCKET.FUEL_MAX) */
         this.fuel = ROCKET.FUEL_MAX;
+        /** @type {number} Santé restante (depuis ROCKET.MAX_HEALTH) */
         this.health = ROCKET.MAX_HEALTH;
+        /** @type {boolean} Indique si la fusée est détruite (santé <= 0) */
         this.isDestroyed = false;
+        /** @type {boolean} Indique si la fusée est actuellement posée sur un corps céleste */
         this.isLanded = false;
+        /** @type {string|null} Nom du corps céleste sur lequel la fusée est posée (ex: 'Terre', 'Lune'). Null si non posée. */
         this.landedOn = null;
-        this.crashedOn = null;
+        // this.crashedOn a été supprimé car non utilisé.
         
-        // Position relative au corps céleste sur lequel on s'est crashé
-        this.relativePosition = null; // Position par rapport au corps céleste
-        this.attachedTo = null; // Référence au corps céleste auquel la fusée est attachée
+        /**
+         * @typedef {object} RelativePosition
+         * @property {number} x - Décalage X par rapport au centre du corps céleste.
+         * @property {number} y - Décalage Y par rapport au centre du corps céleste.
+         * @property {number} angle - Angle de la fusée au moment de l'atterrissage/crash.
+         * @property {number} distance - Distance au centre du corps céleste.
+         * @property {number} angleToBody - Angle absolu vers le corps céleste.
+         * @property {number} angleRelatifOrbital - Angle par rapport à l'orbite du corps céleste (pour suivre la rotation).
+         * @property {number} dirX - Composante X du vecteur direction normalisé vers le corps.
+         * @property {number} dirY - Composante Y du vecteur direction normalisé vers le corps.
+         * @property {number} absoluteX - Position X absolue au moment de l'enregistrement.
+         * @property {number} absoluteY - Position Y absolue au moment de l'enregistrement.
+         * @property {boolean} [isFixedOnEarth] - Indicateur spécial pour un comportement fixe sur Terre.
+         */
+        /**
+         * @type {RelativePosition|null}
+         * Stocke la position et l'orientation de la fusée par rapport à un corps céleste
+         * au moment où elle s'y attache (atterrissage ou destruction).
+         * Permet de faire suivre la fusée (ou ses débris) au corps céleste.
+         * Calculé par `updateRelativePosition`.
+         */
+        this.relativePosition = null;
+        /**
+         * @type {string|null}
+         * Référence au nom du corps céleste auquel la fusée (ou ses débris) est actuellement attachée.
+         * Utilisé conjointement avec `relativePosition` pour mettre à jour la position absolue via `updateAbsolutePosition`.
+         * `landedOn` indique un atterrissage réussi, `attachedTo` indique un lien (atterri OU détruit).
+         */
+        this.attachedTo = null;
     }
     
-    // Réinitialiser l'état de la fusée à ses valeurs par défaut
+    /**
+     * Réinitialise l'état de la fusée à ses valeurs initiales.
+     * Utilisé pour recommencer une partie ou lors de la création initiale.
+     */
     reset() {
         // Réinitialiser la position et le mouvement
         this.position = { x: 0, y: 0 };
@@ -91,11 +146,11 @@ class RocketModel {
         this.fuel = ROCKET.FUEL_MAX;
         this.health = ROCKET.MAX_HEALTH;
         this.isDestroyed = false;
-        this.isLanded = false; // Commencer comme non posé, sera défini lors de l'initialisation
+        this.isLanded = false;
         this.landedOn = null;
-        this.crashedOn = null;
-        
-        // Réinitialiser la position relative
+        // this.crashedOn = null; // Déjà supprimé
+
+        // Réinitialiser la position relative et l'attachement
         this.relativePosition = null;
         this.attachedTo = null;
 
@@ -104,79 +159,121 @@ class RocketModel {
             this.setThrusterPower(thrusterName, 0);
         }
 
-        // Le cargo est réinitialisé dans GameController.resetRocket
+        // Note: Le cargo est géré et réinitialisé séparément, probablement dans GameController.
     }
     
+    /**
+     * Définit la position de la fusée.
+     * @param {number} x - Coordonnée X.
+     * @param {number} y - Coordonnée Y.
+     */
     setPosition(x, y) {
         this.position.x = x;
         this.position.y = y;
     }
     
+    /**
+     * Définit la vitesse de la fusée.
+     * @param {number} vx - Composante X de la vitesse.
+     * @param {number} vy - Composante Y de la vitesse.
+     */
     setVelocity(vx, vy) {
         this.velocity.x = vx;
         this.velocity.y = vy;
     }
     
+    /**
+     * Définit l'angle de la fusée.
+     * @param {number} angle - Angle en radians.
+     */
     setAngle(angle) {
         this.angle = angle;
     }
     
+    /**
+     * Définit la vitesse angulaire de la fusée.
+     * @param {number} angularVel - Vitesse angulaire en radians/s.
+     */
     setAngularVelocity(angularVel) {
         this.angularVelocity = angularVel;
     }
     
+    /**
+     * Définit la puissance d'un propulseur spécifique.
+     * La puissance est limitée entre 0 et `maxPower` du propulseur.
+     * La puissance est mise à 0 si la fusée est détruite ou sans carburant.
+     * @param {string} thrusterName - Nom du propulseur ('main', 'rear', 'left', 'right').
+     * @param {number} power - Puissance souhaitée.
+     */
     setThrusterPower(thrusterName, power) {
-        // Si plus de carburant ou fusée détruite, aucun thruster ne doit fonctionner
+        if (!this.thrusters[thrusterName]) return; // Sécurité
+
+        // Si plus de carburant ou fusée détruite, aucun propulseur ne doit fonctionner
         if (this.fuel <= 0 || this.isDestroyed) {
-            if (this.thrusters[thrusterName]) {
-                this.thrusters[thrusterName].power = 0;
-            }
+            this.thrusters[thrusterName].power = 0;
             return;
         }
-        if (this.thrusters[thrusterName]) {
-            // Limiter la puissance entre 0 et la puissance maximale du propulseur
-            const maxPower = this.thrusters[thrusterName].maxPower;
-            this.thrusters[thrusterName].power = Math.max(0, Math.min(maxPower, power));
-        }
+
+        // Limiter la puissance entre 0 et la puissance maximale du propulseur
+        const maxPower = this.thrusters[thrusterName].maxPower;
+        this.thrusters[thrusterName].power = Math.max(0, Math.min(maxPower, power));
     }
     
+    /**
+     * Réduit le carburant de la fusée.
+     * @param {number} amount - Quantité de carburant à consommer.
+     * @returns {boolean} `true` s'il reste du carburant après consommation, `false` sinon.
+     */
     consumeFuel(amount) {
         this.fuel = Math.max(0, this.fuel - amount);
         return this.fuel > 0;
     }
     
+    /**
+     * Applique des dommages à la santé de la fusée.
+     * Si la santé tombe à 0 ou moins, la fusée est marquée comme détruite (`isDestroyed = true`),
+     * son état d'atterrissage est réinitialisé, et l'attachement au corps céleste est géré
+     * pour le suivi des débris. Désactive également tous les propulseurs.
+     *
+     * @param {number} amount - Quantité de dommages à appliquer.
+     *
+     * @improvement
+     * La gestion des effets secondaires (son, particules) devrait idéalement être déplacée
+     * vers un contrôleur qui écoute un événement émis par ce modèle (ex: 'ROCKET_DESTROYED').
+     * Cela améliorerait la séparation des responsabilités (MVC).
+     */
     applyDamage(amount) {
-        if (this.isDestroyed) return;
-        
+        if (this.isDestroyed) return; // Déjà détruite, ne rien faire
+
         this.health -= amount;
         
         if (this.health <= 0) {
             this.health = 0;
             this.isDestroyed = true;
             
-            // Si on est sur la Terre ou sur la Lune quand on est détruit, enregistrer la position relative
-            if (this.landedOn === 'Lune' || this.landedOn === 'Terre') {
-                // Conserver l'information qu'on est attaché au corps céleste pour le mouvement
+            // Gérer l'attachement si détruite alors qu'elle était posée
+            if (this.landedOn) { // Était posée quelque part
+                // Conserver l'attachement pour que les débris suivent le corps
                 this.attachedTo = this.landedOn;
-                
-                // Ne pas réinitialiser landedOn pour les débris
-                console.log(`Fusée détruite sur ${this.landedOn} - conservation de l'attachement`);
+                console.log(`Fusée détruite sur ${this.landedOn} - conservation de l'attachement pour les débris.`);
             } else {
-                // Dans les autres cas, réinitialiser landedOn
-                this.landedOn = null;
+                // N'était pas posée, pas d'attachement nécessaire
+                this.attachedTo = null;
             }
-            
-            // Une fusée détruite n'est plus considérée comme atterrie
+
+            // Une fusée détruite n'est plus considérée comme "atterrie"
             this.isLanded = false;
-            
-            console.log(`Fusée détruite${this.attachedTo ? ' sur ' + this.attachedTo : ''}!`);
+            this.landedOn = null; // Réinitialiser landedOn dans tous les cas de destruction
+
+            console.log(`Fusée détruite ${this.attachedTo ? 'sur ' + this.attachedTo : 'en vol'} !`);
             
             // Désactiver tous les propulseurs
             for (const thrusterName in this.thrusters) {
                 this.setThrusterPower(thrusterName, 0);
             }
-            
-            // Jouer le son de crash une seule fois lors de la destruction
+
+            // --- Effets secondaires (à déplacer idéalement) --- //
+            // Jouer le son de crash
             try {
                 const crashSound = new Audio('assets/sound/crash.mp3');
                 crashSound.volume = 1.0; // Volume maximum
@@ -184,97 +281,145 @@ class RocketModel {
                     console.error("Erreur lors de la lecture du son de crash:", error);
                 });
             } catch (error) {
-                console.error("Erreur lors de la lecture du fichier crash.mp3:", error);
+                console.error("Erreur lors de la création/lecture du fichier crash.mp3:", error);
             }
 
-            // Déclencher une explosion de particules à la position de la fusée
+            // Déclencher une explosion de particules
+            // Utilise l'API DOM directement, ce qui couple le modèle à l'environnement du navigateur.
+            // Préférer émettre un événement via EventBus.
             if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
                     detail: { x: this.position.x, y: this.position.y }
                 }));
             }
+            // --- Fin des effets secondaires --- //
         }
     }
     
-    // Calcule et met à jour la position relative par rapport à un corps céleste
+    /**
+     * Calcule et stocke la position/orientation relative de la fusée
+     * par rapport à un corps céleste donné.
+     * Doit être appelée lorsque la fusée s'attache à un corps (atterrissage/destruction).
+     * Nécessaire pour que `updateAbsolutePosition` fonctionne correctement.
+     *
+     * @param {object} celestialBody - Le modèle du corps céleste (doit avoir `name`, `position`, `currentOrbitAngle`).
+     */
     updateRelativePosition(celestialBody) {
         if (!celestialBody) return;
+
+        // Vérifie si la fusée est liée à CE corps céleste (soit par atterrissage, soit par destruction dessus)
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
+
         if (isRelatedToBody) {
             const dx = this.position.x - celestialBody.position.x;
             const dy = this.position.y - celestialBody.position.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
+            // Éviter la division par zéro si la distance est nulle
+            const dirX = distance === 0 ? 0 : dx / distance;
+            const dirY = distance === 0 ? 0 : dy / distance;
             const angleToBody = Math.atan2(dy, dx);
-            // Nouvel angle relatif à l'angle orbital du corps céleste
+
+            // Calculer l'angle relatif par rapport à l'orbite du corps céleste
+            // S'assurer que currentOrbitAngle existe et est un nombre
             let angleRelatifOrbital = angleToBody;
             if (typeof celestialBody.currentOrbitAngle === 'number') {
                 angleRelatifOrbital = angleToBody - celestialBody.currentOrbitAngle;
+                // Normaliser l'angle entre -PI et PI si nécessaire (optionnel)
+                // angleRelatifOrbital = (angleRelatifOrbital + Math.PI * 3) % (Math.PI * 2) - Math.PI;
             }
+
             this.relativePosition = {
                 x: dx,
                 y: dy,
-                angle: this.angle,
+                angle: this.angle, // Angle de la fusée au moment de l'attachement
                 distance: distance,
-                angleToBody: angleToBody,
-                angleRelatifOrbital: angleRelatifOrbital,
-                dirX: dx / distance,
-                dirY: dy / distance,
-                absoluteX: this.position.x,
+                angleToBody: angleToBody, // Angle absolu vers le corps
+                angleRelatifOrbital: angleRelatifOrbital, // Angle relatif à l'orbite du corps
+                dirX: dirX,
+                dirY: dirY,
+                absoluteX: this.position.x, // Sauvegarde position absolue
                 absoluteY: this.position.y
             };
+
+            // Cas spécial pour Terre (si un comportement "fixe" est nécessaire)
             if (celestialBody.name === 'Terre' && this.isLanded) {
                 this.relativePosition.isFixedOnEarth = true;
             }
         }
     }
     
-    // Met à jour la position absolue en fonction de la position du corps céleste auquel on est attaché
+    /**
+     * Met à jour la position absolue et l'angle de la fusée pour qu'elle suive
+     * le mouvement du corps céleste auquel elle est attachée (`this.attachedTo`).
+     * Utilise les données stockées dans `this.relativePosition`.
+     * L'angle de la fusée n'est mis à jour que si elle n'est PAS détruite, préservant l'orientation du crash.
+     *
+     * @param {object} celestialBody - Le modèle du corps céleste auquel la fusée est attachée.
+     */
     updateAbsolutePosition(celestialBody) {
-        if (!celestialBody || !this.relativePosition) return;
-        const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
-        if (isRelatedToBody) {
-            // Sauvegarder l'angle actuel si la fusée est détruite, pour le restaurer après les calculs
-            const originalAngle = this.angle;
+        // Vérifier si la fusée est attachée à CE corps céleste et si les données relatives existent
+        if (!celestialBody || !this.relativePosition || this.attachedTo !== celestialBody.name) {
+            return;
+        }
 
-            if (this.relativePosition.isFixedOnEarth && celestialBody.name === 'Terre' && this.isLanded) {
-                // Cas spécifique pour la Terre fixe (si implémenté)
-                // Ne modifie normalement pas l'angle ici, mais vérifions
-                this.position.x = this.relativePosition.absoluteX;
-                this.position.y = this.relativePosition.absoluteY;
-                // Ne pas toucher à l'angle si détruit
-                // if (!this.isDestroyed) { this.angle = this.relativePosition.angle; } // On laisse l'angle tel quel
-                return; // Sortir tôt pour ce cas
+        // Sauvegarder l'angle actuel au cas où (surtout pour les débris)
+        const originalAngle = this.angle;
+
+        // --- Gérer le cas spécial Terre "fixe" --- //
+        if (this.relativePosition.isFixedOnEarth && celestialBody.name === 'Terre') {
+            // Si la Terre ne bouge pas (ou si on veut un point fixe dessus),
+            // on utilise la position absolue enregistrée.
+            this.position.x = this.relativePosition.absoluteX;
+            this.position.y = this.relativePosition.absoluteY;
+            // Ne pas modifier l'angle (ni pour atterri, ni pour détruit)
+            // this.angle = this.relativePosition.angle; // L'angle initial est conservé
+            return; // Sortir tôt
+        }
+
+        // --- Gérer les corps mobiles (en orbite) --- //
+        if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
+            // Recalculer l'angle absolu basé sur l'orbite actuelle du corps et l'angle relatif enregistré
+            const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
+
+            // Mettre à jour la position absolue de la fusée
+            this.position.x = celestialBody.position.x + Math.cos(angleAbsolu) * this.relativePosition.distance;
+            this.position.y = celestialBody.position.y + Math.sin(angleAbsolu) * this.relativePosition.distance;
+
+            // Mettre à jour l'angle de la fusée SEULEMENT si elle n'est PAS détruite
+            // L'angle des débris doit rester celui du moment de la destruction.
+            if (!this.isDestroyed) {
+                // L'angle de la fusée doit suivre la rotation du corps pour rester "alignée" à la surface.
+                // angleAbsolu est l'angle du point d'attache par rapport au centre du système.
+                // L'angle de la fusée doit être perpendiculaire à cela (ou basé sur l'angle relatif initial).
+                // Utiliser l'angle relatif enregistré (`this.relativePosition.angle`) par rapport à la nouvelle orientation.
+                // L'angle de la fusée = (Angle actuel du corps) + (Angle relatif fusée/corps au moment de l'attache)
+                // L'angle relatif fusée/corps = this.relativePosition.angle - this.relativePosition.angleToBody (?) Non, plus simple :
+                // Angle relatif fusée/surface = this.relativePosition.angle - (this.relativePosition.angleToBody + PI/2) ? -> Complexe
+
+                // Option simple: Faire pointer la fusée vers l'extérieur du corps céleste.
+                // this.angle = angleAbsolu + Math.PI / 2;
+
+                // Option préservant l'orientation relative initiale (plus logique) :
+                // Différence angulaire entre l'angle actuel du point d'attache et l'angle au moment de l'attache
+                const deltaAngle = angleAbsolu - this.relativePosition.angleToBody;
+                this.angle = this.relativePosition.angle + deltaAngle;
             }
 
-            // --- Correction pour corps mobiles ---
-            if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
-                const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
-                // Mettre à jour SEULEMENT la position
-                this.position.x = celestialBody.position.x + Math.cos(angleAbsolu) * this.relativePosition.distance;
-                this.position.y = celestialBody.position.y + Math.sin(angleAbsolu) * this.relativePosition.distance;
-                // Modifier l'angle SEULEMENT si la fusée n'est PAS détruite
-                if (!this.isDestroyed) {
-                    this.angle = angleAbsolu + Math.PI / 2;
-                }
-                // Si détruite, this.angle reste inchangé (celui du crash)
-
-            } else {
-                // Corps statique
-                if (this.relativePosition.x !== undefined) {
-                    // Mettre à jour SEULEMENT la position
-                    this.position.x = celestialBody.position.x + this.relativePosition.x;
-                    this.position.y = celestialBody.position.y + this.relativePosition.y;
-                    // Ne pas modifier l'angle ici non plus, ni pour fusée ok ni pour débris.
-                    // L'angle sur corps statique doit être géré par la logique d'atterrissage/crash initiale.
-                }
+        } else {
+            // --- Gérer les corps statiques (ne devrait pas arriver si tout orbite, mais par sécurité) --- //
+            if (this.relativePosition.x !== undefined) {
+                // Mettre à jour la position basée sur le décalage initial
+                this.position.x = celestialBody.position.x + this.relativePosition.x;
+                this.position.y = celestialBody.position.y + this.relativePosition.y;
+                // Ne pas modifier l'angle ici non plus (ni pour atterri, ni pour détruit).
+                // L'angle sur corps statique est celui de l'atterrissage/crash initial.
             }
+        }
 
-            // Sécurité: Restaurer l'angle original si la fusée est détruite,
-            // au cas où une logique interne l'aurait modifié (peu probable avec ce code).
-            // Normalement inutile avec la logique ci-dessus mais sans danger.
-            if (this.isDestroyed) {
-                this.angle = originalAngle;
-            }
+        // Sécurité: Restaurer l'angle original si la fusée est détruite, au cas où.
+        // Normalement, la logique ci-dessus ne le modifie pas si isDestroyed est true.
+        if (this.isDestroyed) {
+            this.angle = originalAngle;
         }
     }
 } 
