@@ -41,18 +41,20 @@ class RenderingController {
     }
     
     subscribeToEvents() {
-        this.eventBus.subscribe(EVENTS.SIMULATION.UPDATED, (simState) => {
-            // Mettre à jour tous les sous-états à partir du payload unique
-            if (simState.rocket) {
-                this.updateRocketState(simState.rocket);
-            }
-            if (simState.universe) {
-                this.updateUniverseState(simState.universe);
-            }
-            if (simState.particles) {
-                this.updateParticleSystemState(simState.particles);
-            }
-        });
+        // S'abonner et enregistrer l'unsubscribe dans le container
+        window.controllerContainer.track(
+            this.eventBus.subscribe(EVENTS.SIMULATION.UPDATED, (simState) => {
+                if (simState.rocket) {
+                    this.updateRocketState(simState.rocket);
+                }
+                if (simState.universe) {
+                    this.updateUniverseState(simState.universe);
+                }
+                if (simState.particles) {
+                    this.updateParticleSystemState(simState.particles);
+                }
+            })
+        );
     }
     
     // Initialiser les vues

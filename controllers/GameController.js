@@ -105,32 +105,32 @@ class GameController {
     
     // S'abonner aux événements de l'EventBus
     subscribeToEvents() {
-        this.eventBus.subscribe(EVENTS.INPUT.KEYDOWN, (data) => this.handleKeyDown(data));
-        this.eventBus.subscribe(EVENTS.INPUT.KEYUP, (data) => this.handleKeyUp(data));
-        this.eventBus.subscribe(EVENTS.INPUT.KEYPRESS, (data) => this.handleKeyPress(data));
-        this.eventBus.subscribe(EVENTS.INPUT.MOUSEDOWN, (data) => this.handleMouseDown(data));
-        this.eventBus.subscribe(EVENTS.INPUT.MOUSEMOVE, (data) => this.handleMouseMove(data));
-        this.eventBus.subscribe(EVENTS.INPUT.MOUSEUP, (data) => this.handleMouseUp(data));
-        this.eventBus.subscribe(EVENTS.INPUT.WHEEL, (data) => this.handleWheel(data));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYDOWN, (data) => this.handleKeyDown(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYUP, (data) => this.handleKeyUp(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYPRESS, (data) => this.handleKeyPress(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEDOWN, (data) => this.handleMouseDown(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEMOVE, (data) => this.handleMouseMove(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEUP, (data) => this.handleMouseUp(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.WHEEL, (data) => this.handleWheel(data)));
         
         // Événement pour les vecteurs (une seule méthode)
-        this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors());
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors()));
         // Ajout : événement pour le champ de gravité
-        this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField());
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField()));
         
         // Événement pour les mises à jour d'état de la fusée
-        this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data)));
         // Événement lorsque la fusée atterrit
-        this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data)));
 
         // --- Abonnements Joystick ---
-        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data));
-        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_DOWN, (data) => this.handleJoystickButtonDown(data));
-        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_UP, (data) => this.handleJoystickButtonUp(data));
-        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data));
-        this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data));
-        this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ });
-        this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ });
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_DOWN, (data) => this.handleJoystickButtonDown(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_UP, (data) => this.handleJoystickButtonUp(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
         // --- Fin Abonnements Joystick ---
     }
     

@@ -122,6 +122,15 @@ class InputController {
             'KeyI': 'toggleAI'
         };
         
+        // Lier les gestionnaires pour pouvoir les désabonner
+        this._boundKeyDown = this.handleKeyDown.bind(this);
+        this._boundKeyUp = this.handleKeyUp.bind(this);
+        this._boundWheel = this.handleWheel.bind(this);
+        // Conteneurs de gestionnaires pour suppression
+        this._mouseHandlers = {};
+        this._touchHandlers = {};
+        this._gamepadHandlers = {};
+        
         // Initialiser les événements du clavier, souris, tactile et joystick
         this.initKeyboardEvents();
         this.initGamepadEvents();
@@ -129,11 +138,14 @@ class InputController {
     
     initKeyboardEvents() {
         // Écouter les événements du clavier
-        window.addEventListener('keydown', this.handleKeyDown.bind(this));
-        window.addEventListener('keyup', this.handleKeyUp.bind(this));
+        window.addEventListener('keydown', this._boundKeyDown);
+        window.controllerContainer.track(() => window.removeEventListener('keydown', this._boundKeyDown));
+        window.addEventListener('keyup', this._boundKeyUp);
+        window.controllerContainer.track(() => window.removeEventListener('keyup', this._boundKeyUp));
         
         // Écouter les événements de la souris pour le zoom et le déplacement
-        window.addEventListener('wheel', this.handleWheel.bind(this));
+        window.addEventListener('wheel', this._boundWheel);
+        window.controllerContainer.track(() => window.removeEventListener('wheel', this._boundWheel));
         
         // Utiliser une méthode commune pour les événements souris
         this.setupMouseEvents();
@@ -151,50 +163,62 @@ class InputController {
         ];
         
         mouseEvents.forEach(event => {
-            window.addEventListener(event.name, (e) => {
+            const handler = (e) => {
                 this.eventBus.emit(event.eventType, {
                     x: e.clientX,
                     y: e.clientY,
                     button: e.button || 0
                 });
-            });
+            };
+            this._mouseHandlers[event.name] = handler;
+            window.addEventListener(event.name, handler);
+            window.controllerContainer.track(() => window.removeEventListener(event.name, handler));
         });
     }
     
     // Méthode factorisée pour configurer les événements tactiles
     setupTouchEvents() {
-        // Événements tactiles pour appareils mobiles avec passive: true pour de meilleures performances
-        window.addEventListener('touchstart', (event) => {
+        // Événements tactiles pour appareils mobiles avec passive: true
+        const touchStartHandler = (event) => {
             const touch = event.touches[0];
             this.eventBus.emit(EVENTS.INPUT.TOUCHSTART, { x: touch.clientX, y: touch.clientY });
-            // Pas de preventDefault() pour permettre passive: true
-        }, { passive: true });
-        
-        window.addEventListener('touchmove', (event) => {
+        };
+        window.addEventListener('touchstart', touchStartHandler, { passive: true });
+        window.controllerContainer.track(() => window.removeEventListener('touchstart', touchStartHandler, { passive: true }));
+
+        const touchMoveHandler = (event) => {
             const touch = event.touches[0];
             this.eventBus.emit(EVENTS.INPUT.TOUCHMOVE, { x: touch.clientX, y: touch.clientY });
-            // Pas de preventDefault() pour permettre passive: true
-        }, { passive: true });
-        
-        window.addEventListener('touchend', (event) => {
+        };
+        window.addEventListener('touchmove', touchMoveHandler, { passive: true });
+        window.controllerContainer.track(() => window.removeEventListener('touchmove', touchMoveHandler, { passive: true }));
+
+        const touchEndHandler = (event) => {
             this.eventBus.emit(EVENTS.INPUT.TOUCHEND, {});
-            // Pas de preventDefault() pour permettre passive: true
-        }, { passive: true });
+        };
+        window.addEventListener('touchend', touchEndHandler, { passive: true });
+        window.controllerContainer.track(() => window.removeEventListener('touchend', touchEndHandler, { passive: true }));
     }
     
     // Nouvelle méthode pour initialiser le support du joystick
     initGamepadEvents() {
         // Écouter les connexions futures
-        window.addEventListener('gamepadconnected', (event) => {
+        const gpConnectHandler = (event) => {
             this.connectGamepad(event.gamepad);
-        });
+        };
+        this._gamepadHandlers.connected = gpConnectHandler;
+        window.addEventListener('gamepadconnected', gpConnectHandler);
+        window.controllerContainer.track(() => window.removeEventListener('gamepadconnected', gpConnectHandler));
 
         // Écouter les déconnexions futures
-        window.addEventListener('gamepaddisconnected', (event) => {
+        const gpDisconnectHandler = (event) => {
             if (this.gamepad && this.gamepad.index === event.gamepad.index) {
                 this.disconnectGamepad(event.gamepad.id);
             }
-        });
+        };
+        this._gamepadHandlers.disconnected = gpDisconnectHandler;
+        window.addEventListener('gamepaddisconnected', gpDisconnectHandler);
+        window.controllerContainer.track(() => window.removeEventListener('gamepaddisconnected', gpDisconnectHandler));
 
         // Vérifier immédiatement les gamepads déjà connectés
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];

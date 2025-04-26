@@ -56,9 +56,10 @@ class PhysicsController {
         this.lastCacheClear = Date.now();
 
         // Calcul de la force gravitationnelle pour le debug (avant update)
-        this.Events.on(this.engine, 'beforeUpdate', () => {
-            this.calculateGravityForceForDebug();
-        });
+        // Je crée un handler pour pouvoir le désabonner proprement
+        this._beforeUpdateHandler = () => this.calculateGravityForceForDebug();
+        this.Events.on(this.engine, 'beforeUpdate', this._beforeUpdateHandler);
+        window.controllerContainer.track(() => this.Events.off(this.engine, 'beforeUpdate', this._beforeUpdateHandler));
     }
 
     // Initialiser ou réinitialiser le monde physique

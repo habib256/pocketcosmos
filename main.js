@@ -36,6 +36,18 @@ function init() {
     // Attention: Ceci est une pratique qui peut rompre l'encapsulation.
     window.eventBus = eventBus; 
     
+    // Container pour gérer automatiquement les désabonnements (DI simple)
+    window.controllerContainer = {
+        subscriptions: [],
+        track(fn) { this.subscriptions.push(fn); },
+        cleanup() {
+            this.subscriptions.forEach(unsub => unsub());
+            this.subscriptions = [];
+            // nettoyer l'EventBus
+            if (window.eventBus && window.eventBus.clear) window.eventBus.clear();
+        }
+    };
+    
     // Instancier les contrôleurs requis, en leur injectant l'EventBus.
     const inputController = new InputController(eventBus);
     const renderingController = new RenderingController(eventBus);
@@ -71,6 +83,10 @@ function init() {
 function cleanup() {
     if (gameController) {
         gameController.cleanup(); // Appelle la méthode de nettoyage du GameController
+    }
+    // Nettoyer tous les abonnements stockés dans le container
+    if (window.controllerContainer) {
+        window.controllerContainer.cleanup();
     }
 }
 
