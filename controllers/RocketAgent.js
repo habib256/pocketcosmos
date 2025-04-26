@@ -551,4 +551,9 @@ class RocketAgent {
         // Émettre aussi un événement spécifique à l'IA pour affichage/débogage
         this.eventBus.emit('AI_CONTROL_ACTION', { action });
     }
+    
+    // Ajouter la méthode update appelée par GameController pour éviter l'erreur
+    update(deltaTime) {
+        // Rien à faire ici car updateRocketData gère déjà les décisions de l'agent
+    }
 }
