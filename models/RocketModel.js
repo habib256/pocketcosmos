@@ -233,27 +233,47 @@ class RocketModel {
         if (!celestialBody || !this.relativePosition) return;
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
         if (isRelatedToBody) {
+            // Sauvegarder l'angle actuel si la fusée est détruite, pour le restaurer après les calculs
+            const originalAngle = this.angle;
+
             if (this.relativePosition.isFixedOnEarth && celestialBody.name === 'Terre' && this.isLanded) {
+                // Cas spécifique pour la Terre fixe (si implémenté)
+                // Ne modifie normalement pas l'angle ici, mais vérifions
                 this.position.x = this.relativePosition.absoluteX;
                 this.position.y = this.relativePosition.absoluteY;
-                this.angle = this.relativePosition.angle;
-                return;
+                // Ne pas toucher à l'angle si détruit
+                // if (!this.isDestroyed) { this.angle = this.relativePosition.angle; } // On laisse l'angle tel quel
+                return; // Sortir tôt pour ce cas
             }
+
             // --- Correction pour corps mobiles ---
             if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
-                // Calculer l'angle absolu actuel
                 const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
+                // Mettre à jour SEULEMENT la position
                 this.position.x = celestialBody.position.x + Math.cos(angleAbsolu) * this.relativePosition.distance;
                 this.position.y = celestialBody.position.y + Math.sin(angleAbsolu) * this.relativePosition.distance;
-                // L'angle de la fusée reste perpendiculaire au rayon
-                this.angle = angleAbsolu + Math.PI/2;
-            } else {
-                // Fallback : ancienne logique
-                this.position.x = celestialBody.position.x + this.relativePosition.x;
-                this.position.y = celestialBody.position.y + this.relativePosition.y;
-                if (this.landedOn === celestialBody.name) {
-                    this.angle = this.relativePosition.angleToBody + Math.PI/2;
+                // Modifier l'angle SEULEMENT si la fusée n'est PAS détruite
+                if (!this.isDestroyed) {
+                    this.angle = angleAbsolu + Math.PI / 2;
                 }
+                // Si détruite, this.angle reste inchangé (celui du crash)
+
+            } else {
+                // Corps statique
+                if (this.relativePosition.x !== undefined) {
+                    // Mettre à jour SEULEMENT la position
+                    this.position.x = celestialBody.position.x + this.relativePosition.x;
+                    this.position.y = celestialBody.position.y + this.relativePosition.y;
+                    // Ne pas modifier l'angle ici non plus, ni pour fusée ok ni pour débris.
+                    // L'angle sur corps statique doit être géré par la logique d'atterrissage/crash initiale.
+                }
+            }
+
+            // Sécurité: Restaurer l'angle original si la fusée est détruite,
+            // au cas où une logique interne l'aurait modifié (peu probable avec ce code).
+            // Normalement inutile avec la logique ci-dessus mais sans danger.
+            if (this.isDestroyed) {
+                this.angle = originalAngle;
             }
         }
     }

@@ -11,7 +11,7 @@ class SynchronizationManager {
     // Synchronise le modèle logique avec les données du corps physique
     syncModelWithPhysics(rocketModel) {
         const rocketBody = this.physicsController.rocketBody;
-        if (!rocketBody || !rocketModel) return;
+        if (!rocketBody || !rocketModel || rocketModel.isDestroyed) return;
 
         rocketModel.position.x = rocketBody.position.x;
         rocketModel.position.y = rocketBody.position.y;
