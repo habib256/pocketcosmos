@@ -117,7 +117,7 @@ class RenderingController {
     }
     
     // Méthode principale de rendu
-    render(time, ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0) {
+    render(time, ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
@@ -235,7 +235,7 @@ class RenderingController {
         
         // Rendre l'interface utilisateur
         if (this.uiView) {
-            this.uiView.render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions, totalCreditsEarned);
+            this.uiView.render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions, totalCreditsEarned, accelerationVector, missionJustSucceeded);
         }
     }
     

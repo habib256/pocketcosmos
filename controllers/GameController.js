@@ -52,6 +52,9 @@ class GameController {
         // Timer pour réinitialisation auto après crash
         this.crashResetTimer = null;
         
+        // Ajout : Flag pour indiquer si une mission vient d'être réussie
+        this.missionJustSucceededFlag = false;
+
         // S'abonner aux événements
         this.subscribeToEvents();
 
@@ -888,8 +891,11 @@ class GameController {
             }
             // Récupérer les missions actives pour le rendu (si missionManager existe)
             const activeMissions = this.missionManager ? this.missionManager.getActiveMissions() : [];
-            // Passer tous les arguments nécessaires à render, y compris currentTime
-            this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, activeMissions, this.totalCreditsEarned);
+            // Passer tous les arguments nécessaires à render, y compris currentTime et le flag de succès
+            this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, activeMissions, this.totalCreditsEarned, this.missionJustSucceededFlag);
+
+            // Réinitialiser le flag après le rendu
+            this.missionJustSucceededFlag = false;
         }
 
         // Demander la prochaine frame d'animation
@@ -1189,6 +1195,8 @@ class GameController {
             // Traiter les conséquences du succès ICI
             if (completedMissions.length > 0) {
                 console.log(`%c[GameController] ${completedMissions.length} mission(s) complétée(s) !`, 'color: lightgreen;');
+                // Activer le flag pour l'affichage
+                this.missionJustSucceededFlag = true; 
                 completedMissions.forEach(mission => {
                     // Ajouter les récompenses au total
                     this.totalCreditsEarned += mission.reward;

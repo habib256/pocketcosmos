@@ -152,6 +152,7 @@ class UIView {
         this._renderSpeedBar(ctx, speed, barX, speedY + 5, barWidth, barHeight);
 
         // --- Accélération ---
+        /* // Suppression de l'affichage de l'accélération
         const accelerationY = 110;
         if (totalAcceleration) {
             const accNorm = Math.sqrt(totalAcceleration.x * totalAcceleration.x + totalAcceleration.y * totalAcceleration.y);
@@ -166,6 +167,7 @@ class UIView {
         } else {
              ctx.fillText(`a: --- m/s²`, labelX, accelerationY); // Indiquer si non disponible
         }
+        */
 
         ctx.restore();
     }
@@ -332,7 +334,7 @@ class UIView {
         ctx.fillStyle = this.colors.white;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const text = `Assistance: ${this.assistedControlsActive ? "ON" : "OFF"} [A]`; // Ajouter [A] comme indice touche
+        const text = `Assistance: ${this.assistedControlsActive ? "ON" : "OFF"}`; // Retrait de [A]
         ctx.fillText(text, buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
 
         // Stocker les limites calculées
