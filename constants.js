@@ -24,6 +24,12 @@ const PHYSICS = {
     LANDING_MAX_ANGULAR_VELOCITY: 400,// Vitesse angulaire max pour atterrir (rad/s)
     CRASH_ANGLE_DEG: 45,              // Angle de crash par rapport à la verticale (degrés)
     CRASH_ANGULAR_VELOCITY: 400,      // Vitesse angulaire de crash (rad/s)
+    // Ajout des catégories de collision
+    COLLISION_CATEGORIES: {
+        ROCKET: 0x0001,
+        CELESTIAL: 0x0002,
+        // Ajoutez d'autres catégories si nécessaire
+    },
     
     // Multiplicateur de propulsion
     // Ajustez cette valeur pour augmenter la puissance de tous les propulseurs
