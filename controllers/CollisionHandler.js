@@ -133,7 +133,7 @@ class CollisionHandler {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
 
                     if (otherBody.label !== 'rocket') {
-                        if (!rocketModel.isLanded && this.isRocketLanded(rocketModel, otherBody)) {
+                        if (!rocketModel.isDestroyed && !rocketModel.isLanded && this.isRocketLanded(rocketModel, otherBody)) {
                             rocketModel.isLanded = true;
                             rocketModel.landedOn = otherBody.label;
                             console.log(`Fusée posée sur ${otherBody.label}`);
