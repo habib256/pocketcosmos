@@ -297,8 +297,18 @@ class GameController {
         this.isDragging = false;
         
         // Vérifier si le clic est sur le bouton des contrôles assistés
-        if (this.uiView && this.uiView.isPointInAssistedControlsButton(data.x, data.y)) {
-            this.toggleAssistedControls();
+        // en utilisant la méthode de UIView pour obtenir les coordonnées.
+        if (this.uiView) {
+            const bounds = this.uiView.getAssistedControlsButtonBounds();
+            if (bounds && 
+                data.x >= bounds.x && 
+                data.x <= bounds.x + bounds.width && 
+                data.y >= bounds.y && 
+                data.y <= bounds.y + bounds.height) 
+            {
+                 // console.log("Assisted controls button clicked!"); // Log de débogage
+                 this.toggleAssistedControls(); // Appeler la méthode pour basculer l'état
+            }
         }
     }
     
@@ -335,10 +345,11 @@ class GameController {
             // Récupérer la liste du cargo
             const cargoList = this.rocketModel.cargo ? this.rocketModel.cargo.getCargoList() : [];
 
-            // Mettre à jour l'affichage du cargo dans l'UI
-            if (this.uiView) {
-                this.uiView.updateCargoDisplay(cargoList);
-            }
+            // L'affichage UI se met à jour via la boucle de rendu principale,
+            // pas besoin d'un appel explicite ici.
+            // if (this.uiView) {
+            //     this.uiView.updateCargoDisplay(cargoList);
+            // }
             
             // Émettre l'état de la fusée mis à jour
             this.eventBus.emit('ROCKET_STATE_UPDATED', {
@@ -1229,10 +1240,11 @@ class GameController {
                 const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
                 console.log(`%c[GameController] Cargo chargé pour la mission ${nextMission.id}: ${cargoString}`, 'color: lightblue;');
             }
-             // Mettre à jour l'affichage UI du cargo immédiatement
-            if (this.uiView) {
-                this.uiView.updateCargoDisplay(this.rocketModel.cargo.getCargoList());
-            }
+             // L'affichage UI se met à jour via la boucle de rendu principale,
+             // pas besoin d'un appel explicite ici.
+             // if (this.uiView) {
+             //    this.uiView.updateCargoDisplay(this.rocketModel.cargo.getCargoList());
+             // }
         } else {
             console.log(`%c[GameController] Aucune mission active au départ de ${location} trouvée. Pas de chargement automatique de cargo.`, 'color: gray;');
         }
