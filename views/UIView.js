@@ -49,6 +49,9 @@ class UIView {
         this.assistedControlsActive = true; // L'état réel doit être synchronisé avec le reste du jeu
         this.missionSuccessFadeTime = 0; // Timestamp de la dernière réussite de mission pour l'effet de fade
         this.missionSuccessDuration = 2500; // Durée de l'affichage "Mission Réussie" (ms)
+        // Nouveaux états pour l'affichage IA
+        this.isIAActive = false;
+        this.isTrainingActive = false;
 
         // Stocker les dernières coordonnées connues du bouton
         this.lastAssistedButtonBounds = null;
@@ -86,6 +89,8 @@ class UIView {
             // Afficher les infos de la fusée (santé, fuel, vitesse, accélération)
             if (rocketModel) {
                 this._renderRocketInfo(ctx, rocketModel, totalAcceleration);
+                // Afficher l'état IA et entraînement
+                this._renderAIMode(ctx, 20, 140);
             }
 
             // Afficher l'état d'atterrissage ou de crash
@@ -657,5 +662,16 @@ class UIView {
      */
     getAssistedControlsButtonBounds() {
         return this.lastAssistedButtonBounds;
+    }
+
+    /** @private Affiche l'état IA et entraînement */
+    _renderAIMode(ctx, x, y) {
+        ctx.save();
+        ctx.font = this.font;
+        ctx.fillStyle = this.colors.info;
+        ctx.textAlign = 'left';
+        ctx.fillText(`🤖 IA: ${this.isIAActive ? 'ON' : 'OFF'}`, x, y);
+        ctx.fillText(`📈 TRAIN: ${this.isTrainingActive ? 'ON' : 'OFF'}`, x, y + parseInt(this.font, 10) + 5);
+        ctx.restore();
     }
 } 

@@ -140,13 +140,23 @@ class GameController {
                 this.resetScene();
             })
         );
+        // Mettre à jour l'état IA actif dans l'UI
+        window.controllerContainer.track(
+            this.eventBus.subscribe(window.EVENTS.AI.CONTROL_CHANGED, (data) => {
+                if (this.uiView) this.uiView.isIAActive = data.active;
+            })
+        );
         // Ajuster la vitesse de simulation et masquer le canvas en mode entraînement IA
         window.controllerContainer.track(
             this.eventBus.subscribe(window.EVENTS.AI.TRAINING_CHANGED, (data) => {
+                // Mettre à jour l'état entraînement dans l'UI
+                if (this.uiView) this.uiView.isTrainingActive = data.active;
+                // Fast-forward
                 const speed = data.active ? 10 : 1;
                 if (this.physicsController) this.physicsController.timeScale = speed;
+                // Afficher toujours le canvas, même en mode entraînement IA
                 const canvas = document.querySelector('canvas');
-                if (canvas) canvas.style.display = data.active ? 'none' : 'block';
+                if (canvas) canvas.style.display = 'block';
             })
         );
     }

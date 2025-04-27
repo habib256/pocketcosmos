@@ -42,6 +42,7 @@ class InputController {
             c: false,           // Centrer la caméra
             v: false,           // Afficher les vecteurs
             i: false,           // Activer/désactiver l'IA
+            y: false            // Activer/désactiver l'entraînement IA
         };
         
         // État du joystick
