@@ -314,7 +314,7 @@ class SynchronizationManager {
                  rocketModel.setAngularVelocity(0);
 
                  // Émettre l'événement ROCKET_LANDED
-                 this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                 this.eventBus.emit(window.EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
             }
             // Si on n'était pas posé et la vérification confirme, ne rien faire.
         }

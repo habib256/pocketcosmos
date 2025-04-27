@@ -43,7 +43,7 @@ class RenderingController {
     subscribeToEvents() {
         // S'abonner et enregistrer l'unsubscribe dans le container
         window.controllerContainer.track(
-            this.eventBus.subscribe(EVENTS.SIMULATION.UPDATED, (simState) => {
+            this.eventBus.subscribe(window.EVENTS.SIMULATION.UPDATED, (simState) => {
                 if (simState.rocket) {
                     this.updateRocketState(simState.rocket);
                 }
@@ -56,14 +56,14 @@ class RenderingController {
             })
         );
         window.controllerContainer.track(
-            this.eventBus.subscribe(EVENTS.SYSTEM.CONTROLLERS_SETUP, ({ physicsController }) => {
+            this.eventBus.subscribe(window.EVENTS.SYSTEM.CONTROLLERS_SETUP, ({ physicsController }) => {
                 this.physicsController = physicsController;
             })
         );
 
         // Abonnement no-op pour éviter l'avertissement lors de l'émission de UI_UPDATE_CREDITS
         window.controllerContainer.track(
-            this.eventBus.subscribe(EVENTS.UI.CREDITS_UPDATED, (data) => {
+            this.eventBus.subscribe(window.EVENTS.UI.CREDITS_UPDATED, (data) => {
                 // no-op
             })
         );
