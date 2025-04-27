@@ -105,12 +105,10 @@ Le projet suit une architecture MVC étendue :
 
 
 
-////////  PROCHAINES ETAPES ///////
+////////  PROCHAINES ETAPES ENVISAGEABLES ///////
 
 Découplage et patterns
-Éviter les scripts "monolithiques" : chaque controller un peu trop gros (plus de 600 lignes) (GameController.js ...) devrait être refactorisé
-
-Préférer les événements Matter.js (engine.on('beforeUpdate'), world.on('collisionStart')) pour déclencher la synchronisation et la gestion des collisions, plutôt que de poller ou de vérifier manuellement dans SynchronizationManager.
+Éviter les scripts "monolithiques" : chaque controller trop gros avec par exemple plus de 600 lignes (GameController.js ...) devrait être refactorisé
 
 Moteur physique & optimisation
 Déléguer au plugin matter-attractors tout le calcul de gravité : ajouter les attracteurs (planètes, lunes) comme bodies statiques dotés de la propriété plugin.attractors.

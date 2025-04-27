@@ -60,6 +60,13 @@ class RenderingController {
                 this.physicsController = physicsController;
             })
         );
+
+        // Abonnement no-op pour éviter l'avertissement lors de l'émission de UI_UPDATE_CREDITS
+        window.controllerContainer.track(
+            this.eventBus.subscribe(EVENTS.UI.CREDITS_UPDATED, (data) => {
+                // no-op
+            })
+        );
     }
     
     // Initialiser les vues

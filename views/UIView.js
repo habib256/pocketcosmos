@@ -384,7 +384,7 @@ class UIView {
              sectionStartY = currentY;
              let cargoEndY = this._renderCargoSection(ctx, boxX, boxPadding, currentY, lineHeight, rocketModel);
              // Ajouter un petit padding au bottom avant de dessiner le cadre
-             cargoEndY -= lineHeight * 0.3;
+             cargoEndY += lineHeight * 0.3;
              this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding, 1, this.colors.frameBorder, 3, sectionStartY, cargoEndY);
              currentY = cargoEndY + lineHeight * 0.3; // Mettre à jour currentY au cas où il y aurait d'autres sections
         }
@@ -480,17 +480,17 @@ class UIView {
     _renderCargoSection(ctx, boxX, boxPadding, startY, lineHeight, rocketModel) {
         let currentY = startY;
         if (!rocketModel || !rocketModel.cargo || rocketModel.cargo.getCargoList().length === 0) {
-             // Optionnel: afficher "Cargo: Vide" ou juste ne rien afficher et ne pas dessiner le cadre
-             ctx.fillStyle = this.colors.white;
-             ctx.font = `bold 14px ${this.fontFamily}`;
-             ctx.textAlign = 'left';
-             ctx.textBaseline = 'top';
-             ctx.fillText("Cargo:", boxX + boxPadding, currentY);
-             currentY += lineHeight * 1.3;
-             ctx.font = `12px ${this.fontFamily}`;
-             ctx.fillText("Vide", boxX + boxPadding + 5, currentY);
-             currentY += lineHeight;
-             return currentY; // Retourne Y même si vide pour calcul du cadre éventuel
+            // Optionnel: afficher "Cargo: Vide" ou juste ne rien afficher et ne pas dessiner le cadre
+            ctx.fillStyle = this.colors.white;
+            ctx.font = `bold 14px ${this.fontFamily}`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText("Cargo:", boxX + boxPadding, currentY);
+            currentY += lineHeight * 1.3;
+            ctx.font = `12px ${this.fontFamily}`;
+            ctx.fillText("Vide", boxX + boxPadding + 5, currentY);
+            currentY += lineHeight;
+            return currentY;
         }
 
         ctx.fillStyle = this.colors.white;
@@ -498,37 +498,39 @@ class UIView {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText("Cargo:", boxX + boxPadding, currentY);
+        // Avancer l'ordonnée avant de dessiner les icônes
         currentY += lineHeight * 1.3;
+        // Hauteur de la première ligne d'icônes
+        let currentLineY = currentY;
 
         const cargoList = rocketModel.cargo.getCargoList();
-        const iconsPerLine = 5; // Nombre d'icônes par ligne
-        const iconSpacing = 20; // Espacement horizontal entre les icônes
+        const iconsPerLine = 5;
+        const iconSpacing = 20;
         const iconStartX = boxX + boxPadding + 5;
-        const iconYIncrement = lineHeight * 1.1; // Espacement vertical entre les lignes d'icônes
-        let lastLineY = currentY; // Suivre le Y de la dernière ligne où une icône est dessinée
+        const iconYIncrement = lineHeight * 1.1;
 
         cargoList.forEach(item => {
             const icon = this._getCargoIcon(item.type);
             if (icon) { // Affichage par icônes
-                ctx.font = `14px ${this.fontFamily}`; // Taille pour icônes
+                ctx.font = `14px ${this.fontFamily}`;
                 let iconCount = 0;
                 let currentLineX = iconStartX;
-                let currentLineY = currentY;
 
                 if (item.quantity > 0) {
                     for (let i = 0; i < item.quantity; i++) {
-                        if (iconCount > 0 && iconCount % iconsPerLine === 0) { // Commence une nouvelle ligne
+                        if (iconCount > 0 && iconCount % iconsPerLine === 0) {
                             iconCount = 0;
                             currentLineX = iconStartX;
-                            lastLineY += iconYIncrement; // Met à jour le Y pour la nouvelle ligne
+                            currentLineY += iconYIncrement;
                         }
-                        ctx.fillText(icon, currentLineX, lastLineY); // Dessine sur la ligne actuelle (potentiellement nouvelle)
+                        ctx.fillText(icon, currentLineX, currentLineY);
                         currentLineX += iconSpacing;
                         iconCount++;
                     }
-                    // Mettre à jour currentY pour la prochaine section ou item, en se basant sur la dernière ligne utilisée
-                    currentY = lastLineY + iconYIncrement; // Met à jour currentY pour être en dessous de la dernière ligne dessinée
-                } // Si item.quantity est 0, currentY reste inchangé pour cet item.
+                    // Descendre d'une ligne après avoir dessiné toutes les icônes de ce type
+                    currentLineY += iconYIncrement;
+                    currentY = currentLineY;
+                }
 
             } else { // Affichage texte pour les autres types
                 ctx.font = `12px ${this.fontFamily}`;
@@ -537,7 +539,7 @@ class UIView {
                 currentY += lineHeight; // Espacement normal pour le texte
             }
         });
-         return currentY; // Retourne la position Y finale
+        return currentY; // Retourne la position Y finale
     }
 
     /** @private Retourne l'icône correspondant à un type de cargo. */

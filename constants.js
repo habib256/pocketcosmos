@@ -150,7 +150,7 @@ const CELESTIAL_BODY = {
 
     // --- Paramètres spécifiques à Mercure ---
     MERCURY: {
-      MASS: 6.6e11,             // Masse approximative de Mercure (simulation)
+      MASS: 1.2e11,             // Masse approximative de Mercure (simulation)
       RADIUS: 488,              // Rayon approximatif de Mercure (simulation)
       ORBIT_DISTANCE: 13050,    // Distance orbitale Mercure-Soleil (augmentée x1.5)
       ORBIT_SPEED: 0.0000,      // Vitesse orbitale (simulation) - À ajuster si besoin
@@ -159,7 +159,7 @@ const CELESTIAL_BODY = {
 
     // --- Paramètres spécifiques à Vénus ---
     VENUS: {
-      MASS: 1.94e11,            // Masse approximative de Vénus (simulation)
+      MASS: 2e11,            // Masse approximative de Vénus (simulation)
       RADIUS: 710,              // Rayon approximatif de Vénus (simulation)
       ORBIT_DISTANCE: 18000,    // Distance orbitale Vénus-Soleil (augmentée x1.5)
       ORBIT_SPEED: 0.0000,      // Vitesse orbitale (simulation) - À ajuster si besoin
