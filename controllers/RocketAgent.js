@@ -302,6 +302,13 @@ class RocketAgent {
             reward = -100;  // Pénalité importante pour un crash
         }
         
+        // Living penalty pour chaque étape et bonus carburant restant
+        reward -= 0.01;
+        if (this.rocketData && typeof ROCKET !== 'undefined') {
+            const fuelBonus = this.rocketData.fuel / ROCKET.FUEL_MAX;
+            reward += fuelBonus;
+        }
+        
         return reward;
     }
     

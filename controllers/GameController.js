@@ -137,7 +137,16 @@ class GameController {
         window.controllerContainer.track(
             this.eventBus.subscribe(window.EVENTS.AI.EPISODE_END, () => {
                 console.log('[GameController] Episode IA terminé, réinitialisation.');
-                this.resetRocket();
+                this.resetScene();
+            })
+        );
+        // Ajuster la vitesse de simulation et masquer le canvas en mode entraînement IA
+        window.controllerContainer.track(
+            this.eventBus.subscribe(window.EVENTS.AI.TRAINING_CHANGED, (data) => {
+                const speed = data.active ? 10 : 1;
+                if (this.physicsController) this.physicsController.timeScale = speed;
+                const canvas = document.querySelector('canvas');
+                if (canvas) canvas.style.display = data.active ? 'none' : 'block';
             })
         );
     }
@@ -1422,5 +1431,11 @@ class GameController {
         if (this.renderingController && typeof this.renderingController.toggleGravityField === 'function') {
             this.renderingController.toggleGravityField();
         }
+    }
+
+    // Méthode pour réinitialiser la scène après un épisode IA
+    resetScene() {
+        this.resetRocket();
+        this.emitUpdatedStates();
     }
 } 

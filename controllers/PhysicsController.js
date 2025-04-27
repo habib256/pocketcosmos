@@ -149,8 +149,11 @@ class PhysicsController {
         // 4. Appliquer les forces des propulseurs
         this.thrusterPhysics.updateThrusters(this.rocketModel);
 
-        // 5. Mettre à jour le moteur Matter.js (calcule gravité via plugin, collisions, mouvement)
-        this.Engine.update(this.engine, deltaTime * this.timeScale);
+        // 5. Mettre à jour le moteur Matter.js (fast-forward en mode entraînement si timeScale>1)
+        const steps = Math.max(1, Math.round(this.timeScale));
+        for (let i = 0; i < steps; i++) {
+            this.Engine.update(this.engine, deltaTime);
+        }
 
         // 6. Synchroniser le modèle de la fusée avec le résultat de la physique
         //    (Sauf si elle est gérée manuellement car posée/attachée sur un corps mobile ou sur la Terre)
