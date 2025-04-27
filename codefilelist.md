@@ -101,7 +101,7 @@ Le projet suit une architecture MVC étendue :
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus sert pour découpler le système MVC afin de l'interfacer avec le système IA. Surtout pas d'imports ES6 on utilise window.EVENTS dans tous les contrôleurs et ailleurs pour accéder à l'EventBus.
 - **Nettoyage** : Supprimer les fichiers obsolètes ou redondants dès que possible pour garder la base de code la plus propre possible.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
-
+- La balise <script src="controllers/RocketAgent.js"> est passée en <script src="controllers/RocketAgent.js" defer></script>, garantissant que TensorFlow.js (chargé en head) est bien disponible avant l’agent IA, sans utiliser type="module".
 
 
 

@@ -309,7 +309,7 @@ class RocketAgent {
     handleCrash() {
         if (!this.isActive || !this.isTraining) return;
         
-        // Si nous avons un état et une action précédents, ajouter une expérience terminale
+        // Si nous avons un état précédent et une action, ajouter une expérience terminale
         if (this.lastState !== null && this.lastAction !== null) {
             // Forte pénalité pour un crash
             this.replayBuffer.push({
@@ -335,13 +335,15 @@ class RocketAgent {
         if (this.config.epsilon > this.config.epsilonMin) {
             this.config.epsilon *= this.config.epsilonDecay;
         }
+        // Signaler la fin d'un épisode après un crash
+        this.eventBus.emit(window.EVENTS.AI.EPISODE_END);
     }
     
     // Gestion d'un succès
     handleSuccess() {
         if (!this.isActive || !this.isTraining) return;
         
-        // Si nous avons un état et une action précédents, ajouter une expérience terminale
+        // Si nous avons un état précédent et une action, ajouter une expérience terminale
         if (this.lastState !== null && this.lastAction !== null) {
             // Forte récompense pour un succès
             this.replayBuffer.push({
@@ -367,6 +369,8 @@ class RocketAgent {
         if (this.config.epsilon > this.config.epsilonMin) {
             this.config.epsilon *= this.config.epsilonDecay;
         }
+        // Signaler la fin d'un épisode réussi
+        this.eventBus.emit(window.EVENTS.AI.EPISODE_END);
     }
     
     // Entraîner le modèle avec un batch du replay buffer

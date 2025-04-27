@@ -132,6 +132,14 @@ class GameController {
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
         // --- Fin Abonnements Joystick ---
+
+        // Réinitialiser l'environnement de jeu à la fin d'un épisode IA (crash ou succès)
+        window.controllerContainer.track(
+            this.eventBus.subscribe(window.EVENTS.AI.EPISODE_END, () => {
+                console.log('[GameController] Episode IA terminé, réinitialisation.');
+                this.resetRocket();
+            })
+        );
     }
     
     // Gérer les événements d'entrée

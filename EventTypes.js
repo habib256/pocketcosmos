@@ -57,10 +57,11 @@ window.EVENTS = {
     COMPLETED: 'MISSION_COMPLETED'
   },
   AI: {
-    TOGGLE: 'TOGGLE_AI_CONTROL',
-    TOGGLE_TRAINING: 'TOGGLE_TRAINING',
-    CONTROL_CHANGED: 'AI_CONTROL_CHANGED',
-    TRAINING_CHANGED: 'AI_TRAINING_CHANGED',
-    CONTROL_ACTION: 'AI_CONTROL_ACTION'
+    TOGGLE: 'ai:toggle',
+    TOGGLE_TRAINING: 'ai:toggleTraining',
+    CONTROL_CHANGED: 'ai:status',
+    TRAINING_CHANGED: 'ai:training',
+    CONTROL_ACTION: 'ai:action',
+    EPISODE_END: 'ai:episodeEnd'
   }
 }; 

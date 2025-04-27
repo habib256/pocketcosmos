@@ -134,6 +134,12 @@ class InputController {
         // Initialiser les événements du clavier, souris, tactile et joystick
         this.initKeyboardEvents();
         this.initGamepadEvents();
+        // Souscrire aux actions de l'IA et les router comme entrées utilisateur
+        window.controllerContainer.track(
+            this.eventBus.subscribe(window.EVENTS.AI.CONTROL_ACTION, (data) => {
+                this.eventBus.emit(window.EVENTS.INPUT.KEYDOWN, { action: data.action, key: 'AI' });
+            })
+        );
     }
     
     initKeyboardEvents() {
