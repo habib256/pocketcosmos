@@ -1,4 +1,4 @@
-# Guide de Structure et d'Architecture du Code
+# Guide de Structure et d'Architecture du Code de PocketCosmos
 
 ## Structure des Dossiers
 
