@@ -6,6 +6,28 @@ class SynchronizationManager {
         this.ROCKET = ROCKET;
         this.PHYSICS = PHYSICS;
         this._lastLandedCheck = null;
+
+        // Je me connecte aux events Matter.js pour rendre le manager autonome
+        this.engine = this.physicsController.engine;
+        this.world = this.engine.world;
+        this.Events = this.physicsController.Events;
+
+        // Synchronisation réactive des corps mobiles avant chaque update
+        this.Events.on(this.engine, 'beforeUpdate', () => {
+            this.syncMovingBodyPositions();
+            // Ne pas forcer la synchronisation du rocketModel vers physique en vol (éviter d'écraser la stabilisation)
+            const rocketModel = this.physicsController.rocketModel;
+            if (rocketModel.isLanded || rocketModel.isDestroyed) {
+                this.syncPhysicsWithModel(rocketModel);
+            }
+        });
+
+        // Synchronisation réactive Physics → Model après chaque update
+        this.Events.on(this.world, 'afterUpdate', () => {
+            this.syncModelWithPhysics(this.physicsController.rocketModel);
+        });
+
+        // Détection d'atterrissage gérée périodiquement via checkRocketLandedStatusPeriodically et CollisionHandler
     }
 
     // Synchronise le modèle logique avec les données du corps physique

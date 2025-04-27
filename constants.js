@@ -150,7 +150,7 @@ const CELESTIAL_BODY = {
 
     // --- Paramètres spécifiques à Mercure ---
     MERCURY: {
-      MASS: 6.6e10,             // Masse approximative de Mercure (simulation)
+      MASS: 6.6e11,             // Masse approximative de Mercure (simulation)
       RADIUS: 488,              // Rayon approximatif de Mercure (simulation)
       ORBIT_DISTANCE: 13050,    // Distance orbitale Mercure-Soleil (augmentée x1.5)
       ORBIT_SPEED: 0.0000,      // Vitesse orbitale (simulation) - À ajuster si besoin
@@ -168,7 +168,7 @@ const CELESTIAL_BODY = {
 
     // --- Paramètres spécifiques à Mars ---
     MARS: {
-      MASS: 1.28e10,            // Masse approximative de Mars (simulation)
+      MASS: 1.28e11,            // Masse approximative de Mars (simulation)
       RADIUS: 580,              // Rayon approximatif de Mars (simulation)
       ORBIT_DISTANCE: 30000,    // Distance orbitale Mars-Soleil (augmentée x1.5)
       ORBIT_SPEED: 0.0000,      // Vitesse orbitale (simulation) - À ajuster si besoin
