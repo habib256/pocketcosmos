@@ -274,6 +274,9 @@ class GameController {
             case 'toggleTraces':
                 this.toggleTraceVisibility();
                 break;
+            case 'toggleTraining':
+                this.eventBus.emit(window.EVENTS.AI.TOGGLE_TRAINING);
+                break;
             case 'increaseThrustMultiplier':
                 this.adjustThrustMultiplier(2.0); // Doubler
                 break;

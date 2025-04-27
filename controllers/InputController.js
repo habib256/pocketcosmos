@@ -16,6 +16,7 @@ class InputController {
         'KeyV': 'toggleVectors',
         'KeyG': 'toggleGravityField',
         'KeyI': 'toggleAI',
+        'KeyY': 'toggleTraining',
         'Equal': 'zoomIn',
         'Minus': 'zoomOut',
         'Escape': 'pauseGame'
@@ -119,7 +120,10 @@ class InputController {
             'KeyM': 'decreaseThrustMultiplier',
             'i': 'toggleAI',            // Activer/désactiver l'IA
             'I': 'toggleAI',
-            'KeyI': 'toggleAI'
+            'KeyI': 'toggleAI',
+            'y': 'toggleTraining',
+            'Y': 'toggleTraining',
+            'KeyY': 'toggleTraining'
         };
         
         // Lier les gestionnaires pour pouvoir les désabonner
