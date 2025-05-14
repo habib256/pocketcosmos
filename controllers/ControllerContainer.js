@@ -32,6 +32,7 @@ class ControllerContainer {
         this.subscriptions = [];
 
         // Si EventBus a une méthode pour se nettoyer complètement
+        /*
         if (window.eventBus && typeof window.eventBus.clearAllSubscribers === 'function') {
             console.log("ControllerContainer: Nettoyage de tous les abonnés de l'EventBus.");
             window.eventBus.clearAllSubscribers();
@@ -39,5 +40,6 @@ class ControllerContainer {
              console.log("ControllerContainer: Appel de EventBus.clear().");
              window.eventBus.clear();
         }
+        */
     }
 } 

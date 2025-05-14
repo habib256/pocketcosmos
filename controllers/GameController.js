@@ -309,6 +309,7 @@ class GameController {
             missionJustSucceeded: this.missionJustSucceededFlag
         };
         
+        console.log("Émission de :", EVENTS.SIMULATION.UPDATED, "avec données (extrait) :", { rocketX: simulationState.rocket.position.x, cameraX: simulationState.camera.x });
         this.eventBus.emit(EVENTS.SIMULATION.UPDATED, simulationState);
         
         if (this.missionJustSucceededFlag) {
@@ -475,6 +476,7 @@ class GameController {
             }, 100); // Petit délai pour simuler
         } else {
             // Si on n'est pas en LOADING, on s'assure que l'état actuel est bien notifié
+            console.log("Émission de :", EVENTS.GAME.STATE_CHANGED, "avec données :", { newState: this.currentState, oldState: null });
              this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: null });
         }
     }
@@ -788,6 +790,7 @@ class GameController {
         if (this.physicsController) {
             console.log('[GameController] physicsController existe. rocketBody:', this.physicsController.rocketBody);
             const assistedEnabled = this.physicsController.toggleAssistedControls();
+            console.log("Émission de :", EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, "avec données :", { isActive: assistedEnabled });
             this.eventBus.emit(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, { isActive: assistedEnabled });
         } else {
             console.warn('[GameController] Tentative de basculer les contrôles assistés, mais physicsController est null.');
@@ -848,8 +851,10 @@ class GameController {
                 completedMissions.forEach(mission => {
                     this.totalCreditsEarned += mission.reward;
                     // Émet un événement pour mettre à jour l'UI des crédits.
+                    console.log("Émission de :", EVENTS.UI.CREDITS_UPDATED, "avec données :", { reward: mission.reward });
                     this.eventBus.emit(EVENTS.UI.CREDITS_UPDATED, { reward: mission.reward }); 
                     // Émet un événement pour signaler la complétion d'une mission.
+                    console.log("Émission de :", EVENTS.MISSION.COMPLETED, "avec données :", { mission: mission });
                     this.eventBus.emit(EVENTS.MISSION.COMPLETED, { mission: mission });
                 });
             }
@@ -915,6 +920,7 @@ class GameController {
         this.currentState = newState;
         this._onEnterState(newState);
 
+        console.log("Émission de :", EVENTS.GAME.STATE_CHANGED, "avec données :", { newState: this.currentState, oldState: oldState });
         this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: oldState });
     }
 
@@ -931,6 +937,7 @@ class GameController {
                 break;
             case GameStates.MAIN_MENU:
                 // Cacher le menu principal, libérer les ressources du menu
+                console.log("Émission de :", EVENTS.UI.HIDE_MAIN_MENU);
                 this.eventBus.emit(EVENTS.UI.HIDE_MAIN_MENU);
                 break;
             case GameStates.PLAYING:
@@ -940,10 +947,12 @@ class GameController {
             case GameStates.PAUSED:
                 // Actions à faire quand on quitte la pause (ex: cacher le menu pause)
                 // L'événement GAME_RESUMED sera géré par _onEnterState(GameStates.PLAYING)
+                console.log("Émission de :", EVENTS.UI.HIDE_PAUSE_MENU);
                 this.eventBus.emit(EVENTS.UI.HIDE_PAUSE_MENU);
                 break;
             case GameStates.GAME_OVER:
                 // Cacher l'écran de game over
+                console.log("Émission de :", EVENTS.UI.HIDE_GAME_OVER_SCREEN);
                 this.eventBus.emit(EVENTS.UI.HIDE_GAME_OVER_SCREEN);
                 break;
             // ... autres états
@@ -964,11 +973,13 @@ class GameController {
         switch (newState) {
             case GameStates.LOADING:
                 // Afficher l'écran de chargement, charger les assets initiaux
+                console.log("Émission de :", EVENTS.UI.SHOW_LOADING_SCREEN);
                 this.eventBus.emit(EVENTS.UI.SHOW_LOADING_SCREEN);
                 // Typiquement, on passerait à MAIN_MENU ou LEVEL_SETUP une fois le chargement terminé
                 break;
             case GameStates.MAIN_MENU:
                 // Afficher le menu principal, initialiser la logique du menu
+                console.log("Émission de :", EVENTS.UI.SHOW_MAIN_MENU);
                 this.eventBus.emit(EVENTS.UI.SHOW_MAIN_MENU);
                 // S'assurer que la simulation physique est arrêtée ou n'impacte pas le menu
                 if (this.physicsController) this.physicsController.stopSimulation(); // Méthode à créer dans PhysicsController
@@ -985,12 +996,15 @@ class GameController {
             case GameStates.PLAYING:
                 // Démarrer/reprendre la simulation physique, activer les contrôles
                 if (this.physicsController) this.physicsController.resumeSimulation(); // Méthode à créer
+                console.log("Émission de :", EVENTS.GAME.GAME_RESUMED); // Ou un nouvel event type GAME_STARTED_PLAYING
                 this.eventBus.emit(EVENTS.GAME.GAME_RESUMED); // Ou un nouvel event type GAME_STARTED_PLAYING
                 break;
             case GameStates.PAUSED:
                 // Arrêter la simulation physique, afficher le menu de pause
                 if (this.physicsController) this.physicsController.pauseSimulation(); // Méthode à créer
+                console.log("Émission de :", EVENTS.GAME.GAME_PAUSED);
                 this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+                console.log("Émission de :", EVENTS.UI.SHOW_PAUSE_MENU);
                 this.eventBus.emit(EVENTS.UI.SHOW_PAUSE_MENU);
                 break;
             case GameStates.CRASH_ANIMATION:
@@ -1003,7 +1017,9 @@ class GameController {
             case GameStates.GAME_OVER:
                 // Arrêter la simulation, afficher l'écran de game over, scores etc.
                 if (this.physicsController) this.physicsController.stopSimulation();
+                console.log("Émission de :", EVENTS.GAME.GAME_OVER_STATE); // Nouvel event ? ou utiliser un existant
                 this.eventBus.emit(EVENTS.GAME.GAME_OVER_STATE); // Nouvel event ? ou utiliser un existant
+                console.log("Émission de :", EVENTS.UI.SHOW_GAME_OVER_SCREEN);
                 this.eventBus.emit(EVENTS.UI.SHOW_GAME_OVER_SCREEN);
                 break;
             // ... autres états (MISSION_BRIEFING, etc.)

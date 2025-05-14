@@ -46,6 +46,98 @@ class UIView {
         this.showMoonInfo = true;
         this.missionSuccessFadeTime = 0; // Timestamp de la dernière réussite de mission pour l'effet de fade
         this.missionSuccessDuration = 2500; // Durée de l'affichage "Mission Réussie" (ms)
+
+        // États d'affichage des écrans modaux
+        this.uiState = {
+            showLoadingScreen: false,
+            showMainMenuScreen: false,
+            showPauseMenuScreen: false,
+            showGameOverScreen: false,
+            // Potentiellement d'autres états UI spécifiques ici
+        };
+
+        this.subscribeToEvents();
+    }
+
+    subscribeToEvents() {
+        if (!this.eventBus || !window.EVENTS || !window.EVENTS.UI) {
+            console.warn("[UIView] EventBus ou EVENTS.UI non disponibles, abonnements aux états UI désactivés.");
+            return;
+        }
+
+        // Chargement
+        if (EVENTS.UI.SHOW_LOADING_SCREEN) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.SHOW_LOADING_SCREEN, () => {
+                    this.uiState.showLoadingScreen = true;
+                    this.uiState.showMainMenuScreen = false;
+                    this.uiState.showPauseMenuScreen = false;
+                    this.uiState.showGameOverScreen = false;
+                    console.log("[UIView] Affichage: Écran de chargement");
+                })
+            );
+        }
+
+        // Menu Principal
+        if (EVENTS.UI.SHOW_MAIN_MENU) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.SHOW_MAIN_MENU, () => {
+                    this.uiState.showLoadingScreen = false;
+                    this.uiState.showMainMenuScreen = true;
+                    this.uiState.showPauseMenuScreen = false;
+                    this.uiState.showGameOverScreen = false;
+                    console.log("[UIView] Affichage: Menu principal");
+                })
+            );
+        }
+        if (EVENTS.UI.HIDE_MAIN_MENU) { // Bien que SHOW_XXX met les autres à false, un HIDE explicite peut être utile
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.HIDE_MAIN_MENU, () => {
+                    this.uiState.showMainMenuScreen = false;
+                    console.log("[UIView] Cache: Menu principal");
+                })
+            );
+        }
+
+        // Menu Pause
+        if (EVENTS.UI.SHOW_PAUSE_MENU) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.SHOW_PAUSE_MENU, () => {
+                    // Le menu pause se superpose, il ne cache pas nécessairement les autres états principaux
+                    this.uiState.showPauseMenuScreen = true;
+                    console.log("[UIView] Affichage: Menu pause");
+                })
+            );
+        }
+        if (EVENTS.UI.HIDE_PAUSE_MENU) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.HIDE_PAUSE_MENU, () => {
+                    this.uiState.showPauseMenuScreen = false;
+                    console.log("[UIView] Cache: Menu pause");
+                })
+            );
+        }
+
+        // Game Over
+        if (EVENTS.UI.SHOW_GAME_OVER_SCREEN) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.SHOW_GAME_OVER_SCREEN, () => {
+                    this.uiState.showLoadingScreen = false;
+                    this.uiState.showMainMenuScreen = false;
+                    this.uiState.showPauseMenuScreen = false; // Game Over prime sur la pause
+                    this.uiState.showGameOverScreen = true;
+                    console.log("[UIView] Affichage: Écran Game Over");
+                })
+            );
+        }
+        if (EVENTS.UI.HIDE_GAME_OVER_SCREEN) { // Pourrait être appelé si on retourne au menu principal depuis Game Over
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.HIDE_GAME_OVER_SCREEN, () => {
+                    this.uiState.showGameOverScreen = false;
+                    console.log("[UIView] Cache: Écran Game Over");
+                })
+            );
+        }
     }
 
     // --- Méthodes de Rendu Publiques ---
@@ -79,34 +171,57 @@ class UIView {
             }
         }
 
-        if (isPaused) {
-            this._renderPause(ctx, canvas);
-            // Si le message de succès doit être visible même en pause, 
-            // et qu'il n'a pas été dessiné ci-dessus (parce que le timer vient de démarrer et isPaused est vrai),
-            // on pourrait le redessiner ici. Cependant, la logique actuelle le dessine déjà s'il est actif.
-        } else {
-            // Afficher les infos de la fusée (santé, fuel, vitesse, accélération)
-            if (rocketModel) {
-                this._renderRocketInfo(ctx, rocketModel, totalAcceleration);
-            }
-
-            // Afficher l'état d'atterrissage ou de crash
-            this._renderFlightStatus(ctx, canvas, rocketModel);
-
-            // Afficher les infos contextuelles (Lune)
-            if (universeModel && rocketModel) {
-                this._renderMoonInfo(ctx, canvas, rocketModel, universeModel);
-            }
-
-            // Afficher les missions, le cargo et les crédits
-            this._renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
+        // Afficher les écrans modaux en priorité
+        if (this.uiState.showLoadingScreen) {
+            this._renderLoadingScreen(ctx, canvas);
+            return; // Ne rien afficher d'autre
         }
+
+        if (this.uiState.showMainMenuScreen) {
+            this._renderMainMenuScreen(ctx, canvas);
+            return; // Ne rien afficher d'autre
+        }
+
+        if (this.uiState.showGameOverScreen) {
+            this._renderGameOverScreen(ctx, canvas, rocketModel); // rocketModel pour afficher des infos de score par ex.
+            return; // Ne rien afficher d'autre
+        }
+
+        // Si aucun écran modal plein n'est affiché, dessiner l'UI du jeu
+        // Le menu pause peut se superposer au jeu
+        if (this.uiState.showPauseMenuScreen) {
+            this._renderPauseMenuScreen(ctx, canvas);
+            // En pause, on pourrait décider de ne pas afficher les autres infos du jeu ci-dessous,
+            // ou de les afficher en fond. Pour l'instant, on les affiche.
+        }
+
+        // Afficher les infos de la fusée (santé, fuel, vitesse, accélération)
+        // Ne pas afficher si un écran modal est actif (géré par les return ci-dessus) 
+        // ou si le menu pause doit cacher ces infos (actuellement, il ne le fait pas)
+        if (rocketModel) {
+            this._renderRocketInfo(ctx, rocketModel, totalAcceleration);
+        }
+
+        // Afficher l'état d'atterrissage ou de crash
+        // La logique de Game Over est maintenant gérée par _renderGameOverScreen
+        // On garde _renderFlightStatus pour "Posé sur..."
+        if (!this.uiState.showGameOverScreen) { // Ne pas afficher si l'écran Game Over est déjà là
+             this._renderFlightStatus(ctx, canvas, rocketModel);
+        }
+
+        // Afficher les infos contextuelles (Lune)
+        if (universeModel && rocketModel) {
+            this._renderMoonInfo(ctx, canvas, rocketModel, universeModel);
+        }
+
+        // Afficher les missions, le cargo et les crédits
+        this._renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
     }
 
     // --- Méthodes de Rendu Privées (Convention: préfixe _) ---
 
     /** @private Affiche le message de pause. */
-    _renderPause(ctx, canvas) {
+    _renderPauseMenuScreen(ctx, canvas) {
         ctx.save();
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -116,6 +231,64 @@ class UIView {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('PAUSE', canvas.width / 2, canvas.height / 2);
+        ctx.restore();
+    }
+
+    /** @private Affiche l'écran de chargement. */
+    _renderLoadingScreen(ctx, canvas) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = `36px ${this.fontFamily}`;
+        ctx.fillStyle = this.colors.white;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Chargement en cours...', canvas.width / 2, canvas.height / 2);
+        ctx.restore();
+    }
+
+    /** @private Affiche l'écran du menu principal. */
+    _renderMainMenuScreen(ctx, canvas) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 20, 40, 0.9)'; // Un fond différent pour le menu
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = `48px ${this.fontFamily}`;
+        ctx.fillStyle = this.colors.gold;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('POCKET COSMOS', canvas.width / 2, canvas.height / 2 - 50);
+        
+        ctx.font = `24px ${this.fontFamily}`;
+        ctx.fillStyle = this.colors.white;
+        ctx.fillText('Appuyez sur ENTRÉE pour commencer', canvas.width / 2, canvas.height / 2 + 20);
+        // TODO: Ajouter d'autres options de menu (options, crédits, etc.)
+        ctx.restore();
+    }
+
+    /** @private Affiche l'écran de Game Over. */
+    _renderGameOverScreen(ctx, canvas, rocketModel) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(50, 0, 0, 0.7)'; // Fond rouge sombre
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = `bold 48px ${this.fontFamily}`;
+        ctx.fillStyle = this.colors.danger;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 30);
+
+        // Afficher la raison du crash si disponible (déjà dans _renderFlightStatus, mais on le spécialise ici)
+        let reason = '';
+        if (rocketModel && rocketModel.isDestroyed) {
+            const crashedOn = rocketModel.crashedOn ? ` sur ${rocketModel.crashedOn}` : '';
+            reason = `Crashé${crashedOn}`;
+            ctx.font = `20px ${this.fontFamily}`;
+            ctx.fillStyle = this.colors.white;
+            ctx.fillText(reason, canvas.width / 2, canvas.height / 2 + 20);
+        }
+        
+        ctx.font = `18px ${this.fontFamily}`;
+        ctx.fillStyle = this.colors.white;
+        ctx.fillText('Appuyez sur R pour recommencer', canvas.width / 2, canvas.height / 2 + 60);
         ctx.restore();
     }
 
