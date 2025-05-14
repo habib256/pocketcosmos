@@ -50,7 +50,7 @@ function init() {
     
     // Instancier les contrôleurs requis, en leur injectant l'EventBus.
     const inputController = new InputController(eventBus);
-    const renderingController = new RenderingController(eventBus);
+    const renderingController = new RenderingController(eventBus, canvas);
     const rocketAgent = new RocketAgent(eventBus);
     
     // Instancier le gestionnaire de missions.
@@ -68,8 +68,8 @@ function init() {
         rocketAgent
     });
     
-    // Initialiser le GameController (qui crée PhysicsController, etc.) avec le canvas.
-    gameController.init(canvas);
+    // Initialiser le GameController (ne prend plus le canvas).
+    gameController.init(/*canvas*/);
     
     // Afficher les instructions de jeu à l'utilisateur.
     showInstructions();

@@ -1,12 +1,33 @@
 class RocketController {
-    constructor(eventBus, rocketModel, particleSystemModel, physicsController) {
+    constructor(eventBus, rocketModel, actualPhysicsController, actualParticleController, cameraModel) {
         this.eventBus = eventBus;
         this.rocketModel = rocketModel;
-        this.particleSystemModel = particleSystemModel;
-        this.physicsController = physicsController; // Pour les sons des propulseurs
+        this.physicsController = actualPhysicsController; // actualPhysicsController est l'instance de PhysicsController
+        
+        // actualParticleController est l'instance de ParticleController.
+        // Nous supposons qu'elle détient une référence à son ParticleSystemModel.
+        if (actualParticleController && actualParticleController.particleSystemModel) {
+            this.particleSystemModel = actualParticleController.particleSystemModel;
+        } else if (actualParticleController && actualParticleController.model) { // Tentative avec .model
+            this.particleSystemModel = actualParticleController.model;
+        } else {
+            console.error("RocketController: Impossible de récupérer particleSystemModel depuis particleController. Les émetteurs de particules pourraient ne pas fonctionner.", actualParticleController);
+            this.particleSystemModel = null;
+        }
+        
+        this.cameraModel = cameraModel; // Stocker cameraModel
 
         // Constante pour le nouvel événement que RocketController émettra
         this.ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged';
+    }
+
+    update(deltaTime) {
+        if (!this.rocketModel || this.rocketModel.isDestroyed) {
+            return;
+        }
+        // Logique de mise à jour continue pour RocketController (si nécessaire)
+        // Par exemple, gestion des contrôles assistés, rotation continue, etc.
+        // Pour l'instant, cette méthode existe pour corriger l'erreur.
     }
 
     subscribeToEvents() {
@@ -22,17 +43,23 @@ class RocketController {
     }
 
     handleThrustForwardStart() {
+        if (!this.eventBus || !this.rocketModel) return;
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
-        if (!this.rocketModel) return;
         this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
-        this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);
+        } else {
+            console.warn("RocketController: particleSystemModel non disponible pour l'émetteur principal.");
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleThrustForwardStop() {
-        if (!this.rocketModel) return;
+        if (!this.eventBus || !this.rocketModel) return;
         this.rocketModel.setThrusterPower('main', 0);
-        this.particleSystemModel.setEmitterActive('main', false, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('main', false, this.rocketModel);
+        }
         if (this.physicsController && this.physicsController.mainThrusterSoundPlaying) {
             if (this.physicsController.mainThrusterSound) {
                 this.physicsController.mainThrusterSound.pause();
@@ -44,47 +71,65 @@ class RocketController {
     }
 
     handleThrustBackwardStart() {
+        if (!this.eventBus || !this.rocketModel) return;
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
-        if (!this.rocketModel) return;
         this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
-        this.particleSystemModel.setEmitterActive('rear', true, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('rear', true, this.rocketModel);
+        } else {
+            console.warn("RocketController: particleSystemModel non disponible pour l'émetteur arrière.");
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleThrustBackwardStop() {
-        if (!this.rocketModel) return;
+        if (!this.eventBus || !this.rocketModel) return;
         this.rocketModel.setThrusterPower('rear', 0);
-        this.particleSystemModel.setEmitterActive('rear', false, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('rear', false, this.rocketModel);
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleRotateLeftStart() {
+        if (!this.eventBus || !this.rocketModel) return;
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
-        if (!this.rocketModel) return;
         this.rocketModel.setThrusterPower('left', ROCKET.THRUSTER_POWER.LEFT);
-        this.particleSystemModel.setEmitterActive('left', true, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('left', true, this.rocketModel);
+        } else {
+            console.warn("RocketController: particleSystemModel non disponible pour l'émetteur de rotation gauche.");
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleRotateLeftStop() {
-        if (!this.rocketModel) return;
+        if (!this.eventBus || !this.rocketModel) return;
         this.rocketModel.setThrusterPower('left', 0);
-        this.particleSystemModel.setEmitterActive('left', false, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('left', false, this.rocketModel);
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleRotateRightStart() {
+        if (!this.eventBus || !this.rocketModel) return;
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
-        if (!this.rocketModel) return;
         this.rocketModel.setThrusterPower('right', ROCKET.THRUSTER_POWER.RIGHT);
-        this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
+        } else {
+            console.warn("RocketController: particleSystemModel non disponible pour l'émetteur de rotation droite.");
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 
     handleRotateRightStop() {
-        if (!this.rocketModel) return;
+        if (!this.eventBus || !this.rocketModel) return;
         this.rocketModel.setThrusterPower('right', 0);
-        this.particleSystemModel.setEmitterActive('right', false, this.rocketModel);
+        if (this.particleSystemModel) {
+            this.particleSystemModel.setEmitterActive('right', false, this.rocketModel);
+        }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
 } 

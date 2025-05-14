@@ -131,6 +131,15 @@ class MissionManager {
     }
 
     /**
+     * Retourne les détails de la première mission active (en attente).
+     * @returns {object|null} La première mission active, ou null si aucune.
+     */
+    getCurrentMissionDetails() {
+        const activeMissions = this.getActiveMissions();
+        return activeMissions.length > 0 ? activeMissions[0] : null;
+    }
+
+    /**
      * Réinitialise les missions à leur état initial.
      */
     resetMissions() {

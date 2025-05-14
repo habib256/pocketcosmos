@@ -1,6 +1,7 @@
 class PhysicsController {
     constructor(eventBus) {
         this.eventBus = eventBus;
+        this.isSystemPaused = false; // Flag pour l'état de pause du système physique
 
         // Récupérer les modules Matter.js
         this.Engine = Matter.Engine;
@@ -60,6 +61,24 @@ class PhysicsController {
         this._beforeUpdateHandler = () => this.calculateGravityForceForDebug();
         this.Events.on(this.engine, 'beforeUpdate', this._beforeUpdateHandler);
         window.controllerContainer.track(() => this.Events.off(this.engine, 'beforeUpdate', this._beforeUpdateHandler));
+
+        // S'abonner aux événements de pause du jeu
+        if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_PAUSED, () => {
+                    this.isSystemPaused = true;
+                    // console.log("PhysicsController: PAUSED");
+                })
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_RESUMED, () => {
+                    this.isSystemPaused = false;
+                    // console.log("PhysicsController: RESUMED");
+                })
+            );
+        } else {
+            console.error("EventBus ou EVENTS.GAME non disponibles pour PhysicsController lors de l'abonnement pause/resume.");
+        }
     }
 
     // Initialiser ou réinitialiser le monde physique
@@ -120,6 +139,12 @@ class PhysicsController {
 
     // Méthode principale de mise à jour, appelée par GameController
     update(deltaTime) {
+        if (this.isSystemPaused) {
+            // Si le système est en pause, ne pas mettre à jour la physique.
+            // Matter.js Engine.update ne sera pas appelé.
+            return;
+        }
+
         this.clearCacheIfNeeded();
 
         if (!this.rocketModel || !this.rocketBody || !this.universeModel) return;

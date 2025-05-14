@@ -15,9 +15,9 @@ class UniverseView {
     /**
      * @param {HTMLCanvasElement} canvas - L'élément canvas sur lequel dessiner.
      */
-    constructor(canvas) {
+    constructor(/*canvas*/) {
         /** @type {HTMLCanvasElement} */
-        this.canvas = canvas;
+        // this.canvas = canvas;
         /** @type {CelestialBodyView | null} Vue pour dessiner les corps célestes. */
         this.celestialBodyView = null;
         /** @type {TraceView | null} Vue pour dessiner la trace de la fusée. */
@@ -99,13 +99,14 @@ class UniverseView {
      * avec une marge de tolérance.
      * @param {number} screenX - Coordonnée X à vérifier sur l'écran.
      * @param {number} screenY - Coordonnée Y à vérifier sur l'écran.
+     * @param {CameraModel} camera - L'objet caméra pour obtenir les dimensions.
      * @returns {boolean} Vrai si le point est dans les limites visibles (avec marge).
      */
-    isPointVisible(screenX, screenY) {
-        // Calcule une marge basée sur les dimensions du canvas pour éviter les artefacts sur les bords
-        const margin = RENDER.MARGIN_FACTOR * Math.max(this.canvas.width, this.canvas.height);
-        return screenX >= -margin && screenX <= this.canvas.width + margin &&
-               screenY >= -margin && screenY <= this.canvas.height + margin;
+    isPointVisible(screenX, screenY, camera) {
+        // Calcule une marge basée sur les dimensions du canvas (maintenant via camera) pour éviter les artefacts sur les bords
+        const margin = RENDER.MARGIN_FACTOR * Math.max(camera.width, camera.height);
+        return screenX >= -margin && screenX <= camera.width + margin &&
+               screenY >= -margin && screenY <= camera.height + margin;
     }
 
 
@@ -125,14 +126,16 @@ class UniverseView {
     /**
      * Dessine le fond uni de l'espace.
      * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
+     * @param {CameraModel} camera - L'objet caméra pour obtenir les dimensions.
      */
-    renderBackground(ctx) {
+    renderBackground(ctx, camera) {
         // Sauvegarde l'état actuel (transformations, styles)
         ctx.save();
         // Réinitialise la transformation pour dessiner le fond sur tout le canvas visible
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = RENDER.SPACE_COLOR;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Utiliser camera.width et camera.height pour les dimensions du fillRect
+        ctx.fillRect(0, 0, camera.width, camera.height);
         // Restaure l'état précédent
         ctx.restore();
     }
@@ -182,7 +185,7 @@ class UniverseView {
             const screenPos = this.worldToScreen(star.x, star.y, camera);
 
             // Vérifie si le point est visible (en coordonnées écran)
-            if (this.isPointVisible(screenPos.x, screenPos.y)) {
+            if (this.isPointVisible(screenPos.x, screenPos.y, camera)) {
                 // Taille fixe pour les étoiles (ex: 1 pixel)
                 const size = 1;
 
@@ -272,7 +275,7 @@ class UniverseView {
      */
     render(ctx, camera, stars, celestialBodies, time) {
        // 1. Dessiner le fond (ignore la transformation caméra actuelle)
-       this.renderBackground(ctx);
+       this.renderBackground(ctx, camera);
 
        // 2. Appliquer le scintillement aux données des étoiles (avant le dessin)
        this.applyStarTwinkle(stars, time);

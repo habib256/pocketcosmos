@@ -1,6 +1,9 @@
 class RenderingController {
-    constructor(eventBus) {
+    constructor(eventBus, canvas) {
         this.eventBus = eventBus;
+        this.canvas = canvas;
+        this.ctx = this.canvas.getContext('2d');
+        this.isSystemPaused = false; // Flag pour l'état de pause du système de rendu
         
         // Références aux vues
         this.rocketView = null;
@@ -13,6 +16,11 @@ class RenderingController {
         this.showVectors = false; // Par défaut désactivé
         this.showGravityField = false; // Par défaut désactivé
         this.gravityFieldMode = 0; // 0: rien, 1: flèches, 2: lignes
+        
+        // Initialiser la taille et gérer le redimensionnement
+        this.handleResize(); // Appel initial pour définir la taille
+        window.addEventListener('resize', () => this.handleResize());
+        // TODO: Ajouter le removeEventListener dans une méthode cleanup si nécessaire
         
         // États des modèles pour le rendu
         this.rocketState = {
@@ -38,6 +46,24 @@ class RenderingController {
         
         // Abonner aux événements de mise à jour d'état
         this.subscribeToEvents();
+
+        // S'abonner aux événements de pause du jeu
+        if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_PAUSED, () => {
+                    this.isSystemPaused = true;
+                    // console.log("RenderingController: PAUSED");
+                })
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_RESUMED, () => {
+                    this.isSystemPaused = false;
+                    // console.log("RenderingController: RESUMED");
+                })
+            );
+        } else {
+            console.error("EventBus ou EVENTS.GAME non disponibles pour RenderingController lors de l'abonnement pause/resume.");
+        }
     }
     
     subscribeToEvents() {
@@ -123,14 +149,30 @@ class RenderingController {
     }
     
     // Méthode principale de rendu
-    render(time, ctx, canvas, rocketModel, universeModel, particleSystemModel, isPaused, camera, activeMissions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
+    render(time, /*ctx, canvas,*/ rocketModel, universeModel, particleSystemModel, camera, activeMissions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
+        // Le paramètre isPaused est retiré, on utilise this.isSystemPaused à la place.
+        
+        // Utiliser this.ctx et this.canvas internes
+        const ctx = this.ctx;
+        const canvas = this.canvas;
+
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Si le jeu est en pause (géré par RenderingController lui-même)
+        if (this.isSystemPaused) {
+            if (this.uiView) {
+                // UIView gère l'affichage du message de PAUSE
+                this.uiView.render(ctx, canvas, rocketModel, universeModel, this.isSystemPaused, activeMissions, totalCreditsEarned, null, missionJustSucceeded);
+            }
+            // Ne pas rendre le reste de la scène si en pause
+            return; 
+        }
         
         // Rendre le fond et les corps séparément, en utilisant uniquement les états internes
         if (this.universeView) {
             this.universeView.renderBackground(ctx, camera);
-            this.universeView.render(ctx, camera, this.universeState.stars, this.universeState.celestialBodies, time);
+            this.universeView.render(ctx, camera, this.universeState.stars, universeModel ? universeModel.celestialBodies : [], time);
         }
         
         // Rendre les étoiles
@@ -139,8 +181,8 @@ class RenderingController {
         }
         
         // Rendre les corps célestes
-        if (this.universeView && this.celestialBodyView && this.universeState.celestialBodies) {
-            this.universeView.renderCelestialBodies(ctx, camera, this.universeState.celestialBodies);
+        if (this.universeView && this.celestialBodyView && universeModel && universeModel.celestialBodies) {
+            this.universeView.renderCelestialBodies(ctx, camera, universeModel.celestialBodies);
         }
         
         // Rendre la trace de la fusée
@@ -153,19 +195,20 @@ class RenderingController {
             this.particleView.renderParticles(ctx, this.particleSystemState, camera, this.rocketState);
         }
         
-        // Calcul des vecteurs, remplacer l'utilisation de physicsController par rocketState
-        // 1. Vecteur d'accélération totale calculé par la simulation
-        const accelerationVector = this.rocketState.accelerationVector || { x: 0, y: 0 };
+        // Utiliser directement rocketModel (l'argument frais de GameController) pour les données de la fusée
+        let currentAccelerationVector = { x: 0, y: 0 };
+        if (rocketModel && rocketModel.acceleration) {
+            currentAccelerationVector = rocketModel.acceleration; 
+        }
 
-        // 2. Vecteurs de mission (départ et arrivée)
+        // Vecteurs de mission (départ et arrivée)
         let missionStartVector = null;
         let missionTargetVector = null;
-        if (activeMissions && activeMissions.length > 0 && rocketModel && universeModel) {
+        if (activeMissions && activeMissions.length > 0 && rocketModel && universeModel && rocketModel.position) {
             const mission = activeMissions[0];
             const rocketPos = rocketModel.position;
-            // Planète de départ
             const startBody = universeModel.celestialBodies.find(b => b.name === mission.from);
-            if (startBody && rocketPos) {
+            if (startBody && startBody.position) {
                 const dx = startBody.position.x - rocketPos.x;
                 const dy = startBody.position.y - rocketPos.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
@@ -175,9 +218,8 @@ class RenderingController {
                     distance: dist
                 };
             }
-            // Planète d'arrivée
             const targetBody = universeModel.celestialBodies.find(b => b.name === mission.to);
-            if (targetBody && rocketPos) {
+            if (targetBody && targetBody.position) {
                 const dx = targetBody.position.x - rocketPos.x;
                 const dy = targetBody.position.y - rocketPos.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
@@ -188,22 +230,53 @@ class RenderingController {
                 };
             }
         }
-        // Fusionner dans l'état de la fusée pour l'affichage
+
+        // Préparer l'état de la fusée pour les vues (rocketView, vectorsView)
+        // en utilisant le rocketModel frais passé en argument comme base,
+        // et en y ajoutant les vecteurs calculés stockés dans this.rocketState (maintenant à jour).
+        const baseRocketState = rocketModel ? {
+            position: rocketModel.position,
+            angle: rocketModel.angle,
+            velocity: rocketModel.velocity,
+            acceleration: rocketModel.acceleration, // Accélération "physique" du modèle
+            thrusters: rocketModel.thrusters,
+            fuel: rocketModel.fuel,
+            health: rocketModel.health,
+            isLanded: rocketModel.isLanded,
+            isDestroyed: rocketModel.isDestroyed,
+            attachedTo: rocketModel.attachedTo,
+            relativePosition: rocketModel.relativePosition,
+            mass: rocketModel.mass
+        } : {};
+
+        // this.rocketState contient les vecteurs calculés par GameController.emitUpdatedStates()
+        // (gravityVector, thrustVectors, totalThrustVector, accelerationVector (résultant), lunarAttraction, earth)
+        // et aussi potentiellement les champs de base, mais ceux de rocketModel (passé en arg) sont plus frais.
+        const calculatedVectorsFromEvent = this.rocketState || {};
+
         const rocketStateForView = {
-            ...this.rocketState,
-            accelerationVector,
+            ...baseRocketState, // Priorité aux données fraîches de rocketModel
+            // Ajouter les vecteurs de this.rocketState (qui devraient être à jour grâce à emitUpdatedStates() en fin de gameLoop)
+            gravityVector: calculatedVectorsFromEvent.gravityVector,
+            thrustVectors: calculatedVectorsFromEvent.thrustVectors, // Note: `calculateThrustVectors` dans GameController utilise `PHYSICS.MAIN_THRUST` etc.
+            totalThrustVector: calculatedVectorsFromEvent.totalThrustVector,
+            accelerationVector: calculatedVectorsFromEvent.accelerationVector, // C'est le a=F/m global
+            lunarAttraction: calculatedVectorsFromEvent.lunarAttraction,
+            earth: calculatedVectorsFromEvent.earth,
+            // Ajouter les vecteurs de mission calculés localement
             missionStartVector,
             missionTargetVector
         };
-        // LOG DEBUG pour le vecteur accélération (chaque frame)
-        //console.log('[DEBUG][frame] accelerationVector transmis à VectorsView:', accelerationVector);
+        // Assurer que même si rocketModel est null, on passe un objet à rocketView
+        const finalRocketStateForView = rocketModel ? rocketStateForView : {};
+
         // Rendre la fusée
         if (this.rocketView) {
-            this.rocketView.render(ctx, rocketStateForView, camera);
+            this.rocketView.render(ctx, finalRocketStateForView, camera);
         }
         // Afficher les vecteurs physiques de la fusée SI activé
         if (this.vectorsView && this.showVectors) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, {
+            this.vectorsView.render(ctx, finalRocketStateForView, camera, {
                 showTotalThrustVector: true,
                 showVelocityVector: true,
                 showAccelerationVector: true,
@@ -217,14 +290,15 @@ class RenderingController {
         }
         // Afficher le champ de gravité selon le mode
         if (this.vectorsView && this.gravityFieldMode === 1) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'arrows', physicsController: this.physicsController });
+            this.vectorsView.render(ctx, finalRocketStateForView, camera, { showGravityField: 'arrows', physicsController: this.physicsController });
         } else if (this.vectorsView && this.gravityFieldMode === 2) {
-            this.vectorsView.render(ctx, rocketStateForView, camera, { showGravityField: 'lines', physicsController: this.physicsController });
+            this.vectorsView.render(ctx, finalRocketStateForView, camera, { showGravityField: 'lines', physicsController: this.physicsController });
         }
         
         // Rendre l'interface utilisateur
         if (this.uiView) {
-            this.uiView.render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions, totalCreditsEarned, accelerationVector, missionJustSucceeded);
+            // Passer this.isSystemPaused à uiView.render
+            this.uiView.render(ctx, canvas, rocketModel, universeModel, this.isSystemPaused, activeMissions, totalCreditsEarned, currentAccelerationVector, missionJustSucceeded);
         }
     }
     
@@ -286,5 +360,36 @@ class RenderingController {
         else if (this.gravityFieldMode === 1) msg = 'flèches';
         else if (this.gravityFieldMode === 2) msg = 'lignes de champ';
         console.log(`[RenderingController] Affichage du champ de gravité : ${msg}`);
+    }
+
+    // Ajout : méthode pour basculer l'affichage de la trace
+    toggleTraceVisibility() {
+        if (this.traceView) {
+            this.traceView.toggleVisibility(); // Appelle la méthode sur l'instance de TraceView qu'il détient
+            console.log(`[RenderingController] Affichage de la trace : ${this.traceView.isVisible ? 'activé' : 'désactivé'}`);
+        } else {
+            console.warn("[RenderingController] toggleTraceVisibility appelé mais traceView n'est pas initialisée.");
+        }
+    }
+
+    // Nouvelle méthode pour gérer le redimensionnement du canvas
+    handleResize() {
+        if (this.canvas) {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+            // Potentiellement, émettre un événement si d'autres modules doivent réagir au redimensionnement
+            // this.eventBus.emit(EVENTS.CANVAS_RESIZED, { width: this.canvas.width, height: this.canvas.height });
+            console.log(`Canvas redimensionné à: ${this.canvas.width}x${this.canvas.height}`);
+        }
+    }
+
+    // Nouvelle méthode pour obtenir les dimensions du canvas
+    getCanvasDimensions() {
+        if (this.canvas) {
+            return { width: this.canvas.width, height: this.canvas.height };
+        }
+        // Retourner des valeurs par défaut ou gérer l'erreur si le canvas n'est pas prêt
+        console.warn("getCanvasDimensions appelé avant que le canvas ne soit initialisé.");
+        return { width: 0, height: 0 }; 
     }
 } 

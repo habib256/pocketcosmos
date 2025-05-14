@@ -69,19 +69,27 @@ class UIView {
      * @param {boolean} [missionJustSucceeded=false] - Indique si une mission vient d'être réussie (pour l'effet).
      */
     render(ctx, canvas, rocketModel, universeModel, isPaused, activeMissions = [], totalCreditsEarned = 0, totalAcceleration = null, missionJustSucceeded = false) {
-        // Gestion de l'effet "Mission Réussie"
+        // Gestion de l'effet "Mission Réussie" - exécutée en premier
         if (missionJustSucceeded && this.missionSuccessFadeTime === 0) {
             this.missionSuccessFadeTime = Date.now();
+            // console.log("[UIView] missionJustSucceeded est true, déclenchement de l'affichage.");
         }
+
         if (this.missionSuccessFadeTime > 0) {
-            this._renderMissionSuccessText(ctx, canvas);
-            if (Date.now() - this.missionSuccessFadeTime > this.missionSuccessDuration) {
+            const stillShowSuccessMessage = Date.now() - this.missionSuccessFadeTime <= this.missionSuccessDuration;
+            if (stillShowSuccessMessage) {
+                this._renderMissionSuccessText(ctx, canvas);
+            } else {
                 this.missionSuccessFadeTime = 0; // Réinitialiser après la fin de l'effet
+                // console.log("[UIView] Fin de l'affichage Mission Réussie.");
             }
         }
 
         if (isPaused) {
             this._renderPause(ctx, canvas);
+            // Si le message de succès doit être visible même en pause, 
+            // et qu'il n'a pas été dessiné ci-dessus (parce que le timer vient de démarrer et isPaused est vrai),
+            // on pourrait le redessiner ici. Cependant, la logique actuelle le dessine déjà s'il est actif.
         } else {
             // Afficher les infos de la fusée (santé, fuel, vitesse, accélération)
             if (rocketModel) {

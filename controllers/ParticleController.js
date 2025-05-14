@@ -1,15 +1,40 @@
 class ParticleController {
-    constructor(particleSystemModel) {
+    constructor(particleSystemModel, eventBus) {
         if (!particleSystemModel) {
             throw new Error('ParticleSystemModel est requis pour initialiser ParticleController');
         }
         this.particleSystemModel = particleSystemModel;
-        //console.log('ParticleController initialisé avec:', this.particleSystemModel);
-        //console.log('Émetteurs:', this.particleSystemModel.emitters);
+        this.eventBus = eventBus;
+        this.isSystemPaused = false;
+        this.rocketModel = null;
         
         this.particlePool = [];
         this.maxParticles = 1000; // Limite maximale de particules
         this.initializeParticlePool();
+
+        // S'abonner aux événements de pause du jeu
+        if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_PAUSED, () => {
+                    this.isSystemPaused = true;
+                    // console.log("ParticleController: PAUSED");
+                })
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_RESUMED, () => {
+                    this.isSystemPaused = false;
+                    // console.log("ParticleController: RESUMED");
+                })
+            );
+        } else {
+            // Ne pas faire d'erreur fatale ici si eventBus n'est pas passé, 
+            // car certains contextes d'initialisation pourraient ne pas le fournir (tests, etc.)
+            // Mais loguer un avertissement si window.EVENTS.GAME est disponible, 
+            // car cela suggère une intégration incomplète.
+            if (window.EVENTS && window.EVENTS.GAME) {
+                 console.warn("ParticleController: EventBus non fourni, la gestion de la pause sera inactive.");
+            }
+        }
     }
     
     // Initialiser le pool de particules
@@ -39,10 +64,27 @@ class ParticleController {
     }
     
     // Mettre à jour les particules et créer de nouvelles particules si nécessaire
-    update(deltaTime) {
+    update(deltaTime, rocketModel) {
+        if (this.isSystemPaused) {
+            return; // Ne pas mettre à jour si le jeu est en pause
+        }
+
         if (!this.particleSystemModel || !this.particleSystemModel.emitters) {
             console.error('Erreur: ParticleSystemModel non initialisé correctement');
             return;
+        }
+
+        // Mettre à jour la référence interne de rocketModel si fournie
+        if (rocketModel) {
+            this.rocketModel = rocketModel;
+        }
+
+        // S'assurer que this.rocketModel est disponible avant de mettre à jour les positions
+        if (this.rocketModel) {
+            this.updateEmitterPositions(this.rocketModel);
+        } else {
+            // Optionnel: loguer un avertissement si rocketModel n'a jamais été fourni
+            // console.warn("ParticleController.update: rocketModel non disponible, les positions des émetteurs ne seront pas mises à jour.");
         }
         
         // Mettre à jour chaque émetteur

@@ -88,6 +88,8 @@ class InputController {
         this._touchHandlers = {}; // Idem
         this._gamepadHandlers = {};
         
+        this._keyboardEventsInitialized = false; // Nouveau drapeau
+        
         // Initialiser les événements du clavier, souris, tactile et joystick
         this.initKeyboardEvents();
         this.initMouseEvents(); // Renommé pour clarté
@@ -96,6 +98,9 @@ class InputController {
     }
     
     initKeyboardEvents() {
+        if (this._keyboardEventsInitialized) { // Vérifier le drapeau
+            return;
+        }
         window.addEventListener('keydown', this._boundKeyDown);
         window.controllerContainer.track(() => window.removeEventListener('keydown', this._boundKeyDown));
         window.addEventListener('keyup', this._boundKeyUp);
@@ -103,6 +108,8 @@ class InputController {
         
         window.addEventListener('wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
         window.controllerContainer.track(() => window.removeEventListener('wheel', this._boundWheel));
+        
+        this._keyboardEventsInitialized = true; // Mettre le drapeau à true après l'initialisation
     }
     
     // Méthode pour configurer les événements souris pour le glisser de la caméra

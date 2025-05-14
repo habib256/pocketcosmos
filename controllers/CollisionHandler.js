@@ -12,6 +12,7 @@ class CollisionHandler {
         this._lastLandedState = {};
 
         // --- Ajout pour détection mission accomplie ---
+        /* // Commenté pour éviter les conflits avec l'affichage géré par UIView
         if (this.physicsController.eventBus) {
             this.physicsController.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
                 // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
@@ -41,6 +42,7 @@ class CollisionHandler {
         } else {
             console.warn('[CollisionHandler] eventBus non trouvé sur physicsController, impossible de s\'abonner à MISSION_COMPLETED');
         }
+        */
     }
 
     setupCollisionEvents() {

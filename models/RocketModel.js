@@ -436,4 +436,51 @@ class RocketModel {
             this.angle = originalAngle;
         }
     }
+
+    /**
+     * Met à jour l'état interne du modèle de la fusée.
+     * Appelé à chaque frame par la boucle de jeu principale.
+     * @param {number} deltaTime - Le temps écoulé depuis la dernière mise à jour, en secondes.
+     */
+    update(deltaTime) {
+        if (this.isDestroyed) {
+            // Si la fusée est détruite, s'assurer que tous les propulseurs sont à 0
+            for (const thrusterName in this.thrusters) {
+                if (this.thrusters[thrusterName].power > 0) {
+                    this.setThrusterPower(thrusterName, 0);
+                }
+            }
+            return; // Pas d'autre mise à jour si détruite
+        }
+
+        // Consommation de carburant basée sur la puissance des propulseurs
+        let fuelConsumedThisFrame = 0;
+        for (const thrusterName in this.thrusters) {
+            const thruster = this.thrusters[thrusterName];
+            if (thruster.power > 0) {
+                // La consommation dépend de la puissance et du type de propulseur (via ROCKET.FUEL_CONSUMPTION)
+                const consumptionRate = ROCKET.FUEL_CONSUMPTION[thrusterName.toUpperCase()] || ROCKET.FUEL_CONSUMPTION.DEFAULT;
+                fuelConsumedThisFrame += thruster.power * consumptionRate * deltaTime;
+            }
+        }
+
+        if (fuelConsumedThisFrame > 0) {
+            this.consumeFuel(fuelConsumedThisFrame);
+        }
+
+        // Si plus de carburant, couper tous les propulseurs
+        if (this.fuel <= 0) {
+            for (const thrusterName in this.thrusters) {
+                if (this.thrusters[thrusterName].power > 0) {
+                    this.setThrusterPower(thrusterName, 0); // setThrusterPower gère déjà la condition fuel <= 0
+                }
+            }
+        }
+
+        // Autres logiques de mise à jour du modèle qui pourraient être nécessaires :
+        // - Vérification de conditions de victoire/défaite basées sur l'état de la fusée
+        // - Mise à jour de compteurs internes, etc.
+        // - Si la physique n'est pas entièrement gérée par Matter.js pour ce modèle,
+        //   des mises à jour de position/vélocité pourraient avoir lieu ici, mais c'est moins probable.
+    }
 } 

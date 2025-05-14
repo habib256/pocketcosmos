@@ -20,12 +20,12 @@ class GameController {
         this.uiView = null;
         
         // Contrôleurs
-        this.inputController = null;
-        this.physicsController = null;
-        this.particleController = null;
-        this.renderingController = null;
-        this.rocketAgent = null;
-        this.rocketController = null; // Ajout du RocketController
+        this.inputController = null;     // Sera fourni par setControllers
+        this.physicsController = null;   // Sera créé dans setupControllers
+        this.particleController = null;  // Sera créé dans setupControllers
+        this.renderingController = null; // Sera fourni par setControllers
+        this.rocketAgent = null;         // Sera fourni par setControllers
+        this.rocketController = null;    // Sera créé dans setupControllers
         
         // État du jeu
         this.isRunning = false;
@@ -33,9 +33,9 @@ class GameController {
         this.lastTimestamp = 0;
         this.elapsedTime = 0;
         
-        // Canvas et contexte
-        this.canvas = null;
-        this.ctx = null;
+        // Canvas et contexte (supprimés, car gérés par RenderingController)
+        // this.canvas = null;
+        // this.ctx = null;
         
         // Variables pour le glisser-déposer
         this.isDragging = false;
@@ -61,11 +61,25 @@ class GameController {
 
         // Ajout : pause automatique si l'utilisateur quitte l'onglet
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden && !this.isPaused) {
-                this.isPaused = true;
-                // console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif.');
-                // On peut aussi émettre un événement si besoin :
-                // this.eventBus.emit('GAME_PAUSED');
+            if (document.hidden) {
+                if (!this.isPaused) { // Agir seulement si pas déjà en pause
+                    this.isPaused = true;
+                    console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif (via visibilitychange).');
+                    // Émettre l'événement seulement si le jeu est déjà en cours d'exécution.
+                    // Si le jeu n'a pas encore démarré (this.isRunning est false), la méthode start()
+                    // se chargera d'émettre GAME_PAUSED si this.isPaused est vrai.
+                    if (this.isRunning) {
+                        this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+                    }
+                }
+            } else {
+                // Optionnel : gérer la reprise automatique si l'onglet redevient actif.
+                // Pour l'instant, la reprise est manuelle.
+                // if (this.isPaused && this.isRunning /* && il a été auto-paused */) {
+                //     this.isPaused = false;
+                //     this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
+                //     console.log('[AUTO-RESUME] Jeu repris car l\'onglet est de nouveau actif.');
+                // }
             }
         });
 
@@ -186,7 +200,13 @@ class GameController {
     
     handleTogglePause() {
         this.isPaused = !this.isPaused;
-        console.log(this.isPaused ? "Jeu mis en pause (événement sémantique)" : "Jeu repris (événement sémantique)");
+        if (this.isPaused) {
+            console.log("Jeu mis en pause (événement sémantique)");
+            this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+        } else {
+            console.log("Jeu repris (événement sémantique)");
+            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
+        }
         // Pas besoin d'emitUpdatedStates ici, la boucle de jeu gère le rendu en pause
     }
 
@@ -194,6 +214,7 @@ class GameController {
         if (this.isPaused) {
             this.isPaused = false;
             console.log("Jeu repris (par événement RESUME_IF_PAUSED)");
+            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
         }
     }
     
@@ -261,61 +282,66 @@ class GameController {
     
     // Émettre un seul événement pour l'état complet de la simulation
     emitUpdatedStates() {
-        const simulationState = {};
-        if (this.rocketModel) {
-            simulationState.rocket = {
-                position: { ...this.rocketModel.position },
-                velocity: { ...this.rocketModel.velocity },
-                angle: this.rocketModel.angle,
-                fuel: this.rocketModel.fuel,
-                health: this.rocketModel.health,
-                isLanded: this.rocketModel.isLanded,
-                isDestroyed: this.rocketModel.isDestroyed,
-                landedOn: this.rocketModel.landedOn,
-                attachedTo: this.rocketModel.attachedTo,
-                relativePosition: this.rocketModel.relativePosition ? { ...this.rocketModel.relativePosition } : null,
-                thrusters: { ...this.rocketModel.thrusters },
-                gravityVector: this.calculateGravityVector(),
-                thrustVectors: this.calculateThrustVectors(),
-                totalThrustVector: this.calculateTotalThrustVector(),
-                // Accélération totale = accélération gravitationnelle + (force de poussée / masse)
-                accelerationVector: (() => {
-                    const grav = this.calculateGravityVector() || { x: 0, y: 0 };
-                    const thrust = this.calculateTotalThrustVector() || { x: 0, y: 0 };
-                    return {
-                        x: grav.x + thrust.x / this.rocketModel.mass,
-                        y: grav.y + thrust.y / this.rocketModel.mass
-                    };
-                })(),
-                lunarAttraction: this.calculateLunarAttractionVector(),
-                earth: {
-                    distance: this.calculateEarthDistance(),
-                    attractionVector: this.calculateEarthAttractionVector()
-                }
-            };
+        // Calculs des vecteurs
+        const gravityVector = this.calculateGravityVector(); // Est une ACCÉLÉRATION {x,y} ou null
+        const thrustVectors = this.calculateThrustVectors(); // Informations sur les propulseurs individuels (pour affichage/info)
+        const totalThrustVector = this.calculateTotalThrustVector(); // Appel corrigé SANS arguments. Est une FORCE totale {x,y} ou null
+        
+        const lunarAttraction = this.calculateLunarAttractionVector(); // Pour information (vecteur normalisé + distance)
+        const earthAttraction = this.calculateEarthAttractionVector(); // Pour information (vecteur normalisé)
+
+        let calculatedAccelerationX = 0;
+        let calculatedAccelerationY = 0;
+
+        // Ajouter l'accélération gravitationnelle (si elle existe)
+        if (gravityVector) {
+            calculatedAccelerationX += gravityVector.x;
+            calculatedAccelerationY += gravityVector.y;
         }
-        if (this.universeModel) {
-            simulationState.universe = {
-                celestialBodies: this.universeModel.celestialBodies.map(body => ({
-                    name: body.name,
-                    mass: body.mass,
-                    radius: body.radius,
-                    position: { ...body.position },
-                    velocity: { ...body.velocity },
-                    color: body.color,
-                    atmosphere: { ...body.atmosphere }
-                })),
-                stars: this.universeModel.stars
-            };
+
+        // Ajouter l'accélération due à la poussée (Force/Masse) (si elle existe)
+        if (totalThrustVector && this.rocketModel && this.rocketModel.mass > 0) {
+            calculatedAccelerationX += totalThrustVector.x / this.rocketModel.mass;
+            calculatedAccelerationY += totalThrustVector.y / this.rocketModel.mass;
         }
-        if (this.particleSystemModel) {
-            simulationState.particles = {
-                emitters: this.particleSystemModel.emitters,
-                debrisParticles: this.particleSystemModel.debrisParticles
-            };
-        }
-        // Émettre l'état complet en un seul event
+        
+        const accelerationVector = { x: calculatedAccelerationX, y: calculatedAccelerationY };
+
+        // Préparer l'état complet de la simulation à émettre
+        // S'assurer que this.rocketModel est valide avant de l'utiliser extensivement
+        const rocketStateForEvent = this.rocketModel ? {
+            ...this.rocketModel, // Copie les propriétés de base du modèle de fusée
+            // Remplace ou ajoute les vecteurs calculés spécifiquement pour cet état
+            gravityVector: gravityVector,
+            thrustVectors: thrustVectors,
+            totalThrustVector: totalThrustVector,
+            accelerationVector: accelerationVector, // Le vecteur d'accélération résultant corrigé
+            lunarAttraction: lunarAttraction,
+            earthAttraction: earthAttraction
+        } : { // Fournir un état par défaut si rocketModel est null pour éviter les erreurs
+            position: { x: 0, y: 0 }, angle: 0, velocity: { x: 0, y: 0 }, mass: 0,
+            thrusters: {}, fuel: 0, health: 0, isLanded: false, isDestroyed: true,
+            gravityVector: null, thrustVectors: null, totalThrustVector: null,
+            accelerationVector: { x: 0, y: 0 }, lunarAttraction: null, earthAttraction: null
+        };
+
+        const simulationState = {
+            rocket: rocketStateForEvent,
+            universe: this.universeModel,
+            particles: this.particleSystemModel,
+            camera: this.cameraModel,
+            missions: this.missionManager ? this.missionManager.getActiveMissions() : [],
+            totalCredits: this.totalCreditsEarned,
+            missionJustSucceeded: this.missionJustSucceededFlag
+        };
+        
+        // Émettre l'état complet pour que les vues et autres systèmes s'y abonnent
         this.eventBus.emit(EVENTS.SIMULATION.UPDATED, simulationState);
+        
+        // Réinitialiser le flag de mission réussie après l'avoir émis
+        if (this.missionJustSucceededFlag) {
+            this.missionJustSucceededFlag = false;
+        }
     }
     
     // Calculer le vecteur de gravité pour le rendu
@@ -458,24 +484,17 @@ class GameController {
     }
     
     // Initialiser le jeu
-    init(canvas) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
-        
-        // Initialiser les modèles et vues
-        this.setupModels();
-        this.setupViews();
-        
-        // Configurer les contrôleurs
-        this.setupControllers();
+    init(/*canvas*/) { // canvas n'est plus passé en argument
+        // this.canvas = canvas; // Supprimé
+        // this.ctx = canvas.getContext('2d'); // Supprimé
 
-        // Configurer RocketController APRÈS que rocketModel, particleSystemModel et physicsController soient initialisés
-        if (this.rocketModel && this.particleSystemModel && this.physicsController) {
-            this.rocketController = new RocketController(this.eventBus, this.rocketModel, this.particleSystemModel, this.physicsController);
-            this.rocketController.subscribeToEvents();
-        } else {
-            console.error("Erreur: Impossible d'initialiser RocketController - dépendances manquantes.");
-        }
+        this.setupModels();
+        
+        // Configurer les contrôleurs AVANT les vues qui pourraient en dépendre
+        this.setupControllers();
+        
+        // Initialiser les vues APRES que les contrôleurs (comme renderingController) soient prêts
+        this.setupViews();
         
         // Configurer la caméra
         this.setupCamera();
@@ -489,11 +508,17 @@ class GameController {
         console.log("GameController initialisé et boucle démarrée.");
     }
     
-    // Définir les contrôleurs
+    // Définir les contrôleurs (appelée depuis main.js)
     setControllers(controllers) {
-        this.inputController = controllers.inputController;
-        this.renderingController = controllers.renderingController;
-        this.rocketAgent = controllers.rocketAgent;
+        if (controllers.inputController) {
+            this.inputController = controllers.inputController;
+        }
+        if (controllers.renderingController) {
+            this.renderingController = controllers.renderingController;
+        }
+        if (controllers.rocketAgent) {
+            this.rocketAgent = controllers.rocketAgent;
+        }
     }
     
     // Configurer les modèles
@@ -682,7 +707,7 @@ class GameController {
     setupViews() {
         // Créer les vues
         this.rocketView = new RocketView();
-        this.universeView = new UniverseView(this.canvas);
+        this.universeView = new UniverseView();
         this.celestialBodyView = new CelestialBodyView();
         this.particleView = new ParticleView();
         this.traceView = new TraceView();
@@ -703,133 +728,138 @@ class GameController {
     
     // Configurer la caméra
     setupCamera() {
+        // Obtenir les dimensions du canvas depuis RenderingController
+        const canvasSize = this.renderingController.getCanvasDimensions();
+
         this.cameraModel.setTarget(this.rocketModel, 'rocket');
-        this.cameraModel.offsetX = this.canvas.width / 2;
-        this.cameraModel.offsetY = this.canvas.height / 2;
-        this.cameraModel.width = this.canvas.width;
-        this.cameraModel.height = this.canvas.height;
+        this.cameraModel.offsetX = canvasSize.width / 2;
+        this.cameraModel.offsetY = canvasSize.height / 2;
+        this.cameraModel.width = canvasSize.width;
+        this.cameraModel.height = canvasSize.height;
     }
     
     // Configurer les contrôleurs
     setupControllers() {
+        // Initialiser les contrôleurs avec les modèles et l'EventBus.
+        // inputController, renderingController, et rocketAgent sont normalement fournis via setControllers() depuis main.js.
+
+        // Ces contrôleurs sont internes à GameController ou dépendent de modèles initialisés ici.
         this.physicsController = new PhysicsController(this.eventBus);
+        // S'assurer que particleSystemModel est prêt avant de créer ParticleController
+        if (!this.particleSystemModel && this.setupModels) { // Au cas où setupModels n'aurait pas été appelé ou aurait échoué pour particleSystemModel
+            console.warn("GameController: particleSystemModel non initialisé avant setupControllers. Tentative de l'initialiser.");
+            // Cela suppose que setupModels peut être appelé sans danger plusieurs fois ou qu'il vérifie en interne.
+            // Idéalement, l'ordre d'appel dans init() (setupModels puis setupControllers) garantit cela.
+        }
+        this.particleController = new ParticleController(this.particleSystemModel, this.eventBus); 
         
-        this.particleController = new ParticleController(this.particleSystemModel);
+        // RocketController dépend de rocketModel, physicsController, particleController
+        if (!this.rocketModel && this.setupModels) {
+             console.warn("GameController: rocketModel non initialisé avant setupControllers pour RocketController.");
+        }
+        this.rocketController = new RocketController(this.eventBus, this.rocketModel, this.physicsController, this.particleController, this.cameraModel);
+
+        // Appeler subscribeToEvents sur l'instance de rocketController qui vient d'être créée
+        if (this.rocketController && typeof this.rocketController.subscribeToEvents === 'function') {
+            this.rocketController.subscribeToEvents();
+        } else {
+            console.error("GameController: RocketController est invalide ou n'a pas de méthode subscribeToEvents dans setupControllers.");
+        }
+
+        // Gérer RocketAgent:
+        // Si rocketAgent n'a pas été fourni par main.js (via setControllers), et que les dépendances sont prêtes, on le crée.
+        // Sinon, on suppose que l'instance fournie par main.js est correctement configurée ou se configurera via des événements.
+        if (!this.rocketAgent) {
+            if (this.rocketModel && this.universeModel && this.physicsController && this.missionManager && this.rocketController) {
+                console.log("GameController: Création de RocketAgent car non fourni par setControllers.");
+                this.rocketAgent = new RocketAgent(this.eventBus, this.rocketModel, this.universeModel, this.physicsController, this.missionManager, this.rocketController);
+            } else {
+                console.warn("GameController: RocketAgent non fourni et les dépendances ne sont pas prêtes pour le créer ici.");
+            }
+        } else {
+            console.log("GameController: Utilisation de RocketAgent fourni par setControllers.");
+            // Si l'instance de rocketAgent fournie par main.js a besoin d'une référence à rocketController (qui est créé ici),
+            // il faudrait une méthode pour l'injecter, par ex. this.rocketAgent.setRocketController(this.rocketController);
+            // ou RocketAgent devrait écouter CONTROLLERS_SETUP.
+            // Pour l'instant, on suppose que la gestion est correcte si fourni par main.js.
+        }
         
-        // Initialiser les événements et partager physicsController
-        this.eventBus.emit(EVENTS.SYSTEM.CONTROLLERS_SETUP, { physicsController: this.physicsController });
+        // Informer les autres systèmes que les contrôleurs sont prêts
+        this.eventBus.emit(window.EVENTS.SYSTEM.CONTROLLERS_SETUP, { 
+            physicsController: this.physicsController, 
+            rocketController: this.rocketController,
+            // On pourrait aussi passer d'autres contrôleurs ici si d'autres modules en ont besoin directement.
+            // Par exemple, inputController, renderingController, etc., s'ils ne sont pas déjà accessibles
+            // d'une autre manière (par ex. via GameController lui-même si c'est une dépendance).
+        });
     }
     
     // Démarrer la boucle de jeu
     start() {
-        this.isRunning = true;
-        this.lastTimestamp = performance.now();
-        requestAnimationFrame(this.gameLoop.bind(this));
+        if (!this.isRunning) { // Empêcher les démarrages multiples
+            this.isRunning = true; // Marquer comme en cours d'exécution en premier
+            this.lastTimestamp = performance.now(); // Initialiser lastTimestamp
+            
+            // Si this.isPaused est vrai ici, cela signifie que l'onglet était caché
+            // lors de l'appel au constructeur, avant que les autres contrôleurs ne s'abonnent.
+            // Émettre GAME_PAUSED maintenant pour que tous les auditeurs le reçoivent.
+            if (this.isPaused) {
+                console.log("GameController: Le jeu démarre en état de pause. Émission de GAME_PAUSED.");
+                this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+                // Ne pas mettre this.isPaused = false ni émettre GAME_RESUMED.
+                // Le jeu doit légitimement démarrer en pause.
+            }
+
+            requestAnimationFrame((timestamp) => this.gameLoop(timestamp));
+            console.log("GameController started.");
+        }
     }
     
     // Mettre le jeu en pause
     togglePause() {
         this.isPaused = !this.isPaused;
+        if (this.isPaused) {
+            console.log(this.isPaused ? "Jeu mis en pause (appel direct togglePause)" : "Jeu repris (appel direct togglePause)");
+            this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+        } else {
+            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
+        }
     }
     
     // La boucle de jeu principale
     gameLoop(timestamp) {
         if (!this.isRunning) return;
 
-        const deltaTime = (timestamp - this.lastTimestamp) / 1000; // Convertir en secondes
+        const deltaTime = (timestamp - this.lastTimestamp) / 1000;
         this.lastTimestamp = timestamp;
+        this.elapsedTime += deltaTime;
 
-        // Si le jeu est en pause, ne rien faire d'autre que de demander la prochaine frame
-        if (this.isPaused) {
-            // Mettre à jour le rendu même en pause pour afficher le message "PAUSE"
-            if (this.renderingController) {
-                // AJOUT LOG DE DEBUG pour l'état PAUSE
-                if (!this.ctx || !this.canvas) {
-                    console.error("[PAUSE] Contexte (ctx) ou Canvas invalide avant le rendu en pause!");
-                } else {
-                    this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, [], this.totalCreditsEarned);
-                }
-            }
-            requestAnimationFrame(this.gameLoop.bind(this));
-            return;
+        if (!this.isPaused) {
+            this.update(deltaTime);
         }
 
-        // Mettre à jour l'état des entrées (pour les keypress ponctuels)
-        if (this.inputController) {
-            this.inputController.update();
-        }
+        const activeMissionsForRender = this.missionManager ? this.missionManager.getActiveMissions() : [];
+        const totalAccelerationForRender = this.physicsController && this.physicsController.physicsVectors 
+            ? this.physicsController.physicsVectors.getTotalAcceleration() 
+            : null;
+        
+        this.renderingController.render(
+            this.elapsedTime,             // 1. time
+            this.rocketModel,             // 2. rocketModel
+            this.universeModel,           // 3. universeModel
+            this.particleSystemModel,     // 4. particleSystemModel
+            this.cameraModel,             // 5. camera
+            activeMissionsForRender,      // 6. activeMissions
+            this.totalCreditsEarned,      // 7. totalCreditsEarned
+            this.missionJustSucceededFlag // 8. missionJustSucceeded
+        );
 
-        // Mettre à jour la caméra pour suivre sa cible
-        if (this.cameraModel) {
-            this.cameraModel.update(deltaTime);
-        }
-
-        // ---- AJOUT ----
-        // Mettre à jour la position des émetteurs de particules AVANT de mettre à jour les particules
-        if (this.particleController && this.rocketModel) {
-            this.particleController.updateEmitterPositions(this.rocketModel);
-        }
-        // -------------
-
-        // --- AJOUT : Mettre à jour l'univers (orbites des corps célestes) ---
-        if (this.universeModel) {
-            this.universeModel.update(deltaTime);
-        }
-        // ---------------------------------------------------------------
-
-        // Mise à jour de la physique
-        if (this.physicsController && this.rocketModel) {
-            this.physicsController.update(deltaTime);
-            // Émettre l'état mis à jour après la physique
-            this.emitUpdatedStates(); 
-        }
-
-        // Mise à jour du système de particules
-        if (this.particleController) {
-            this.particleController.update(deltaTime);
-        }
-
-        // Mise à jour de l'agent IA (si actif)
-        if (this.rocketAgent && this.rocketAgent.isActive) {
-            this.rocketAgent.update(deltaTime);
-        }
-
-        // Mise à jour de la trace
-        if (this.traceView && this.traceView.isVisible) {
-            this.updateTrace();
-        }
-
-        // Vérification de l'état de la mission
-        if (this.rocketModel && this.missionManager) {
-            const activeMissions = this.missionManager.getActiveMissions();
-            if (activeMissions.length > 0) {
-                const currentMission = activeMissions[0]; // Supposons une seule mission active
-
-                // Vérifier l'échec (crash)
-                if (this.rocketModel.isDestroyed && currentMission.status === 'pending') {
-                    this.eventBus.emit(EVENTS.MISSION.FAILED, { mission: currentMission });
-                }
-            }
-        }
-
-        // 7. Rendu
-        if (this.renderingController) {
-            // Assurer que this.cameraModel est bien défini
-            if (!this.cameraModel) {
-                console.error("CameraModel n'est pas initialisé dans GameController!");
-                return; // Ou gérer l'erreur autrement
-            }
-            // Récupérer les missions actives pour le rendu (si missionManager existe)
-            const activeMissions = this.missionManager ? this.missionManager.getActiveMissions() : [];
-            // Passer tous les arguments nécessaires à render, y compris currentTime et le flag de succès
-            this.renderingController.render(performance.now(), this.ctx, this.canvas, this.rocketModel, this.universeModel, this.particleSystemModel, this.isPaused, this.cameraModel, activeMissions, this.totalCreditsEarned, this.missionJustSucceededFlag);
-
-            // Réinitialiser le flag après le rendu
+        // Réinitialiser le flag APRÈS l'avoir utilisé pour le rendu
+        if (this.missionJustSucceededFlag) {
             this.missionJustSucceededFlag = false;
         }
 
-        // Demander la prochaine frame d'animation
-        requestAnimationFrame(this.gameLoop.bind(this));
+        requestAnimationFrame((ts) => this.gameLoop(ts));
     }
     
     // Réinitialiser la fusée
@@ -935,6 +965,50 @@ class GameController {
         this._lastRocketDestroyed = false;
     }
     
+    // Nouvelle méthode pour encapsuler la logique de mise à jour du jeu
+    update(deltaTime) {
+        if (this.inputController) {
+            this.inputController.update(); // Pour la gestion continue (ex: joystick)
+        }
+
+        if (this.universeModel) {
+            this.universeModel.update(deltaTime); // Met à jour les orbites des corps célestes (modèles)
+        }
+
+        if (this.physicsController) {
+            this.physicsController.update(deltaTime);
+        }
+        
+        if (this.rocketController) {
+            this.rocketController.update(deltaTime);
+        }
+
+        if (this.rocketAgent && this.rocketAgent.isControlling) {
+            const currentState = this.rocketAgent.getCurrentState(this.rocketModel, this.universeModel, this.missionManager);
+            this.rocketAgent.act(currentState);
+        }
+
+        if (this.particleController) {
+            this.particleController.update(deltaTime, this.rocketModel);
+        }
+        
+        if (this.rocketModel) {
+            this.rocketModel.update(deltaTime); // Contient la logique de carburant, etc.
+        }
+
+        if (this.cameraModel) {
+            this.cameraModel.update(deltaTime);
+        }
+
+        // Mettre à jour la trace de la fusée avec sa nouvelle position
+        this.updateTrace();
+
+        // Logique de fin de mission (peut être gardée ici ou dans une méthode spécifique appelée par update)
+        if (this.missionManager && this.rocketModel && !this.rocketModel.isDestroyed) {
+            this.missionManager.checkMissionCompletion(this.rocketModel, this.universeModel);
+        }
+    }
+    
     // Nettoyer les ressources
     cleanup() {
         this.isRunning = false;
@@ -973,9 +1047,10 @@ class GameController {
 
     // Activer/désactiver l'affichage de la trace
     toggleTraceVisibility() {
-        if (this.traceView) {
-            this.traceView.toggleVisibility();
-            console.log(`Affichage de la trace: ${this.traceView.isVisible ? 'activé' : 'désactivé'}`);
+        if (this.renderingController) {
+            this.renderingController.toggleTraceVisibility();
+            // Le log est maintenant dans RenderingController, donc plus besoin ici.
+            // console.log(`Affichage de la trace: ${this.traceView.isVisible ? 'activé' : 'désactivé'}`);
         }
     }
 
