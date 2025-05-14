@@ -96,5 +96,9 @@ window.EVENTS = {
     CONTROL_CHANGED: 'AI_CONTROL_CHANGED',
     TRAINING_CHANGED: 'AI_TRAINING_CHANGED',
     CONTROL_ACTION: 'AI_CONTROL_ACTION'
+  },
+  PARTICLES: {
+    CREATE_EXPLOSION: 'particles:createExplosion',
+    EXPLOSION_COMPLETED: 'particles:explosionCompleted'
   }
 }; 

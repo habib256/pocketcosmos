@@ -6,6 +6,22 @@
  * et la coordination entre les différents modèles, vues et contrôleurs.
  */
 
+// Définition des états possibles du jeu
+const GameStates = {
+    LOADING: 'LOADING',          // En cours de chargement initial des ressources
+    MAIN_MENU: 'MAIN_MENU',      // Affichage du menu principal
+    LEVEL_SETUP: 'LEVEL_SETUP',  // Préparation d'un niveau ou d'une session de jeu
+    PLAYING: 'PLAYING',          // Jeu actif
+    PAUSED: 'PAUSED',            // Jeu en pause
+    LEVEL_TRANSITION: 'LEVEL_TRANSITION', // Entre les niveaux ou missions
+    MISSION_BRIEFING: 'MISSION_BRIEFING', // Affichage des objectifs de la mission
+    MISSION_DEBRIEFING: 'MISSION_DEBRIEFING', // Affichage des résultats de la mission
+    GAME_OVER: 'GAME_OVER',      // Fin de la partie
+    CRASH_ANIMATION: 'CRASH_ANIMATION', // Animation de l'explosion après un crash
+    CREDITS_SCREEN: 'CREDITS_SCREEN' // Affichage des crédits
+};
+Object.freeze(GameStates); // Empêche la modification des états
+
 /**
  * @class GameController
  * @classdesc Contrôleur principal du jeu. Orchestre le déroulement du jeu,
@@ -50,9 +66,8 @@ class GameController {
         /** @type {CameraController} */
         this.cameraController = new CameraController(this.eventBus, this.cameraModel, this); // Ajout du CameraController
         
-        // État du jeu
-        this.isRunning = false;
-        this.isPaused = false;
+        // État du jeu avec FSM
+        this.currentState = GameStates.LOADING; // État initial
         this.lastTimestamp = 0;
         this.elapsedTime = 0;
         
@@ -79,22 +94,23 @@ class GameController {
         // S'abonner aux événements
         this.subscribeToEvents();
 
+        // Émettre l'état initial une fois que tout est prêt
+        // Il est peut-être préférable de le faire à la fin de init() ou start()
+        // this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: null });
+
         // Ajout : pause automatique si l'utilisateur quitte l'onglet
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                if (!this.isPaused) { // Agir seulement si pas déjà en pause
-                    this.isPaused = true;
+                if (this.currentState === GameStates.PLAYING) { // Agir seulement si en jeu
+                    this.changeState(GameStates.PAUSED);
                     console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif (via visibilitychange).');
-                    // Émettre l'événement seulement si le jeu est déjà en cours d'exécution.
-                    // Si le jeu n'a pas encore démarré (this.isRunning est false), la méthode start()
-                    // se chargera d'émettre GAME_PAUSED si this.isPaused est vrai.
-                    if (this.isRunning) {
-                        this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
-                    }
                 }
             } else {
                 // Optionnel : gérer la reprise automatique si l'onglet redevient actif.
-                // Pour l'instant, la reprise est manuelle.
+                // Si on était en PAUSED à cause de ça, on pourrait revenir à PLAYING
+                // if (this.currentState === GameStates.PAUSED && !this.manualPause) { // manualPause serait un nouveau flag
+                // this.changeState(GameStates.PLAYING);
+                // }
             }
         });
 
@@ -107,7 +123,13 @@ class GameController {
      */
     subscribeToEvents() {
         // Événements sémantiques pour les actions de la fusée - GÉRÉS PAR RocketController
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this.handleResetRocket()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => {
+            // Le reset peut signifier retourner au début d'un niveau ou un reset complet.
+            // Si on est en GAME_OVER, un reset pourrait ramener au MAIN_MENU ou relancer.
+            // Si on est en PLAYING, un reset pourrait juste réinitialiser la fusée.
+            // Pour l'instant, on va supposer que resetRocket amène à l'état PLAYING.
+            this.resetRocket(); // resetRocket devrait s'assurer de l'état PLAYING.
+        }));
 
         // NOUVEL ÉVÉNEMENT pour mettre à jour l'état global lorsque RocketController modifie la fusée
         const ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged'; // Doit correspondre à celui dans RocketController
@@ -133,6 +155,14 @@ class GameController {
 
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
+        // Événement pour la fin de l'animation d'explosion
+        if (window.EVENTS && window.EVENTS.PARTICLES && window.EVENTS.PARTICLES.EXPLOSION_COMPLETED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.PARTICLES.EXPLOSION_COMPLETED, () => this.handleExplosionCompleted())
+            );
+        } else {
+            console.warn("[GameController] EVENTS.PARTICLES.EXPLOSION_COMPLETED n'est pas défini. La transition après explosion pourrait ne pas fonctionner.");
+        }
         // --- Fin Abonnements Joystick ---
 
         // S'abonner à l'événement de redimensionnement du canvas
@@ -162,11 +192,10 @@ class GameController {
      * @private
      */
     handleTogglePause() {
-        this.isPaused = !this.isPaused;
-        if (this.isPaused) {
-            this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
-        } else {
-            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
+        if (this.currentState === GameStates.PLAYING) {
+            this.changeState(GameStates.PAUSED);
+        } else if (this.currentState === GameStates.PAUSED) {
+            this.changeState(GameStates.PLAYING);
         }
     }
 
@@ -176,9 +205,8 @@ class GameController {
      * @private
      */
     handleResumeIfPaused() {
-        if (this.isPaused) {
-            this.isPaused = false;
-            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
+        if (this.currentState === GameStates.PAUSED) {
+            this.changeState(GameStates.PLAYING);
         }
     }
     
@@ -206,6 +234,19 @@ class GameController {
      */
     handleToggleAssistedControlsFromUI() {
          this.toggleAssistedControls();
+    }
+    
+    /**
+     * Gère la fin de l'animation d'explosion des particules.
+     * Si le jeu est en état CRASH_ANIMATION, il passe à l'état GAME_OVER.
+     * @private
+     */
+    handleExplosionCompleted() {
+        console.log("[GameController] Événement EXPLOSION_COMPLETED reçu.");
+        if (this.currentState === GameStates.CRASH_ANIMATION) {
+            console.log("[GameController] Transition de CRASH_ANIMATION vers GAME_OVER.");
+            this.changeState(GameStates.GAME_OVER);
+        }
     }
     
     /**
@@ -282,6 +323,7 @@ class GameController {
      */
     init(canvas, initialConfig) {
         // console.log('[GameController.init] Canvas reçu initialement:', canvas); // SUPPRESSION DE LOG
+        this.changeState(GameStates.LOADING); // Commencer par l'état de chargement
 
         // 1. Initialiser le CameraModel avec les dimensions du canvas
         if (this.cameraModel && canvas) {
@@ -358,6 +400,18 @@ class GameController {
         // Toujours appeler start() pour mettre isRunning = true.
         // Start() gérera le lancement de gameLoop en fonction de isPaused.
         this.start(); 
+        
+        // Après l'initialisation, on pourrait passer au menu principal ou directement au jeu
+        // Ceci est géré par la logique dans _onEnterState(GameStates.LOADING) ou ici.
+        // Par exemple, si le chargement est synchrone et rapide :
+        // this.changeState(GameStates.MAIN_MENU);
+        // Ou si init est le "setup" du niveau :
+        // this.changeState(GameStates.LEVEL_SETUP); // LEVEL_SETUP transite ensuite vers PLAYING
+        // Pour l'instant, on va supposer que init() met en place les choses et que start()
+        // ou une action utilisateur (menu) fera passer à PLAYING.
+        // La transition depuis LOADING se fera à la fin du chargement des assets (non implémenté ici).
+        // Pour tester, on peut forcer un état après init :
+        // this.changeState(GameStates.MAIN_MENU); // Ou GameStates.PLAYING si on skip le menu
     }
     
     /**
@@ -392,25 +446,36 @@ class GameController {
      * Si le jeu est en pause au démarrage, un événement GAME_PAUSED est émis.
      */
     start() {
-        if (!this.isRunning) { // Empêche les démarrages multiples si déjà en cours
-            // console.log('[GameController.start] Exécution de GameController.start(). isPaused initialement:', this.isPaused); // SUPPRESSION DE LOG
-            this.isRunning = true;
-            // this.isPaused = false; // Ne pas dé-pauser automatiquement ici, respecter l'état de pause actuel.
-            this.lastTimestamp = performance.now();
-            
-            if (!this.isPaused) {
-                // console.log('[GameController.start] Démarrage de la boucle de jeu (gameLoop)...'); // SUPPRESSION DE LOG
-                this.gameLoop(performance.now());
-                this.eventBus.emit(EVENTS.GAME.GAME_RESUMED); // Émettre RESUMED si on démarre non-pausé
-            } else {
-                // console.log('[GameController.start] Le jeu est en pause. La boucle de jeu ne démarrera pas immédiatement. Un événement GAME_PAUSED sera émis.'); // SUPPRESSION DE LOG
-                // Émettre GAME_PAUSED si on démarre en étant déjà en pause (ex: par visibilityChange)
-                this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
-            }
-            this.eventBus.emit(EVENTS.GAME.GAME_STARTED); // Signale que le jeu a "commencé" (même si en pause)
-            // console.log("GameController started. isRunning:", this.isRunning, "isPaused:", this.isPaused); // SUPPRESSION DE LOG
+        // La logique de démarrage est maintenant gérée par la FSM.
+        // Si l'état initial est LOADING, la transition vers MAIN_MENU ou PLAYING
+        // se fera via changeState() lorsque le chargement sera terminé.
+        // Si on arrive ici et qu'on est, par exemple, en MAIN_MENU,
+        // une action utilisateur (clic sur "Jouer") appellera changeState(GameStates.PLAYING).
+
+        // Pour l'instant, `start()` va principalement s'assurer que la gameLoop est lancée
+        // et que l'état initial est correctement géré.
+        // Si on est dans un état où la gameloop ne doit pas tourner (ex: certains menus),
+        // la gameloop elle-même vérifiera this.currentState.
+
+        console.log(`[GameController.start] Démarrage du GameController. État actuel: ${this.currentState}`);
+        this.lastTimestamp = performance.now();
+        this.gameLoop(this.lastTimestamp); // Lancer la boucle de jeu inconditionnellement au début.
+                                          // La boucle elle-même décidera quoi faire en fonction de l'état.
+
+        // Émettre l'état initial si ce n'est pas déjà fait.
+        // Il est préférable de le faire après que la boucle de jeu soit potentiellement démarrée
+        // et que les systèmes d'UI soient prêts à écouter.
+        // Si on est LOADING, l'UI de chargement devrait déjà être visible.
+        if (this.currentState === GameStates.LOADING) {
+            // Simuler la fin du chargement pour les tests et passer au menu principal
+            // Dans un vrai scénario, cela serait appelé par un gestionnaire d'assets.
+            console.log("[GameController.start] Simulation de la fin du chargement...");
+            setTimeout(() => {
+                this.changeState(GameStates.MAIN_MENU);
+            }, 100); // Petit délai pour simuler
         } else {
-            // console.log('[GameController.start] Appel ignoré, le jeu est déjà en cours (isRunning est true).'); // SUPPRESSION DE LOG
+            // Si on n'est pas en LOADING, on s'assure que l'état actuel est bien notifié
+             this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: null });
         }
     }
     
@@ -428,21 +493,33 @@ class GameController {
         this.lastTimestamp = timestamp;
         this.elapsedTime += deltaTime;
 
-        if (!this.isPaused) {
-            // console.log('[GameController.gameLoop] Appel de this.update(), deltaTime:', deltaTime); // SUPPRESSION DE LOG
-            this.update(deltaTime);
-            // console.log('[GameController.gameLoop] Retour de this.update()'); // SUPPRESSION DE LOG
+        // Gérer les mises à jour en fonction de l'état
+        switch (this.currentState) {
+            case GameStates.PLAYING:
+            case GameStates.CRASH_ANIMATION: // L'update doit aussi tourner pendant l'animation du crash pour les particules
+                this.update(deltaTime);
+                break;
+            case GameStates.LEVEL_SETUP:
+            case GameStates.MISSION_BRIEFING:
+            case GameStates.MISSION_DEBRIEFING:
+                // Certains états pourraient avoir une logique de 'update' légère, 
+                // par exemple pour des animations ou des timers spécifiques à l'état.
+                // this.updateSpecificState(deltaTime);
+                break;
+            // Les états comme MAIN_MENU, PAUSED, GAME_OVER n'appellent généralement pas this.update()
+            // car la simulation principale est arrêtée.
         }
 
         // console.log('[GameController.gameLoop] Appel de this.render()'); // SUPPRESSION DE LOG
         this.render(timestamp); // Appel de la méthode render de GameController
 
         // Rappeler gameLoop pour la prochaine frame d'animation
-        if (this.isRunning) { // Seulement si le jeu est toujours censé tourner
-            requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
-        } else {
+        // La boucle tourne toujours, mais les actions (update, render) peuvent être conditionnelles à l'état.
+        // if (this.isRunning) { // this.isRunning n'existe plus
+        requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
+        // } else {
             // console.log('[GameController.gameLoop] this.isRunning est false, arrêt de la boucle.'); // SUPPRESSION DE LOG
-        }
+        // }
     }
     
     /**
@@ -507,7 +584,19 @@ class GameController {
 
         this.lastTimestamp = performance.now();
         this.elapsedTime = 0;
-        this.isPaused = false; // Le jeu reprend après un reset
+        // this.isPaused = false; // Le jeu reprend après un reset
+        
+        // S'assurer que le reset amène à un état jouable.
+        // Si on était en GAME_OVER, on pourrait vouloir aller au MAIN_MENU d'abord,
+        // mais pour un reset en cours de jeu, on reste en PLAYING.
+        if (this.currentState !== GameStates.PLAYING && 
+            this.currentState !== GameStates.PAUSED &&
+            this.currentState !== GameStates.LEVEL_SETUP) { // LEVEL_SETUP peut appeler resetRocket
+            this.changeState(GameStates.PLAYING);
+        } else if (this.currentState === GameStates.PAUSED) {
+            this.changeState(GameStates.PLAYING); // Si on reset en pause, on reprend le jeu
+        }
+        // Si déjà PLAYING, pas besoin de changer d'état, juste réinitialiser les éléments.
 
         if (this.renderingController && this.rocketModel && this.rocketModel.position) {
             this.renderingController.resetTrace(this.rocketModel.position);
@@ -543,7 +632,14 @@ class GameController {
 
         // console.log("Fusée réinitialisée."); // CONSERVER CE LOG ? Il est informatif.
         this._lastRocketDestroyed = false;
-        this.emitUpdatedStates();
+        this.emitUpdatedStates(); // S'assurer que l'UI reflète le reset
+
+        // Si l'état actuel est PLAYING, s'assurer que la simulation physique est active.
+        // Cela pourrait être redondant si _onEnterState(GameStates.PLAYING) le fait déjà,
+        // mais c'est une sécurité.
+        if (this.currentState === GameStates.PLAYING && this.physicsController) {
+            this.physicsController.resumeSimulation(); // Assurer que la sim est active
+        }
     }
     
     /**
@@ -578,6 +674,9 @@ class GameController {
         }
         
         if (this.rocketModel) {
+            // Mettre à jour le modèle de la fusée seulement si elle n'est pas détruite
+            // et si on est dans un état où elle doit être active.
+            // La logique isDestroyed est déjà dans rocketModel.update généralement.
             this.rocketModel.update(deltaTime);
         }
 
@@ -594,6 +693,11 @@ class GameController {
 
         if (this.missionManager && this.rocketModel && !this.rocketModel.isDestroyed) {
             this.missionManager.checkMissionCompletion(this.rocketModel, this.universeModel);
+        }
+
+        // Vérifier les conditions de Game Over
+        if (this.rocketModel && this.rocketModel.isDestroyed && this.currentState === GameStates.PLAYING) {
+            this.changeState(GameStates.CRASH_ANIMATION); // Passer à l'animation de crash d'abord
         }
     }
     
@@ -778,9 +882,133 @@ class GameController {
         } else {
             // console.warn('[GameController.render] this.renderingController est null ou undefined. Le rendu ne sera pas effectué.'); // CONSERVER CE WARN ? Il est utile.
         }
-        // Réinitialiser le flag après le rendu
         if (this.missionJustSucceededFlag) {
             this.missionJustSucceededFlag = false;
+        }
+
+        // Le rendu peut aussi dépendre de l'état, par exemple pour afficher des UI spécifiques
+        // à chaque état (Menu, Pause, Game Over) par-dessus le rendu du jeu.
+        // Pour l'instant, RenderingController gère tout, mais on pourrait avoir :
+        // switch(this.currentState) {
+        // case GameStates.MAIN_MENU: this.renderingController.renderMainMenu(); break;
+        // case GameStates.PLAYING: this.renderingController.renderGame(); break;
+        // etc.
+        // }
+    }
+
+    /**
+     * Change l'état actuel du jeu et exécute les logiques d'entrée/sortie.
+     * @param {GameStates} newState - Le nouvel état vers lequel transiter.
+     * @private
+     */
+    changeState(newState) {
+        if (this.currentState === newState) {
+            console.warn(`[GameController] Tentative de transition vers le même état: ${newState}`);
+            return;
+        }
+
+        const oldState = this.currentState;
+
+        console.log(`[GameController] Changement d'état: ${oldState} -> ${newState}`);
+
+        this._onExitState(oldState);
+        this.currentState = newState;
+        this._onEnterState(newState);
+
+        this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: oldState });
+    }
+
+    /**
+     * Exécute la logique spécifique à la sortie d'un état.
+     * @param {GameStates} oldState - L'état qui est quitté.
+     * @private
+     */
+    _onExitState(oldState) {
+        console.log(`[GameController] Sortie de l'état: ${oldState}`);
+        switch (oldState) {
+            case GameStates.LOADING:
+                // Cacher l'écran de chargement, etc.
+                break;
+            case GameStates.MAIN_MENU:
+                // Cacher le menu principal, libérer les ressources du menu
+                this.eventBus.emit(EVENTS.UI.HIDE_MAIN_MENU);
+                break;
+            case GameStates.PLAYING:
+                // Actions à faire quand on quitte l'état de jeu (ex: sauvegarde temporaire ?)
+                // L'événement GAME_PAUSED sera géré par _onEnterState(GameStates.PAUSED)
+                break;
+            case GameStates.PAUSED:
+                // Actions à faire quand on quitte la pause (ex: cacher le menu pause)
+                // L'événement GAME_RESUMED sera géré par _onEnterState(GameStates.PLAYING)
+                this.eventBus.emit(EVENTS.UI.HIDE_PAUSE_MENU);
+                break;
+            case GameStates.GAME_OVER:
+                // Cacher l'écran de game over
+                this.eventBus.emit(EVENTS.UI.HIDE_GAME_OVER_SCREEN);
+                break;
+            // ... autres états
+            default:
+                break;
+        }
+    }
+
+    /**
+     * Exécute la logique spécifique à l'entrée dans un nouvel état.
+     * @param {GameStates} newState - Le nouvel état dans lequel on entre.
+     * @private
+     */
+    _onEnterState(newState) {
+        console.log(`[GameController] Entrée dans l'état: ${newState}`);
+        this.lastTimestamp = performance.now(); // Réinitialiser pour le deltaTime du nouvel état
+
+        switch (newState) {
+            case GameStates.LOADING:
+                // Afficher l'écran de chargement, charger les assets initiaux
+                this.eventBus.emit(EVENTS.UI.SHOW_LOADING_SCREEN);
+                // Typiquement, on passerait à MAIN_MENU ou LEVEL_SETUP une fois le chargement terminé
+                break;
+            case GameStates.MAIN_MENU:
+                // Afficher le menu principal, initialiser la logique du menu
+                this.eventBus.emit(EVENTS.UI.SHOW_MAIN_MENU);
+                // S'assurer que la simulation physique est arrêtée ou n'impacte pas le menu
+                if (this.physicsController) this.physicsController.stopSimulation(); // Méthode à créer dans PhysicsController
+                break;
+            case GameStates.LEVEL_SETUP:
+                // Charger les données du niveau, positionner les objets, etc.
+                // Pour l'instant, on peut imaginer que `init` fait office de LEVEL_SETUP
+                // et qu'on transite ensuite vers PLAYING ou MISSION_BRIEFING
+                console.log("[GameController] État LEVEL_SETUP: Préparation du niveau...");
+                // Potentiellement appeler une fonction de reset spécifique au niveau ici
+                this.resetRocket(); // Par exemple, resetRocket fait partie de la mise en place
+                this.changeState(GameStates.PLAYING); // Transition auto vers PLAYING pour l'instant
+                break;
+            case GameStates.PLAYING:
+                // Démarrer/reprendre la simulation physique, activer les contrôles
+                if (this.physicsController) this.physicsController.resumeSimulation(); // Méthode à créer
+                this.eventBus.emit(EVENTS.GAME.GAME_RESUMED); // Ou un nouvel event type GAME_STARTED_PLAYING
+                break;
+            case GameStates.PAUSED:
+                // Arrêter la simulation physique, afficher le menu de pause
+                if (this.physicsController) this.physicsController.pauseSimulation(); // Méthode à créer
+                this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
+                this.eventBus.emit(EVENTS.UI.SHOW_PAUSE_MENU);
+                break;
+            case GameStates.CRASH_ANIMATION:
+                // La simulation continue de tourner pour montrer l'explosion.
+                // ParticleController gère l'explosion et émettra un événement
+                // lorsque l'animation sera terminée.
+                console.log("[GameController] État CRASH_ANIMATION: L'explosion est en cours...");
+                // Aucune action spécifique ici pour arrêter la simulation.
+                break;
+            case GameStates.GAME_OVER:
+                // Arrêter la simulation, afficher l'écran de game over, scores etc.
+                if (this.physicsController) this.physicsController.stopSimulation();
+                this.eventBus.emit(EVENTS.GAME.GAME_OVER_STATE); // Nouvel event ? ou utiliser un existant
+                this.eventBus.emit(EVENTS.UI.SHOW_GAME_OVER_SCREEN);
+                break;
+            // ... autres états (MISSION_BRIEFING, etc.)
+            default:
+                break;
         }
     }
 }

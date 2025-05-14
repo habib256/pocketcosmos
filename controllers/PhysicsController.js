@@ -69,7 +69,10 @@ class PhysicsController {
         this.Events.on(this.engine, 'beforeUpdate', this._beforeUpdateHandler);
         window.controllerContainer.track(() => this.Events.off(this.engine, 'beforeUpdate', this._beforeUpdateHandler));
 
-        // S'abonner aux événements de pause du jeu
+        // Les abonnements directs à GAME_PAUSED et GAME_RESUMED sont supprimés
+        // car la FSM de GameController gère maintenant directement l'état de la simulation
+        // via les méthodes pauseSimulation(), resumeSimulation(), stopSimulation().
+        /*
         if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
             window.controllerContainer.track(
                 this.eventBus.subscribe(window.EVENTS.GAME.GAME_PAUSED, () => {
@@ -86,6 +89,7 @@ class PhysicsController {
         } else {
             console.error("EventBus ou EVENTS.GAME non disponibles pour PhysicsController lors de l'abonnement pause/resume.");
         }
+        */
     }
 
     // Initialiser ou réinitialiser le monde physique
@@ -386,5 +390,32 @@ class PhysicsController {
         } else {
             // console.warn("[PhysicsController] Impossible de réinitialiser le cache de calcul de poussée dans ThrusterPhysics.");
         }
+    }
+
+    /**
+     * Met en pause la simulation physique.
+     */
+    pauseSimulation() {
+        this.isSystemPaused = true;
+        console.log("[PhysicsController] Simulation PAUSED.");
+    }
+
+    /**
+     * Reprend la simulation physique.
+     */
+    resumeSimulation() {
+        this.isSystemPaused = false;
+        console.log("[PhysicsController] Simulation RESUMED.");
+    }
+
+    /**
+     * Arrête la simulation physique.
+     * Pour l'instant, identique à pauseSimulation, mais pourrait inclure
+     * un nettoyage plus poussé pour des états comme MAIN_MENU ou GAME_OVER.
+     */
+    stopSimulation() {
+        this.isSystemPaused = true;
+        // Potentiellement ajouter ici : this.Composite.clear(this.engine.world); ou autre nettoyage.
+        console.log("[PhysicsController] Simulation STOPPED (currently same as paused).");
     }
 } 

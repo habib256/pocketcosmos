@@ -19,6 +19,8 @@ class ParticleController {
         this.eventBus = eventBus;
         this.isSystemPaused = false;
         this.rocketModel = null; // Référence au modèle de la fusée, mise à jour via la méthode update()
+        this.activeExplosionParticlesCount = 0;
+        this.explosionInProgress = false; // Pour savoir si une explosion a été déclenchée
 
         // S'abonner aux événements de pause et de reprise du jeu via l'EventBus.
         if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
@@ -122,6 +124,13 @@ class ParticleController {
         if (this.particleSystemModel.celebrationParticles && this.particleSystemModel.celebrationParticles.length > 0) {
             this.updateParticles(this.particleSystemModel.celebrationParticles, deltaTime); // deltaTime n'est pas utilisé
         }
+
+        // Vérifier si une explosion était en cours et si toutes ses particules ont disparu
+        if (this.explosionInProgress && this.activeExplosionParticlesCount === 0) {
+            console.log("[ParticleController] Toutes les particules d'explosion ont disparu.");
+            this.eventBus.emit(EVENTS.PARTICLES.EXPLOSION_COMPLETED);
+            this.explosionInProgress = false; // Réinitialiser pour la prochaine explosion
+        }
     }
     
     /**
@@ -139,6 +148,13 @@ class ParticleController {
             
             if (!isAlive) {
                 particles.splice(i, 1); // Supprimer la particule du tableau.
+                // Si une explosion est en cours et que nous suivons les particules d'explosion,
+                // décrémenter le compteur.
+                // Note: Cela suppose que `particles` est `this.particleSystemModel.debrisParticles`
+                // lorsque l'on traite les particules d'explosion.
+                if (this.explosionInProgress && particles === this.particleSystemModel.debrisParticles && this.activeExplosionParticlesCount > 0) {
+                    this.activeExplosionParticlesCount--;
+                }
             }
         }
     }
@@ -249,6 +265,9 @@ class ParticleController {
             // Ajoute la particule au tableau des débris géré par ParticleSystemModel.
             this.particleSystemModel.debrisParticles.push(particle);
         }
+        this.activeExplosionParticlesCount += count;
+        this.explosionInProgress = true;
+        console.log(`[ParticleController] Explosion créée. ${count} particules ajoutées. Total suivies: ${this.activeExplosionParticlesCount}`);
     }
     
     /**
