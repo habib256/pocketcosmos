@@ -20,6 +20,7 @@
 │   ├── RenderingController.js
 │   ├── RocketAgent.js
 │   ├── RocketCargo.js
+│   ├── RocketController.js
 │   ├── SynchronizationManager.js
 │   └── ThrusterPhysics.js
 ├── models/           # Représentation des données et de l'état
@@ -74,8 +75,9 @@ Le projet suit une architecture MVC étendue :
 - **CameraModel.js** : Gère la position, le zoom et le suivi de la caméra.
 
 ## Contrôleurs clés (`controllers/`)
-- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale.
+- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs mais délègue la logique spécifique (par ex. à RocketController).
 - **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
+- **RocketController.js** : Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée. Met à jour `RocketModel` et `ParticleSystemModel`.
 - **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V) et du champ de gravité/équipotentielles (touche G).
 - **PhysicsController.js** : Gère le moteur Matter.js et la simulation physique.
 - **SynchronizationManager.js** : Synchronise l'état logique et physique entre modèle et moteur.

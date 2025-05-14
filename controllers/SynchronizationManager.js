@@ -81,8 +81,7 @@ class SynchronizationManager {
             if (landedOnModel) {
                 const mainThrusterPower = rocketModel.thrusters.main.power;
                 // Définir un seuil clair pour le décollage
-                const TAKEOFF_THRUST_THRESHOLD = 50; // Ex: 50% de puissance
-                const isTryingToLiftOff = mainThrusterPower > TAKEOFF_THRUST_THRESHOLD;
+                const isTryingToLiftOff = mainThrusterPower > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT;
 
                 if (isTryingToLiftOff) {
                     // --- TENTATIVE DE DÉCOLLAGE ---
@@ -281,18 +280,25 @@ class SynchronizationManager {
         } else {
             // Si la vérification montre qu'on EST maintenant posé
             if (isNowConsideredLanded) {
-                 console.log(`État d'atterrissage détecté (périodique) sur ${currentLandedOnBody}`);
-                 rocketModel.isLanded = true;
-                 rocketModel.landedOn = currentLandedOnBody;
-                 rocketModel.relativePosition = null; // Calculer la position relative
-                 // Appeler handleLandedOrAttachedRocket pour appliquer la stabilisation immédiatement
-                 this.handleLandedOrAttachedRocket(rocketModel);
-                 // Forcer les vitesses à zéro immédiatement dans le modèle aussi pour cohérence
-                 rocketModel.setVelocity(0, 0);
-                 rocketModel.setAngularVelocity(0);
+                 // On ne re-déclare PAS la fusée comme atterrie si une tentative de décollage (poussée principale active) est en cours.
+                 // Le seuil de 50 est le même que celui utilisé dans handleLandedOrAttachedRocket pour détecter une tentative de décollage.
+                 if (rocketModel.thrusters.main.power <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+                    console.log(`État d'atterrissage détecté (périodique) sur ${currentLandedOnBody}`);
+                    rocketModel.isLanded = true;
+                    rocketModel.landedOn = currentLandedOnBody;
+                    rocketModel.relativePosition = null; // Calculer la position relative
+                    // Appeler handleLandedOrAttachedRocket pour appliquer la stabilisation immédiatement
+                    this.handleLandedOrAttachedRocket(rocketModel);
+                    // Forcer les vitesses à zéro immédiatement dans le modèle aussi pour cohérence
+                    rocketModel.setVelocity(0, 0);
+                    rocketModel.setAngularVelocity(0);
 
-                 // Émettre l'événement ROCKET_LANDED
-                 this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                    // Émettre l'événement ROCKET_LANDED
+                    this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                } else {
+                    // Optionnel: Log pour indiquer que la détection d'atterrissage a été ignorée à cause de la poussée.
+                    // console.log(`[SyncManager] Détection d'atterrissage périodique sur ${currentLandedOnBody} ignorée (poussée principale active: ${rocketModel.thrusters.main.power}%).`);
+                }
             }
             // Si on n'était pas posé et la vérification confirme, ne rien faire.
         }

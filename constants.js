@@ -24,6 +24,7 @@ const PHYSICS = {
     LANDING_MAX_ANGULAR_VELOCITY: 400,// Vitesse angulaire max pour atterrir (rad/s)
     CRASH_ANGLE_DEG: 45,              // Angle de crash par rapport à la verticale (degrés)
     CRASH_ANGULAR_VELOCITY: 400,      // Vitesse angulaire de crash (rad/s)
+    TAKEOFF_THRUST_THRESHOLD_PERCENT: 50, // Seuil de poussée (en %) pour considérer un décollage actif
     // Ajout des catégories de collision
     COLLISION_CATEGORIES: {
         ROCKET: 0x0001,

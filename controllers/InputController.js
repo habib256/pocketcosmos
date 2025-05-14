@@ -1,47 +1,46 @@
 class InputController {
     // Définition de la constante de mappage des touches au niveau de la classe
     static DEFAULT_KEY_MAP = {
+        // Fusée - Mouvement continu
         'ArrowUp': 'thrustForward',
-        'ArrowDown': 'thrustBackward',
-        'ArrowLeft': 'rotateRight',
-        'ArrowRight': 'rotateLeft',
-
-        'Space': 'boost',
         'KeyW': 'thrustForward',
+        'ArrowDown': 'thrustBackward',
         'KeyS': 'thrustBackward',
-        'KeyA': 'rotateLeft',
+        'ArrowLeft': 'rotateRight', // Note: ArrowLeft -> rotateRight (fusée tourne à droite)
         'KeyD': 'rotateRight',
+        'ArrowRight': 'rotateLeft', // Note: ArrowRight -> rotateLeft (fusée tourne à gauche)
+        'KeyA': 'rotateLeft',
+        'Space': 'boost', // Alias pour thrustForward
+
+        // Caméra - Actions répétées si maintenues ou via molette
+        'Equal': 'zoomIn',
+        'Minus': 'zoomOut',
+        // Plus tard, si on ajoute + et - du numpad :
+        // 'NumpadAdd': 'zoomIn',
+        // 'NumpadSubtract': 'zoomOut',
+
+        // Actions "coup unique" (déclenchées sur keyup)
         'KeyR': 'resetRocket',
         'KeyC': 'centerCamera',
         'KeyV': 'toggleVectors',
         'KeyG': 'toggleGravityField',
+        'KeyT': 'toggleTraces',
         'KeyI': 'toggleAI',
-        'Equal': 'zoomIn',
-        'Minus': 'zoomOut',
-        'Escape': 'pauseGame'
+        'KeyP': 'pauseGame',
+        'Escape': 'pauseGame',
+        'KeyM': 'decreaseThrustMultiplier',
+        'KeyN': 'increaseThrustMultiplier', // Nouvelle touche pour augmenter
     };
 
     constructor(eventBus) {
         // Référence à l'EventBus
         this.eventBus = eventBus;
         
-        // État des touches
-        this.keys = {
-            ArrowUp: false,     // Propulseur principal
-            ArrowDown: false,   // Propulseur arrière
-            ArrowLeft: false,   // Propulseur gauche 
-            ArrowRight: false,  // Propulseur droit
-            w: false,           // Alternative au propulseur principal
-            s: false,           // Alternative au propulseur arrière
-            a: false,           // Alternative au propulseur gauche
-            d: false,           // Alternative au propulseur droit
-            r: false,           // Réinitialiser
-            t: false,           // Augmenter le multiplicateur de poussée
-            p: false,           // Diminuer le multiplicateur de poussée
-            c: false,           // Centrer la caméra
-            v: false,           // Afficher les vecteurs
-            i: false,           // Activer/désactiver l'IA
-        };
+        // État des actions clavier continues actives (pour éviter répétition de _START)
+        this.activeKeyActions = new Set();
+        // État du glisser pour la souris et le tactile
+        this.isMouseDragging = false;
+        this.isTouchDragging = false;
         
         // État du joystick
         this.gamepad = null;
@@ -49,155 +48,150 @@ class InputController {
             axes: [],
             buttons: []
         };
-        this.gamepadMap = { // Exemple de mappage (peut varier selon le joystick)
-            axes: {
-                0: 'rotate', // Axe horizontal (gauche/droite) -> Rotation
-                // 1: 'rotate', // Axe vertical retiré
-                // 2: // Axe Y Stick Droit (non utilisé pour l'instant)
-                3: 'zoomAxis', // Axe X Stick Droit -> Zoom
+        // Mappage SÉMANTIQUE des boutons du joystick
+        this.gamepadMap = {
+            axes: { // Ces actions sont gérées par GameController via EVENTS.INPUT.JOYSTICK_*
+                0: 'rotate', 
+                3: 'zoomAxis',
             },
-            buttons: {
-                0: 'boost',     // Bouton A (Xbox) / Croix (PS) - Action principale (ex: Poussée principale)
-                1: 'actionB',   // Bouton B (Xbox) / Cercle (PS)
-                2: 'actionX',   // Bouton X (Xbox) / Carré (PS)
-                3: 'thrustBackward', // Bouton Y (Xbox) / Triangle (PS) -> Propulseur arrière
-                // ... autres boutons ...
-                6: 'zoomOutButton', // Bouton 6 (LB/L1 ?) -> Zoom Out
-                7: 'zoomInButton',  // Bouton 7 (RB/R1 ?) -> Zoom In
-                10: 'resetRocket',   // Bouton 10 (souvent Start/Menu) -> Reset
-                11: 'toggleVectors', // Bouton 11 (souvent Select/View ?) -> Toggle Vectors
+            buttons: { // Ces actions émettront des événements sémantiques directs
+                0: 'boost',             // Ex: Xbox A / PS Cross
+                1: 'actionB',           // Ex: Xbox B / PS Circle (non mappé pour l'instant)
+                2: 'actionX',           // Ex: Xbox X / PS Square (non mappé pour l'instant)
+                3: 'thrustBackward',    // Ex: Xbox Y / PS Triangle
+                4: 'toggleTraces',      // Ex: Xbox LB / PS L1
+                5: 'toggleVectors',     // Ex: Xbox RB / PS R1
+                6: 'zoomOutButton',     // Ex: Xbox LT / PS L2 (si axe utilisé comme bouton, ou bouton dédié)
+                7: 'zoomInButton',      // Ex: Xbox RT / PS R2 (si axe utilisé comme bouton, ou bouton dédié)
+                8: 'centerCamera',      // Ex: Xbox View/Back / PS Select
+                9: 'pauseGame',         // Ex: Xbox Menu / PS Start
+                10: 'resetRocket',      // Ex: Bouton Stick Gauche Press
+                // 11: // Bouton Stick Droit Press (non mappé)
+                // D-pad (peut être axes ou boutons selon le gamepad)
+                // 12: 'thrustForward', // D-pad Up
+                // 13: 'thrustBackward',// D-pad Down
+                // 14: 'rotateLeft', // D-pad Left
+                // 15: 'rotateRight', // D-pad Right
             }
         };
-        this.axisThreshold = 0.1; // Seuil pour ignorer les petites dérives des axes
-        // Ajout: Stocker l'état précédent des axes maintenus
+        this.axisThreshold = 0.1; 
         this.heldAxes = {}; 
         
-        // Mapping des touches aux actions
-        this.keyMap = {
-            // Touches fléchées
-            'ArrowUp': 'thrustForward',
-            'ArrowDown': 'thrustBackward',
-            ArrowLeft: 'rotateRight',
-            ArrowRight: 'rotateLeft',
-            
-            // Touches WASD alternatives
-            'w': 'thrustForward',
-            's': 'thrustBackward',
-            'a': 'rotateLeft',
-            'd': 'rotateRight',
-            'W': 'thrustForward',
-            'S': 'thrustBackward',
-            'A': 'rotateLeft',
-            'D': 'rotateRight',
-            'KeyW': 'thrustForward',
-            'KeyS': 'thrustBackward',
-            'KeyA': 'rotateLeft',
-            'KeyD': 'rotateRight',
-            
-            // Autres touches
-            'r': 'resetRocket',
-            'R': 'resetRocket',
-            'KeyR': 'resetRocket',
-            'c': 'centerCamera',
-            'C': 'centerCamera',
-            'KeyC': 'centerCamera',
-            'v': 'toggleVectors',
-            'V': 'toggleVectors',
-            'KeyV': 'toggleVectors',
-            'g': 'toggleGravityField',
-            'G': 'toggleGravityField',
-            'KeyG': 'toggleGravityField',
-            't': 'toggleTraces',        // Afficher/masquer les traces
-            'T': 'toggleTraces',
-            'KeyT': 'toggleTraces',
-            'p': 'pauseGame',           // Pause avec P
-            'P': 'pauseGame',
-            'KeyP': 'pauseGame',
-            'Escape': 'pauseGame',      // Pause avec Escape
-            'm': 'decreaseThrustMultiplier',
-            'M': 'decreaseThrustMultiplier',
-            'KeyM': 'decreaseThrustMultiplier',
-            'i': 'toggleAI',            // Activer/désactiver l'IA
-            'I': 'toggleAI',
-            'KeyI': 'toggleAI'
-        };
+        // Initialiser this.keyMap avec une copie de DEFAULT_KEY_MAP
+        this.keyMap = { ...InputController.DEFAULT_KEY_MAP };
         
         // Lier les gestionnaires pour pouvoir les désabonner
         this._boundKeyDown = this.handleKeyDown.bind(this);
         this._boundKeyUp = this.handleKeyUp.bind(this);
         this._boundWheel = this.handleWheel.bind(this);
-        // Conteneurs de gestionnaires pour suppression
-        this._mouseHandlers = {};
-        this._touchHandlers = {};
+        this._mouseHandlers = {}; // Reste pour la structure, mais les handlers seront spécifiques
+        this._touchHandlers = {}; // Idem
         this._gamepadHandlers = {};
         
         // Initialiser les événements du clavier, souris, tactile et joystick
         this.initKeyboardEvents();
+        this.initMouseEvents(); // Renommé pour clarté
+        this.initTouchEvents(); // Renommé pour clarté
         this.initGamepadEvents();
     }
     
     initKeyboardEvents() {
-        // Écouter les événements du clavier
         window.addEventListener('keydown', this._boundKeyDown);
         window.controllerContainer.track(() => window.removeEventListener('keydown', this._boundKeyDown));
         window.addEventListener('keyup', this._boundKeyUp);
         window.controllerContainer.track(() => window.removeEventListener('keyup', this._boundKeyUp));
         
-        // Écouter les événements de la souris pour le zoom et le déplacement
-        window.addEventListener('wheel', this._boundWheel);
+        window.addEventListener('wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
         window.controllerContainer.track(() => window.removeEventListener('wheel', this._boundWheel));
-        
-        // Utiliser une méthode commune pour les événements souris
-        this.setupMouseEvents();
-        
-        // Utiliser une méthode commune pour les événements tactiles
-        this.setupTouchEvents();
     }
     
-    // Méthode factorisée pour configurer les événements souris
-    setupMouseEvents() {
-        const mouseEvents = [
-            { name: 'mousedown', eventType: EVENTS.INPUT.MOUSEDOWN },
-            { name: 'mousemove', eventType: EVENTS.INPUT.MOUSEMOVE },
-            { name: 'mouseup', eventType: EVENTS.INPUT.MOUSEUP }
-        ];
-        
-        mouseEvents.forEach(event => {
-            const handler = (e) => {
-                this.eventBus.emit(event.eventType, {
-                    x: e.clientX,
-                    y: e.clientY,
-                    button: e.button || 0
-                });
-            };
-            this._mouseHandlers[event.name] = handler;
-            window.addEventListener(event.name, handler);
-            window.controllerContainer.track(() => window.removeEventListener(event.name, handler));
-        });
-    }
-    
-    // Méthode factorisée pour configurer les événements tactiles
-    setupTouchEvents() {
-        // Événements tactiles pour appareils mobiles avec passive: true
-        const touchStartHandler = (event) => {
-            const touch = event.touches[0];
-            this.eventBus.emit(EVENTS.INPUT.TOUCHSTART, { x: touch.clientX, y: touch.clientY });
+    // Méthode pour configurer les événements souris pour le glisser de la caméra
+    initMouseEvents() {
+        const mouseDownHandler = (e) => {
+            // Permettre le drag uniquement avec le bouton gauche ou le bouton du milieu
+            if (e.button === 0 || e.button === 1) { 
+                this.isMouseDragging = true;
+                this.eventBus.emit(EVENTS.CAMERA.START_DRAG, { x: e.clientX, y: e.clientY });
+                // e.preventDefault(); // Peut-être nécessaire si le canvas est dans un élément scrollable
+            }
         };
-        window.addEventListener('touchstart', touchStartHandler, { passive: true });
-        window.controllerContainer.track(() => window.removeEventListener('touchstart', touchStartHandler, { passive: true }));
+        this._mouseHandlers.mousedown = mouseDownHandler;
+        window.addEventListener('mousedown', mouseDownHandler);
+        window.controllerContainer.track(() => window.removeEventListener('mousedown', mouseDownHandler));
+
+        const mouseMoveHandler = (e) => {
+            if (this.isMouseDragging) {
+                this.eventBus.emit(EVENTS.CAMERA.DRAG, { x: e.clientX, y: e.clientY });
+                // e.preventDefault(); 
+            }
+        };
+        this._mouseHandlers.mousemove = mouseMoveHandler;
+        window.addEventListener('mousemove', mouseMoveHandler);
+        window.controllerContainer.track(() => window.removeEventListener('mousemove', mouseMoveHandler));
+        
+        const mouseUpHandler = (e) => {
+            if (this.isMouseDragging) {
+                this.isMouseDragging = false;
+                this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+            }
+            // La logique de clic sur des boutons UI spécifiques (comme "assisted controls")
+            // devrait être gérée par GameController ou UIView écoutant un événement de clic générique
+            // ou InputController pourrait vérifier les coordonnées ici si c'était sa responsabilité.
+            // Pour l'instant, on se concentre sur le drag.
+            // Si un clic (mousedown + mouseup sans drag) doit déclencher une action UI :
+            if (e.button === 0) { // Clic gauche
+                 // Vérifier si c'est un clic sur un bouton UI connu
+                 // exemple: if (this.uiView && this.uiView.isClickOnAssistedControlsButton(e.clientX, e.clientY)) {
+                 // this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
+                 // }
+                 // Pour l'instant, GameController s'abonne déjà à TOGGLE_ASSISTED_CONTROLS,
+                 // il faudrait un autre module (comme UIView) pour émettre cet événement.
+                 // Ou, si InputController est responsable de tous les inputs, il pourrait le faire.
+                 // Laissons cela pour une étape ultérieure si nécessaire. Le drag est la priorité.
+            }
+        };
+        this._mouseHandlers.mouseup = mouseUpHandler;
+        window.addEventListener('mouseup', mouseUpHandler); // Écouter sur window pour capturer même si la souris sort du canvas
+        window.controllerContainer.track(() => window.removeEventListener('mouseup', mouseUpHandler));
+    }
+    
+    // Méthode pour configurer les événements tactiles pour le glisser de la caméra
+    initTouchEvents() {
+        const touchStartHandler = (event) => {
+            if (event.touches.length === 1) { // Gérer le drag avec un seul doigt
+                const touch = event.touches[0];
+                this.isTouchDragging = true;
+                this.eventBus.emit(EVENTS.CAMERA.START_DRAG, { x: touch.clientX, y: touch.clientY });
+                event.preventDefault(); // Empêcher le défilement de la page
+            }
+        };
+        this._touchHandlers.touchstart = touchStartHandler;
+        window.addEventListener('touchstart', touchStartHandler, { passive: false });
+        window.controllerContainer.track(() => window.removeEventListener('touchstart', touchStartHandler));
 
         const touchMoveHandler = (event) => {
-            const touch = event.touches[0];
-            this.eventBus.emit(EVENTS.INPUT.TOUCHMOVE, { x: touch.clientX, y: touch.clientY });
+            if (this.isTouchDragging && event.touches.length === 1) {
+                const touch = event.touches[0];
+                this.eventBus.emit(EVENTS.CAMERA.DRAG, { x: touch.clientX, y: touch.clientY });
+                event.preventDefault();
+            }
         };
-        window.addEventListener('touchmove', touchMoveHandler, { passive: true });
-        window.controllerContainer.track(() => window.removeEventListener('touchmove', touchMoveHandler, { passive: true }));
+        this._touchHandlers.touchmove = touchMoveHandler;
+        window.addEventListener('touchmove', touchMoveHandler, { passive: false });
+        window.controllerContainer.track(() => window.removeEventListener('touchmove', touchMoveHandler));
 
         const touchEndHandler = (event) => {
-            this.eventBus.emit(EVENTS.INPUT.TOUCHEND, {});
+            if (this.isTouchDragging) {
+                this.isTouchDragging = false;
+                this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+                // event.preventDefault(); // Peut être nécessaire sur certains appareils
+            }
         };
-        window.addEventListener('touchend', touchEndHandler, { passive: true });
-        window.controllerContainer.track(() => window.removeEventListener('touchend', touchEndHandler, { passive: true }));
+        this._touchHandlers.touchend = touchEndHandler;
+        window.addEventListener('touchend', touchEndHandler);
+        window.controllerContainer.track(() => window.removeEventListener('touchend', touchEndHandler));
+        window.addEventListener('touchcancel', touchEndHandler); // Gérer aussi touchcancel
+        window.controllerContainer.track(() => window.removeEventListener('touchcancel', touchEndHandler));
     }
     
     // Nouvelle méthode pour initialiser le support du joystick
@@ -256,118 +250,175 @@ class InputController {
     
     // Gérer les événements keydown
     handleKeyDown(event) {
-        // Mettre à jour l'état des touches
-        const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-        if (this.keys.hasOwnProperty(key)) {
-            this.keys[key] = true;
+        const actionName = this.keyMap[event.code] || this.keyMap[event.key];
+        if (!actionName) return;
+
+        // Empêcher le comportement par défaut pour les touches de jeu
+        const isFunctionKey = event.key && event.key.startsWith('F') && event.key.length <= 3;
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && !isFunctionKey) {
+            event.preventDefault();
         }
-        // Convertir la touche en action
-        let action = this.keyMap[event.key];
-        if (!action) {
-            // Essayer avec la version minuscule
-            action = this.keyMap[event.key.toLowerCase()];
-        }
-        if (!action && event.code) {
-            action = this.keyMap[event.code];
-        }
-        if (action) {
-            // Ne bloque pas les touches système (F1-F12, Ctrl, Alt, Meta)
-            const isFunctionKey = event.key && event.key.startsWith('F') && event.key.length <= 3;
-            if (!event.ctrlKey && !event.metaKey && !event.altKey && !isFunctionKey) {
-                event.preventDefault();
-            }
-            // Émettre l'événement correspondant
-            this.eventBus.emit(EVENTS.INPUT.KEYDOWN, { action, key: event.key });
-            // Ajout : toggleGravityField
-            if (action === 'toggleGravityField') {
-                this.eventBus.emit(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD);
-            }
+
+        const actionKey = `${actionName}-${event.code || event.key}`; // Clé unique pour activeKeyActions
+
+        switch (actionName) {
+            case 'thrustForward':
+            case 'boost': // boost est un alias pour thrustForward
+                if (!this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.add(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_START);
+                }
+                break;
+            case 'thrustBackward':
+                if (!this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.add(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_START);
+                }
+                break;
+            case 'rotateLeft':
+                if (!this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.add(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_START);
+                }
+                break;
+            case 'rotateRight':
+                if (!this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.add(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_START);
+                }
+                break;
+            case 'zoomIn':
+                this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN); // Se répète si la touche est maintenue
+                break;
+            case 'zoomOut':
+                this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT); // Se répète si la touche est maintenue
+                break;
+            // Les actions "coup unique" sont gérées dans handleKeyUp
         }
     }
     
     // Gérer les événements keyup
     handleKeyUp(event) {
-        // Mettre à jour l'état des touches
-        if (this.keys.hasOwnProperty(event.key)) {
-            this.keys[event.key] = false;
-        }
+        const actionName = this.keyMap[event.code] || this.keyMap[event.key];
+        if (!actionName) return;
         
-        // Convertir la touche en action
-        const action = this.keyMap[event.key];
-        if (action) {
-            event.preventDefault();
-            
-            // Émettre l'événement correspondant
-            this.eventBus.emit(EVENTS.INPUT.KEYUP, { action, key: event.key });
+        const actionKey = `${actionName}-${event.code || event.key}`;
+
+        switch (actionName) {
+            case 'thrustForward':
+            case 'boost':
+                if (this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.delete(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                }
+                break;
+            case 'thrustBackward':
+                if (this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.delete(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                }
+                break;
+            case 'rotateLeft':
+                if (this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.delete(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_STOP);
+                }
+                break;
+            case 'rotateRight':
+                if (this.activeKeyActions.has(actionKey)) {
+                    this.activeKeyActions.delete(actionKey);
+                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_STOP);
+                }
+                break;
+            // Actions "coup unique"
+            case 'resetRocket':
+                this.eventBus.emit(EVENTS.ROCKET.RESET);
+                break;
+            case 'centerCamera':
+                this.eventBus.emit(EVENTS.CAMERA.CENTER_ON_ROCKET);
+                break;
+            case 'toggleVectors':
+                this.eventBus.emit(EVENTS.RENDER.TOGGLE_VECTORS);
+                break;
+            case 'toggleGravityField':
+                this.eventBus.emit(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD);
+                break;
+            case 'toggleTraces':
+                this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
+                break;
+            case 'toggleAI':
+                this.eventBus.emit(EVENTS.AI.TOGGLE_CONTROL);
+                break;
+            case 'pauseGame':
+                this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);
+                break;
+            case 'increaseThrustMultiplier':
+                this.eventBus.emit(EVENTS.ROCKET.INCREASE_THRUST_MULTIPLIER);
+                break;
+            case 'decreaseThrustMultiplier':
+                this.eventBus.emit(EVENTS.ROCKET.DECREASE_THRUST_MULTIPLIER);
+                break;
         }
     }
     
-    // Mettre à jour l'état des entrées (clavier + joystick)
+    // Mettre à jour l'état des entrées (joystick uniquement maintenant)
     update() {
-        // --- Gestion Clavier ---
-        for (const key in this.keys) {
-            if (this.keys[key]) {
-                const action = this.keyMap[key];
-                if (action) {
-                    if (action === 'thrustForward' || action === 'thrustBackward' || 
-                        action === 'rotateLeft' || action === 'rotateRight' || 
-                        action === 'zoomIn' || action === 'zoomOut') {
-                        this.eventBus.emit(EVENTS.INPUT.KEYDOWN, { action, key });
-                    } else if (action !== 'pauseGame') {
-                        this.eventBus.emit(EVENTS.INPUT.KEYPRESS, { action, key });
-                        this.keys[key] = false;
-                    }
-                }
-            }
-        }
-
         // --- Gestion Joystick ---
         if (this.gamepad) {
             const currentGamepad = navigator.getGamepads()[this.gamepad.index];
             if (!currentGamepad) {
+                // Si le gamepad se déconnecte sans événement, le marquer comme déconnecté ici
+                if(this.gamepad){ // Vérifier s'il était précédemment connecté
+                    this.disconnectGamepad(this.gamepad.id);
+                }
                 return;
             }
 
             const currentHeldAxes = {};
             for (let i = 0; i < currentGamepad.axes.length; i++) {
                 const value = currentGamepad.axes[i];
-                const prevValue = this.gamepadState.axes[i];
+                const prevValue = this.gamepadState.axes[i] || 0; // S'assurer que prevValue est défini
                 const adjustedValue = Math.abs(value) < this.axisThreshold ? 0 : value;
                 const adjustedPrevValue = Math.abs(prevValue) < this.axisThreshold ? 0 : prevValue;
 
                 const action = this.gamepadMap.axes[i];
 
-                // 1. Gérer l'événement de CHANGEMENT (une seule fois)
                 if (adjustedValue !== adjustedPrevValue) {
-                    this.gamepadState.axes[i] = value;
-                    if (action) {
+                    this.gamepadState.axes[i] = value; // Stocker la valeur brute
+                    if (action) { // 'rotate' ou 'zoomAxis'
                         this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, {
+                            action: action,
+                            axis: i,
+                            value: adjustedValue // Envoyer la valeur ajustée
+                        });
+                    }
+                }
+
+                if (action && adjustedValue !== 0) {
+                    currentHeldAxes[i] = true;
+                    // L'événement JOYSTICK_AXIS_HELD est toujours utile pour le zoom analogique continu
+                    if (action === 'zoomAxis') { // S'assurer que c'est bien l'action de zoom
+                         this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_HELD, {
                             action: action,
                             axis: i,
                             value: adjustedValue
                         });
                     }
-                }
-
-                // 2. Gérer l'événement MAINTENU (pour les axes mappés)
-                if (action && adjustedValue !== 0) {
-                    currentHeldAxes[i] = true;
-                    this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_HELD, {
-                        action: action,
-                        axis: i,
-                        value: adjustedValue
-                    });
                     this.heldAxes[i] = true;
                 }
             }
+            // Gérer la fin du maintien d'un axe
             for(const axisIndex in this.heldAxes) {
                 if (this.heldAxes[axisIndex] && !currentHeldAxes[axisIndex]) {
                     const action = this.gamepadMap.axes[axisIndex];
                     if (action) {
-                        this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, {
-                            action: action,
-                            axis: parseInt(axisIndex, 10)
-                        });
+                        // Émettre JOYSTICK_AXIS_RELEASED seulement si GameController l'utilise.
+                        // Actuellement, il ne s'y abonne pas explicitement pour 'rotate' ou 'zoomAxis'.
+                        // Le passage de la valeur à 0 dans JOYSTICK_AXIS_CHANGED gère l'arrêt.
+                        // this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, {
+                        //     action: action,
+                        //     axis: parseInt(axisIndex, 10)
+                        // });
                     }
                     this.heldAxes[axisIndex] = false;
                 }
@@ -376,48 +427,80 @@ class InputController {
             // Traiter les boutons
             for (let i = 0; i < currentGamepad.buttons.length; i++) {
                 const button = currentGamepad.buttons[i];
-                const prevButtonState = this.gamepadState.buttons[i];
+                const prevButtonState = this.gamepadState.buttons[i] || { pressed: false, value: 0 };
 
                 if (button.pressed !== prevButtonState.pressed) {
                     this.gamepadState.buttons[i] = { pressed: button.pressed, value: button.value };
-                    const action = this.gamepadMap.buttons[i];
-                    if (action) {
-                        const eventType = button.pressed ? EVENTS.INPUT.JOYSTICK_BUTTON_DOWN : EVENTS.INPUT.JOYSTICK_BUTTON_UP;
-                        this.eventBus.emit(eventType, {
-                            action: action,
-                            button: i,
-                            value: button.value
-                        });
+                    const actionName = this.gamepadMap.buttons[i];
+                    
+                    if (actionName) {
+                        // Émettre des événements sémantiques basés sur actionName
+                        switch (actionName) {
+                            case 'boost': // alias pour thrustForward
+                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.THRUST_FORWARD_START : EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                                break;
+                            case 'thrustBackward':
+                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.THRUST_BACKWARD_START : EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                                break;
+                             // Les rotations via D-Pad si mappées comme boutons
+                            case 'rotateLeft':
+                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.ROTATE_LEFT_START : EVENTS.ROCKET.ROTATE_LEFT_STOP);
+                                break;
+                            case 'rotateRight':
+                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.ROTATE_RIGHT_START : EVENTS.ROCKET.ROTATE_RIGHT_STOP);
+                                break;
+                            // Actions "coup unique" sur appui de bouton
+                            case 'zoomInButton':
+                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
+                                break;
+                            case 'zoomOutButton':
+                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT);
+                                break;
+                            case 'resetRocket':
+                                if (button.pressed) this.eventBus.emit(EVENTS.ROCKET.RESET);
+                                break;
+                            case 'centerCamera':
+                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.CENTER_ON_ROCKET);
+                                break;
+                            case 'toggleVectors':
+                                if (button.pressed) this.eventBus.emit(EVENTS.RENDER.TOGGLE_VECTORS);
+                                break;
+                            case 'toggleTraces':
+                                if (button.pressed) this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
+                                break;
+                            case 'pauseGame':
+                                if (button.pressed) this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);
+                                break;
+                            // Ajouter d'autres actions si nécessaire (ex: toggleAI, thrust multipliers)
+                        }
                     }
                 }
             }
         } else {
-            this.noGamepadLogged = true; 
+            // Optionnel: logguer une fois si aucun gamepad n'est détecté après un certain temps
+            // if (!this.noGamepadLogged && this.initialGamepadCheckDone) {
+            //     console.log("Aucun gamepad détecté.");
+            //     this.noGamepadLogged = true;
+            // }
         }
     }
     
-    // Gérer les événements de la souris
+    // Gérer les événements de la molette souris
     handleWheel(event) {
-        this.eventBus.emit(EVENTS.INPUT.WHEEL, {
-            delta: event.deltaY
-        });
-    }
-    
-    // Vérifier si une touche est actuellement pressée
-    isKeyDown(keyCode) {
-        return this.keys[keyCode] === true;
-    }
-    
-    // Vérifier si une action est actuellement active
-    isActionActive(action) {
-        // Trouver toutes les touches qui déclenchent cette action
-        for (const key in this.keyMap) {
-            if (this.keyMap[key] === action && this.keys[key]) {
-                return true;
-            }
+        event.preventDefault(); // Empêcher le défilement de la page
+        if (event.deltaY < 0) { // Scroll vers le haut ou vers l'avant
+            this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
+        } else if (event.deltaY > 0) { // Scroll vers le bas ou vers l'arrière
+            this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT);
         }
-        return false;
     }
+    
+    // La méthode isKeyDown n'est plus pertinente car l'état est géré par activeKeyActions
+    // ou les événements START/STOP
+    // isKeyDown(keyCode) { ... } 
+    
+    // La méthode isActionActive n'est plus directement utilisable de la même manière
+    // isActionActive(action) { ... }
     
     // Configurer une nouvelle touche pour une action
     mapKey(key, action) {
