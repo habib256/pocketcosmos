@@ -377,8 +377,23 @@ class RenderingController {
         if (this.canvas) {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
-            // Potentiellement, émettre un événement si d'autres modules doivent réagir au redimensionnement
-            // this.eventBus.emit(EVENTS.CANVAS_RESIZED, { width: this.canvas.width, height: this.canvas.height });
+            
+            // Émettre un événement avec les nouvelles dimensions
+            // Assurez-vous que EVENTS.SYSTEM.CANVAS_RESIZED est défini
+            // ou utilisez une constante d'événement appropriée (ex: EVENTS.RENDER.CANVAS_RESIZED)
+            if (this.eventBus && window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED) { 
+                this.eventBus.emit(window.EVENTS.SYSTEM.CANVAS_RESIZED, { 
+                    width: this.canvas.width, 
+                    height: this.canvas.height 
+                });
+            } else if (this.eventBus && window.EVENTS && window.EVENTS.RENDER && window.EVENTS.RENDER.CANVAS_RESIZED) { // Fallback si RENDER.CANVAS_RESIZED existe
+                 this.eventBus.emit(window.EVENTS.RENDER.CANVAS_RESIZED, { 
+                    width: this.canvas.width, 
+                    height: this.canvas.height 
+                });
+            } else {
+                console.warn("EVENT.SYSTEM.CANVAS_RESIZED ou EVENT.RENDER.CANVAS_RESIZED non défini. L'événement de redimensionnement du canvas ne sera pas émis.");
+            }
             console.log(`Canvas redimensionné à: ${this.canvas.width}x${this.canvas.height}`);
         }
     }

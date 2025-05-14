@@ -102,6 +102,16 @@ class ParticleController {
         
         // Mettre à jour les particules de débris
         this.updateParticles(this.particleSystemModel.debrisParticles, deltaTime);
+
+        // Mettre à jour les particules de texte (si elles existent et ont une méthode update)
+        if (this.particleSystemModel.textParticles && this.particleSystemModel.textParticles.length > 0) {
+            this.updateParticles(this.particleSystemModel.textParticles, deltaTime);
+        }
+
+        // Mettre à jour les particules de célébration (si elles existent et ont une méthode update)
+        if (this.particleSystemModel.celebrationParticles && this.particleSystemModel.celebrationParticles.length > 0) {
+            this.updateParticles(this.particleSystemModel.celebrationParticles, deltaTime);
+        }
     }
     
     // Mettre à jour les positions et l'état des particules
@@ -341,5 +351,22 @@ class ParticleController {
             }
             this.particleSystemModel.celebrationParticles.push(particle);
         }
+    }
+
+    reset() {
+        // Réinitialiser le modèle de système de particules
+        if (this.particleSystemModel) {
+            this.particleSystemModel.reset(); // Cela vide déjà les listes de particules actives et de débris
+        }
+
+        // Marquer toutes les particules du pool comme inactives
+        for (let particle of this.particlePool) {
+            particle.isActive = false;
+            // Optionnel: réinitialiser d'autres propriétés si nécessaire (life, velocity, etc.)
+            // particle.life = 0; 
+            // particle.velocity = { x: 0, y: 0 };
+        }
+        this.isSystemPaused = false; // S'assurer que le système de particules n'est pas en pause
+        console.log("ParticleController: Système de particules réinitialisé.");
     }
 } 

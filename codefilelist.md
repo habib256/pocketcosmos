@@ -3,15 +3,18 @@
 ## Structure des Dossiers
 
 ```
-├── assets/           # Ressources statiques (images, sons, captures d'écran)
+├── assets/           # Ressources statiques (images, sons, captures d'écran, vidéos)
 │   ├── sound/        # Effets sonores (propulsion, collisions, voix, etc.)
 │   ├── image/        # Images (fusée, planètes, etc.)
-│   └── screenshots/  # Captures d'écran du jeu
+│   ├── screenshots/  # Captures d'écran du jeu
+│   └── video/        # Vidéos (cinématiques, tutoriels, etc.)
 ├── controllers/      # Logique de contrôle, gestion des états et interactions
 │   ├── BodyFactory.js
+│   ├── CelestialBodyFactory.js # Crée les modèles de corps célestes et leurs corps physiques Matter.js
 │   ├── CollisionHandler.js
 │   ├── EventBus.js
-│   ├── GameController.js
+│   ├── GameController.js       # Orchestrateur principal, boucle de jeu, gestion des états globaux
+│   ├── GameSetupController.js  # Initialise les composants majeurs du jeu (modèles, vues, contrôleurs)
 │   ├── InputController.js
 │   ├── MissionManager.js
 │   ├── ParticleController.js
@@ -75,19 +78,21 @@ Le projet suit une architecture MVC étendue :
 - **CameraModel.js** : Gère la position, le zoom et le suivi de la caméra.
 
 ## Contrôleurs clés (`controllers/`)
-- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs mais délègue la logique spécifique (par ex. à RocketController).
+- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs mais délègue la logique spécifique (par ex. à RocketController). Gère l'état du jeu (pause, etc.) et la logique de mission de haut niveau.
+- **GameSetupController.js** : Responsable de l'initialisation et de la configuration de tous les composants majeurs du jeu au démarrage, y compris les modèles, les vues et les autres contrôleurs.
 - **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
 - **RocketController.js** : Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée. Met à jour `RocketModel` et `ParticleSystemModel`.
 - **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V) et du champ de gravité/équipotentielles (touche G).
-- **PhysicsController.js** : Gère le moteur Matter.js et la simulation physique.
-- **SynchronizationManager.js** : Synchronise l'état logique et physique entre modèle et moteur.
-- **ThrusterPhysics.js** : Applique les forces des propulseurs de la fusée.
+- **PhysicsController.js** : Gère le moteur Matter.js et la simulation physique globale.
+- **SynchronizationManager.js** : Synchronise l'état logique (modèles) et physique (moteur Matter.js) entre eux, en particulier pour la fusée (atterrissage, décollage, attachement) et les corps célestes. Gère l'émission d'événements clés comme `ROCKET_LANDED`.
+- **ThrusterPhysics.js** : Applique les forces des propulseurs de la fusée au moteur physique.
 - **PhysicsVectors.js** : Calcule et fournit les vecteurs physiques (vitesse, accélération) pour l'affichage et la simulation.
-- **CollisionHandler.js** : Gère les collisions entre corps physiques.
-- **BodyFactory.js** : Crée les corps physiques Matter.js à partir des modèles.
-- **EventBus.js** : Système Publish/Subscribe pour la communication interne.
-- **ParticleController.js** : Gère la logique des particules (création, mise à jour, suppression).
-- **MissionManager.js** : Gère la logique des missions et leurs objectifs.
+- **CollisionHandler.js** : Gère les collisions entre corps physiques, met à jour l'état du `RocketModel` en cas d'atterrissage ou de crash.
+- **BodyFactory.js** : Crée les corps physiques Matter.js (génériques, ex: fusée) à partir des modèles.
+- **CelestialBodyFactory.js** : Spécialisé dans la création des corps célestes (planètes, lunes), incluant leur modèle et leur corps physique Matter.js.
+- **EventBus.js** : Système Publish/Subscribe pour la communication interne découplée.
+- **ParticleController.js** : Gère la logique des particules (création, mise à jour, suppression pour effets visuels).
+- **MissionManager.js** : Gère la logique des missions, leurs objectifs, et leur complétion.
 - **RocketAgent.js** : Gère l'IA de contrôle de la fusée avec TensorFlow.js (prise de décision, apprentissage par renforcement).
 - **RocketCargo.js** : Gère le cargo de la fusée (chargement, déchargement, gestion des ressources).
 

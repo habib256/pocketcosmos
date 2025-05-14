@@ -89,9 +89,10 @@ class ParticleView {
                 // La méthode `update` de la particule est appelée ici. Si elle retourne `false`
                 // (indiquant que la particule a expiré), elle est retirée du tableau.
                 // C'est atypique, la mise à jour est souvent séparée du rendu.
-                if (!p.update()) {
-                    particleSystemModel.celebrationParticles.splice(i, 1);
-                }
+                // SUPPRESSION DE LA LOGIQUE DE MISE A JOUR ICI
+                // if (!p.update()) {
+                //     particleSystemModel.celebrationParticles.splice(i, 1);
+                // }
             }
         }
 

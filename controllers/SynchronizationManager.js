@@ -243,6 +243,10 @@ class SynchronizationManager {
         const collisionHandler = this.physicsController.collisionHandler; // Besoin pour isRocketLanded
         if (!rocketBody || !collisionHandler || !universeModel || !universeModel.celestialBodies) return;
 
+        // Sauvegarder l'état initial du modèle pour cette vérification
+        const initialModelIsLanded = rocketModel.isLanded;
+        const initialModelLandedOn = rocketModel.landedOn;
+
         let isNowConsideredLanded = false;
         let currentLandedOnBody = null;
 
@@ -272,57 +276,59 @@ class SynchronizationManager {
             }
         }
 
-        // --- MISE À JOUR DE L'ÉTAT ---
+        // --- MISE À JOUR DE L'ÉTAT ET ÉMISSION D'ÉVÉNEMENT ---
 
-        // CAS 1: Actuellement posé (selon le modèle)
-        if (rocketModel.isLanded) {
-            // Si la vérification montre qu'on n'est PLUS posé sur AUCUN corps
-            if (!isNowConsideredLanded) {
-                 // Vérifier si ce n'est pas dû à une tentative de décollage en cours
-                 if (rocketModel.thrusters.main.power <= 50) {
-                     console.log(`État de décollage confirmé (périodique) de ${rocketModel.landedOn}`);
-                     rocketModel.isLanded = false;
-                     rocketModel.landedOn = null;
-                     rocketModel.relativePosition = null;
-                 } else {
-                     // Décollage en cours, l'état a probablement déjà été mis à jour par handleLanded...
-                     // Ne rien faire ici pour éviter conflit.
-                 }
-            // Si la vérification montre qu'on est posé, mais sur un AUTRE corps (très improbable, mais gérons le cas)
-            } else if (currentLandedOnBody !== rocketModel.landedOn) {
-                 console.warn(`Changement de corps d'atterrissage détecté (périodique): ${rocketModel.landedOn} -> ${currentLandedOnBody}`);
-                 rocketModel.landedOn = currentLandedOnBody;
-                 rocketModel.relativePosition = null; // Recalculer la position relative
-                 // Déclencher la stabilisation immédiate peut être utile ici
-                 this.handleLandedOrAttachedRocket(rocketModel);
-            }
-            // Si on est posé et la vérification confirme le même corps, ne rien faire.
+        if (isNowConsideredLanded) {
+            // La fusée est physiquement considérée comme posée
+            if (rocketModel.thrusters.main.power <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+                // Et la poussée est faible (atterrissage stable)
+                
+                // Mettre à jour le modèle de manière cohérente
+                rocketModel.isLanded = true;
+                rocketModel.landedOn = currentLandedOnBody;
+                // rocketModel.relativePosition = null; // Sera recalculé dans handleLandedOrAttachedRocket si besoin
 
-        // CAS 2: Actuellement PAS posé (selon le modèle)
-        } else {
-            // Si la vérification montre qu'on EST maintenant posé
-            if (isNowConsideredLanded) {
-                 // On ne re-déclare PAS la fusée comme atterrie si une tentative de décollage (poussée principale active) est en cours.
-                 // Le seuil de 50 est le même que celui utilisé dans handleLandedOrAttachedRocket pour détecter une tentative de décollage.
-                 if (rocketModel.thrusters.main.power <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
-                    console.log(`État d'atterrissage détecté (périodique) sur ${currentLandedOnBody}`);
-                    rocketModel.isLanded = true;
-                    rocketModel.landedOn = currentLandedOnBody;
-                    rocketModel.relativePosition = null; // Calculer la position relative
+                // Si c'est un NOUVEL atterrissage (on n'était pas posé, ou sur un autre corps)
+                // OU si le modèle a été mis à jour par CollisionHandler mais que l'événement n'a pas encore été envoyé pour CET atterrissage
+                if (!initialModelIsLanded || initialModelLandedOn !== currentLandedOnBody) {
+                    console.log(`État d'atterrissage DÉTECTÉ et CONFIRMÉ (périodique) sur ${currentLandedOnBody}.`);
                     // Appeler handleLandedOrAttachedRocket pour appliquer la stabilisation immédiatement
+                    // et recalculer relativePosition si nécessaire.
                     this.handleLandedOrAttachedRocket(rocketModel);
                     // Forcer les vitesses à zéro immédiatement dans le modèle aussi pour cohérence
-                    rocketModel.setVelocity(0, 0);
+                    // (handleLandedOrAttachedRocket devrait déjà s'en charger pour la physique et le modèle)
+                    rocketModel.setVelocity(0, 0); 
                     rocketModel.setAngularVelocity(0);
 
                     // Émettre l'événement ROCKET_LANDED
                     this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
-                } else {
-                    // Optionnel: Log pour indiquer que la détection d'atterrissage a été ignorée à cause de la poussée.
-                    // console.log(`[SyncManager] Détection d'atterrissage périodique sur ${currentLandedOnBody} ignorée (poussée principale active: ${rocketModel.thrusters.main.power}%).`);
+                } else if (initialModelIsLanded && initialModelLandedOn === currentLandedOnBody) {
+                    // On était déjà posé sur ce corps selon le modèle au début de la fonction.
+                    // On s'assure juste que la stabilisation est appliquée si elle ne l'était pas.
+                    // console.log(`[SyncManager] Atterrissage confirmé sur ${currentLandedOnBody}, état déjà connu.`);
+                    this.handleLandedOrAttachedRocket(rocketModel);
                 }
+            } else {
+                // Poussée active : atterrissage non stable, ne pas traiter comme un atterrissage finalisé.
+                // console.log(`[SyncManager] Détection d'atterrissage sur ${currentLandedOnBody} ignorée (poussée principale active: ${rocketModel.thrusters.main.power}%).`);
+                // Si on était précédemment considéré comme posé (initialModelIsLanded), et que la poussée est forte,
+                // cela a déjà été géré par handleLandedOrAttachedRocket qui met isLanded à false.
             }
-            // Si on n'était pas posé et la vérification confirme, ne rien faire.
+        } else {
+            // Pas considéré comme posé actuellement par la vérification physique.
+            if (initialModelIsLanded) { // Si le modèle disait qu'on était posé au début de cette fonction
+                 // Vérifier si ce n'est pas dû à une tentative de décollage en cours (poussée faible mais pas de contact)
+                 if (rocketModel.thrusters.main.power <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+                     console.log(`État de décollage confirmé (périodique) de ${initialModelLandedOn} (plus de contact détecté).`);
+                     rocketModel.isLanded = false;
+                     rocketModel.landedOn = null;
+                     rocketModel.relativePosition = null;
+                 } else {
+                     // Décollage actif (géré par handleLandedOrAttachedRocket et la logique de poussée).
+                     // Ne rien faire ici pour éviter les conflits.
+                 }
+            }
+            // Si on n'était pas posé (initialModelIsLanded = false) et la vérification confirme (isNowConsideredLanded = false), ne rien faire.
         }
     }
 } 

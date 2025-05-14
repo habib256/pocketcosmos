@@ -184,6 +184,18 @@ class ParticleSystemModel {
             this.emitters[emitterName].isActive = false;
         }
         this.debrisParticles = [];
+
+        // Vider également les particules de texte et de célébration si elles existent
+        if (this.textParticles) {
+            this.textParticles = [];
+        }
+        if (this.celebrationParticles) {
+            this.celebrationParticles = [];
+        }
+        // Réinitialiser l'état du texte de succès de mission
+        if (this.missionSuccessText) {
+            this.missionSuccessText.visible = false;
+        }
     }
 
     // La méthode `clearAllParticles` a été supprimée car redondante avec `reset`.

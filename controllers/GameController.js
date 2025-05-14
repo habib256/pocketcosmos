@@ -6,12 +6,13 @@ class GameController {
         this.eventBus = eventBus;
         this.missionManager = missionManager; // Utilise la variable passée en argument
         
-        // Modèles
+        // Modèles - Seront initialisés par GameSetupController
         this.rocketModel = null;
         this.universeModel = null;
         this.particleSystemModel = null;
+        this.cameraModel = new CameraModel(); // CameraModel est créé ici et passé à GameSetupController
         
-        // Vues
+        // Vues - Seront initialisées par GameSetupController
         this.rocketView = null;
         this.universeView = null;
         this.particleView = null;
@@ -19,13 +20,15 @@ class GameController {
         this.traceView = null;
         this.uiView = null;
         
-        // Contrôleurs
-        this.inputController = null;     // Sera fourni par setControllers
-        this.physicsController = null;   // Sera créé dans setupControllers
-        this.particleController = null;  // Sera créé dans setupControllers
-        this.renderingController = null; // Sera fourni par setControllers
-        this.rocketAgent = null;         // Sera fourni par setControllers
-        this.rocketController = null;    // Sera créé dans setupControllers
+        // Contrôleurs Externes (fournis via setControllers)
+        this.inputController = null;
+        this.renderingController = null;
+        this.rocketAgent = null; // Peut être fourni ou créé par GameSetupController
+        
+        // Contrôleurs Internes (créés par GameSetupController)
+        this.physicsController = null;
+        this.particleController = null;
+        this.rocketController = null;
         
         // État du jeu
         this.isRunning = false;
@@ -44,11 +47,11 @@ class GameController {
         this.dragStartRocketX = 0;
         this.dragStartRocketY = 0;
 
-        // Crédits gagnés - Initialiser à 10
+        // Crédits gagnés - Initialiser à 10 (ou valeur par défaut au reset)
         this.totalCreditsEarned = 10;
 
-        // Initialiser la caméra
-        this.cameraModel = new CameraModel();
+        // Initialiser la caméra - FAIT CI-DESSUS
+        // this.cameraModel = new CameraModel();
         
         // Timer pour réinitialisation auto après crash
         this.crashResetTimer = null;
@@ -173,6 +176,22 @@ class GameController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
         // --- Fin Abonnements Joystick ---
+
+        // S'abonner à l'événement de redimensionnement du canvas
+        // Assurez-vous que la constante d'événement (ex: EVENTS.SYSTEM.CANVAS_RESIZED) est définie
+        const canvasResizedEventName = (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED)
+            ? window.EVENTS.SYSTEM.CANVAS_RESIZED 
+            : (window.EVENTS && window.EVENTS.RENDER && window.EVENTS.RENDER.CANVAS_RESIZED)
+              ? window.EVENTS.RENDER.CANVAS_RESIZED
+              : null;
+
+        if (canvasResizedEventName) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(canvasResizedEventName, (data) => this.handleCanvasResized(data))
+            );
+        } else {
+            console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. GameController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
+        }
     }
     
     // Gérer les événements d'entrée sémantiques
@@ -485,27 +504,46 @@ class GameController {
     
     // Initialiser le jeu
     init(/*canvas*/) { // canvas n'est plus passé en argument
-        // this.canvas = canvas; // Supprimé
-        // this.ctx = canvas.getContext('2d'); // Supprimé
+        // Créer et utiliser GameSetupController
+        const gameSetupController = new GameSetupController(
+            this.eventBus,
+            this.missionManager,
+            { // Contrôleurs externes à passer
+                renderingController: this.renderingController,
+                rocketAgent: this.rocketAgent // Peut être null si non encore fourni
+            }
+        );
 
-        this.setupModels();
-        
-        // Configurer les contrôleurs AVANT les vues qui pourraient en dépendre
-        this.setupControllers();
-        
-        // Initialiser les vues APRES que les contrôleurs (comme renderingController) soient prêts
-        this.setupViews();
-        
-        // Configurer la caméra
-        this.setupCamera();
+        // Initialiser les composants du jeu via GameSetupController, en passant l'instance de cameraModel
+        const components = gameSetupController.initializeGameComponents(this.cameraModel);
+
+        // Récupérer les modèles initialisés
+        this.rocketModel = components.rocketModel;
+        this.universeModel = components.universeModel;
+        this.particleSystemModel = components.particleSystemModel;
+        // this.cameraModel est déjà initialisé et configuré par GameSetupController
+
+        // Récupérer les vues initialisées
+        this.rocketView = components.rocketView;
+        this.universeView = components.universeView;
+        this.celestialBodyView = components.celestialBodyView;
+        this.particleView = components.particleView;
+        this.traceView = components.traceView;
+        this.uiView = components.uiView;
+
+        // Récupérer les contrôleurs internes initialisés
+        this.physicsController = components.physicsController;
+        this.particleController = components.particleController;
+        this.rocketController = components.rocketController;
+        this.rocketAgent = components.rocketAgent; // Mettre à jour rocketAgent au cas où il a été créé/modifié par GameSetupController
         
         // Réinitialiser l'état de la fusée AVANT de démarrer la boucle
-        this.resetRocket();
+        this.resetRocket(); // S'assurer que resetRocket utilise les modèles/contrôleurs maintenant initialisés
         
         // Démarrer la boucle de jeu principale SEULEMENT après la réinitialisation
         this.start();
         
-        console.log("GameController initialisé et boucle démarrée.");
+        console.log("GameController initialisé (via GameSetupController) et boucle démarrée.");
     }
     
     // Définir les contrôleurs (appelée depuis main.js)
@@ -522,277 +560,16 @@ class GameController {
     }
     
     // Configurer les modèles
-    setupModels() {
-        try {
-            // Créer un modèle d'univers
-            this.universeModel = new UniverseModel();
-
-            // --- Création des Corps Célestes --- 
-
-            // 1. Soleil (Centre de l'univers, pas d'orbite)
-            // Utilisation des constantes pour le Soleil
-            const sun = new CelestialBodyModel(
-                'Soleil',
-                CELESTIAL_BODY.SUN.MASS,   // Masse depuis constants.js
-                CELESTIAL_BODY.SUN.RADIUS, // Rayon depuis constants.js
-                { x: 0, y: 0 }, // Position centrale
-                '#FFD700',      // Couleur jaune
-                null,           // Pas de parent
-                0, 0, 0         // Pas d'orbite
-            );
-            this.universeModel.addCelestialBody(sun);
-
-            // 2. Terre (Orbite autour du Soleil)
-            // Utilisation des constantes pour la Terre
-            const EARTH_ORBIT_DISTANCE = CELESTIAL_BODY.EARTH.ORBIT_DISTANCE; // Distance depuis constants.js
-            const EARTH_ORBIT_SPEED = CELESTIAL_BODY.EARTH.ORBIT_SPEED;         // Vitesse LENTE depuis constants.js
-            const earthInitialAngle = Math.random() * Math.PI * 2; // Angle de départ aléatoire
-            const earth = new CelestialBodyModel(
-                'Terre',
-                CELESTIAL_BODY.MASS,     // Masse depuis constants.js
-                CELESTIAL_BODY.RADIUS,   // Rayon depuis constants.js
-                { x: sun.position.x + Math.cos(earthInitialAngle) * EARTH_ORBIT_DISTANCE, y: sun.position.y + Math.sin(earthInitialAngle) * EARTH_ORBIT_DISTANCE }, // Position initiale calculée
-                '#1E88E5',                // Couleur bleue
-                sun,                      // Parent = Soleil
-                EARTH_ORBIT_DISTANCE,     // Distance orbitale
-                earthInitialAngle,        // Angle initial
-                EARTH_ORBIT_SPEED         // Vitesse orbitale
-            );
-            earth.updateOrbit(0); // Calculer la position et la vélocité initiales
-            this.universeModel.addCelestialBody(earth);
-
-            // 3. Lune (Orbite autour de la Terre)
-            const MOON_ORBIT_DISTANCE = CELESTIAL_BODY.MOON.ORBIT_DISTANCE; // Depuis constants.js
-            const MOON_ORBIT_SPEED = CELESTIAL_BODY.MOON.ORBIT_SPEED;       // Depuis constants.js
-            const moonInitialAngle = Math.random() * Math.PI * 2; // Angle de départ aléatoire autour de la Terre
-            const moon = new CelestialBodyModel(
-                'Lune',
-                CELESTIAL_BODY.MOON.MASS,    // Masse depuis constants.js
-                CELESTIAL_BODY.MOON.RADIUS,  // Rayon depuis constants.js
-                { x: earth.position.x + Math.cos(moonInitialAngle) * MOON_ORBIT_DISTANCE, y: earth.position.y + Math.sin(moonInitialAngle) * MOON_ORBIT_DISTANCE }, // Position initiale calculée
-                '#CCCCCC',                  // Couleur grise
-                earth,                    // Parent = Terre
-                MOON_ORBIT_DISTANCE,      // Distance orbitale
-                moonInitialAngle,         // Angle initial
-                MOON_ORBIT_SPEED          // Vitesse orbitale
-            );
-            moon.updateOrbit(0); // Calculer la position et la vélocité initiales
-            this.universeModel.addCelestialBody(moon);
-
-            // 4. Mercure (Orbite autour du Soleil)
-            const MERCURY_ORBIT_DISTANCE = CELESTIAL_BODY.MERCURY.ORBIT_DISTANCE;
-            const MERCURY_ORBIT_SPEED = CELESTIAL_BODY.MERCURY.ORBIT_SPEED;
-            const mercuryInitialAngle = Math.random() * Math.PI * 2;
-            const mercury = new CelestialBodyModel(
-                'Mercure',
-                CELESTIAL_BODY.MERCURY.MASS,
-                CELESTIAL_BODY.MERCURY.RADIUS,
-                { x: sun.position.x + Math.cos(mercuryInitialAngle) * MERCURY_ORBIT_DISTANCE, y: sun.position.y + Math.sin(mercuryInitialAngle) * MERCURY_ORBIT_DISTANCE },
-                '#A9A9A9', // Couleur gris foncé
-                sun,
-                MERCURY_ORBIT_DISTANCE,
-                mercuryInitialAngle,
-                MERCURY_ORBIT_SPEED
-            );
-            mercury.updateOrbit(0);
-            this.universeModel.addCelestialBody(mercury);
-
-            // 5. Vénus (Orbite autour du Soleil)
-            const VENUS_ORBIT_DISTANCE = CELESTIAL_BODY.VENUS.ORBIT_DISTANCE;
-            const VENUS_ORBIT_SPEED = CELESTIAL_BODY.VENUS.ORBIT_SPEED;
-            const venusInitialAngle = Math.random() * Math.PI * 2;
-            const venus = new CelestialBodyModel(
-                'Vénus',
-                CELESTIAL_BODY.VENUS.MASS,
-                CELESTIAL_BODY.VENUS.RADIUS,
-                { x: sun.position.x + Math.cos(venusInitialAngle) * VENUS_ORBIT_DISTANCE, y: sun.position.y + Math.sin(venusInitialAngle) * VENUS_ORBIT_DISTANCE },
-                '#FFDEAD', // Couleur Navajo White (jaunâtre)
-                sun,
-                VENUS_ORBIT_DISTANCE,
-                venusInitialAngle,
-                VENUS_ORBIT_SPEED
-            );
-            venus.updateOrbit(0);
-            this.universeModel.addCelestialBody(venus);
-
-            // 6. Mars (Orbite autour du Soleil)
-            const MARS_ORBIT_DISTANCE = CELESTIAL_BODY.MARS.ORBIT_DISTANCE;
-            const MARS_ORBIT_SPEED = CELESTIAL_BODY.MARS.ORBIT_SPEED;
-            const marsInitialAngle = Math.random() * Math.PI * 2;
-            const mars = new CelestialBodyModel(
-                'Mars',
-                CELESTIAL_BODY.MARS.MASS,
-                CELESTIAL_BODY.MARS.RADIUS,
-                { x: sun.position.x + Math.cos(marsInitialAngle) * MARS_ORBIT_DISTANCE, y: sun.position.y + Math.sin(marsInitialAngle) * MARS_ORBIT_DISTANCE },
-                '#E57373', // Couleur rougeâtre
-                sun,
-                MARS_ORBIT_DISTANCE,
-                marsInitialAngle,
-                MARS_ORBIT_SPEED
-            );
-            mars.updateOrbit(0);
-            this.universeModel.addCelestialBody(mars);
-
-            // 7. Phobos (Orbite autour de Mars)
-            const PHOBOS_ORBIT_DISTANCE = CELESTIAL_BODY.PHOBOS.ORBIT_DISTANCE;
-            const PHOBOS_ORBIT_SPEED = CELESTIAL_BODY.PHOBOS.ORBIT_SPEED;
-            const phobosInitialAngle = Math.random() * Math.PI * 2;
-            const phobos = new CelestialBodyModel(
-                'Phobos',
-                CELESTIAL_BODY.PHOBOS.MASS,
-                CELESTIAL_BODY.PHOBOS.RADIUS,
-                { x: mars.position.x + Math.cos(phobosInitialAngle) * PHOBOS_ORBIT_DISTANCE, y: mars.position.y + Math.sin(phobosInitialAngle) * PHOBOS_ORBIT_DISTANCE },
-                '#8B4513', // Couleur SaddleBrown (brunâtre)
-                mars, // Parent = Mars
-                PHOBOS_ORBIT_DISTANCE,
-                phobosInitialAngle,
-                PHOBOS_ORBIT_SPEED
-            );
-            phobos.updateOrbit(0);
-            this.universeModel.addCelestialBody(phobos);
-
-            // 8. Deimos (Orbite autour de Mars)
-            const DEIMOS_ORBIT_DISTANCE = CELESTIAL_BODY.DEIMOS.ORBIT_DISTANCE;
-            const DEIMOS_ORBIT_SPEED = CELESTIAL_BODY.DEIMOS.ORBIT_SPEED;
-            const deimosInitialAngle = Math.random() * Math.PI * 2;
-            const deimos = new CelestialBodyModel(
-                'Deimos',
-                CELESTIAL_BODY.DEIMOS.MASS,
-                CELESTIAL_BODY.DEIMOS.RADIUS,
-                { x: mars.position.x + Math.cos(deimosInitialAngle) * DEIMOS_ORBIT_DISTANCE, y: mars.position.y + Math.sin(deimosInitialAngle) * DEIMOS_ORBIT_DISTANCE },
-                '#D2B48C', // Couleur Tan (beige)
-                mars, // Parent = Mars
-                DEIMOS_ORBIT_DISTANCE,
-                deimosInitialAngle,
-                DEIMOS_ORBIT_SPEED
-            );
-            deimos.updateOrbit(0);
-            this.universeModel.addCelestialBody(deimos);
-
-            // --- Fin Création des Corps Célestes ---
-            
-            // --- Création de la Fusée ---
-            this.rocketModel = new RocketModel();
-
-            // Positionner la fusée sur la surface initiale de la Terre
-            const angleVersSoleil = Math.atan2(earth.position.y - sun.position.y, earth.position.x - sun.position.x);
-            const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-            const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-            this.rocketModel.setPosition(rocketStartX, rocketStartY);
-
-            // Donner à la fusée la vélocité initiale de la Terre
-            this.rocketModel.setVelocity(earth.velocity.x, earth.velocity.y);
-            
-            // Orienter la fusée vers le haut (loin de la Terre, dans la direction opposée au Soleil comme approximation)
-            this.rocketModel.setAngle(angleVersSoleil); 
-            
-            // --- Fin Création de la Fusée ---
-
-            // Créer le système de particules
-            this.particleSystemModel = new ParticleSystemModel();
-            
-            // Les émetteurs sont déjà créés dans le constructeur de ParticleSystemModel
-            // Configurer la position et l'angle des émetteurs si nécessaire
-            this.particleSystemModel.updateEmitterAngle('main', Math.PI/2);
-            this.particleSystemModel.updateEmitterAngle('rear', -Math.PI/2);
-            this.particleSystemModel.updateEmitterAngle('left', 0);
-            this.particleSystemModel.updateEmitterAngle('right', Math.PI);
-            
-        } catch (error) {
-            console.error("Erreur lors de l'initialisation des modèles:", error);
-        }
-    }
+    // setupModels() { ... } // SUPPRIMÉ - Géré par GameSetupController
     
     // Configurer les vues
-    setupViews() {
-        // Créer les vues
-        this.rocketView = new RocketView();
-        this.universeView = new UniverseView();
-        this.celestialBodyView = new CelestialBodyView();
-        this.particleView = new ParticleView();
-        this.traceView = new TraceView();
-        this.uiView = new UIView();
-        
-        // Initialiser le contrôleur de rendu avec les vues
-        if (this.renderingController) {
-            this.renderingController.initViews(
-                this.rocketView,
-                this.universeView,
-                this.celestialBodyView,
-                this.particleView,
-                this.traceView,
-                this.uiView
-            );
-        }
-    }
+    // setupViews() { ... } // SUPPRIMÉ - Géré par GameSetupController
     
     // Configurer la caméra
-    setupCamera() {
-        // Obtenir les dimensions du canvas depuis RenderingController
-        const canvasSize = this.renderingController.getCanvasDimensions();
-
-        this.cameraModel.setTarget(this.rocketModel, 'rocket');
-        this.cameraModel.offsetX = canvasSize.width / 2;
-        this.cameraModel.offsetY = canvasSize.height / 2;
-        this.cameraModel.width = canvasSize.width;
-        this.cameraModel.height = canvasSize.height;
-    }
+    // setupCamera() { ... } // SUPPRIMÉ - Géré par GameSetupController
     
     // Configurer les contrôleurs
-    setupControllers() {
-        // Initialiser les contrôleurs avec les modèles et l'EventBus.
-        // inputController, renderingController, et rocketAgent sont normalement fournis via setControllers() depuis main.js.
-
-        // Ces contrôleurs sont internes à GameController ou dépendent de modèles initialisés ici.
-        this.physicsController = new PhysicsController(this.eventBus);
-        // S'assurer que particleSystemModel est prêt avant de créer ParticleController
-        if (!this.particleSystemModel && this.setupModels) { // Au cas où setupModels n'aurait pas été appelé ou aurait échoué pour particleSystemModel
-            console.warn("GameController: particleSystemModel non initialisé avant setupControllers. Tentative de l'initialiser.");
-            // Cela suppose que setupModels peut être appelé sans danger plusieurs fois ou qu'il vérifie en interne.
-            // Idéalement, l'ordre d'appel dans init() (setupModels puis setupControllers) garantit cela.
-        }
-        this.particleController = new ParticleController(this.particleSystemModel, this.eventBus); 
-        
-        // RocketController dépend de rocketModel, physicsController, particleController
-        if (!this.rocketModel && this.setupModels) {
-             console.warn("GameController: rocketModel non initialisé avant setupControllers pour RocketController.");
-        }
-        this.rocketController = new RocketController(this.eventBus, this.rocketModel, this.physicsController, this.particleController, this.cameraModel);
-
-        // Appeler subscribeToEvents sur l'instance de rocketController qui vient d'être créée
-        if (this.rocketController && typeof this.rocketController.subscribeToEvents === 'function') {
-            this.rocketController.subscribeToEvents();
-        } else {
-            console.error("GameController: RocketController est invalide ou n'a pas de méthode subscribeToEvents dans setupControllers.");
-        }
-
-        // Gérer RocketAgent:
-        // Si rocketAgent n'a pas été fourni par main.js (via setControllers), et que les dépendances sont prêtes, on le crée.
-        // Sinon, on suppose que l'instance fournie par main.js est correctement configurée ou se configurera via des événements.
-        if (!this.rocketAgent) {
-            if (this.rocketModel && this.universeModel && this.physicsController && this.missionManager && this.rocketController) {
-                console.log("GameController: Création de RocketAgent car non fourni par setControllers.");
-                this.rocketAgent = new RocketAgent(this.eventBus, this.rocketModel, this.universeModel, this.physicsController, this.missionManager, this.rocketController);
-            } else {
-                console.warn("GameController: RocketAgent non fourni et les dépendances ne sont pas prêtes pour le créer ici.");
-            }
-        } else {
-            console.log("GameController: Utilisation de RocketAgent fourni par setControllers.");
-            // Si l'instance de rocketAgent fournie par main.js a besoin d'une référence à rocketController (qui est créé ici),
-            // il faudrait une méthode pour l'injecter, par ex. this.rocketAgent.setRocketController(this.rocketController);
-            // ou RocketAgent devrait écouter CONTROLLERS_SETUP.
-            // Pour l'instant, on suppose que la gestion est correcte si fourni par main.js.
-        }
-        
-        // Informer les autres systèmes que les contrôleurs sont prêts
-        this.eventBus.emit(window.EVENTS.SYSTEM.CONTROLLERS_SETUP, { 
-            physicsController: this.physicsController, 
-            rocketController: this.rocketController,
-            // On pourrait aussi passer d'autres contrôleurs ici si d'autres modules en ont besoin directement.
-            // Par exemple, inputController, renderingController, etc., s'ils ne sont pas déjà accessibles
-            // d'une autre manière (par ex. via GameController lui-même si c'est une dépendance).
-        });
-    }
+    // setupControllers() { ... } // SUPPRIMÉ - Géré par GameSetupController
     
     // Démarrer la boucle de jeu
     start() {
@@ -919,8 +696,8 @@ class GameController {
             // -----------------------------------------
 
             // Réinitialiser le système de particules lié à la fusée
-            if (this.particleSystemModel) {
-                this.particleSystemModel.reset();
+            if (this.particleController) { // Vérifier si particleController existe
+                this.particleController.reset(); 
             }
         }
 
@@ -963,6 +740,7 @@ class GameController {
 
         console.log("Fusée réinitialisée.");
         this._lastRocketDestroyed = false;
+        this.emitUpdatedStates(); // Assurer que l'état (y compris les particules vides) est propagé immédiatement
     }
     
     // Nouvelle méthode pour encapsuler la logique de mise à jour du jeu
@@ -1358,6 +1136,26 @@ class GameController {
     toggleGravityField() {
         if (this.renderingController && typeof this.renderingController.toggleGravityField === 'function') {
             this.renderingController.toggleGravityField();
+        }
+    }
+
+    // NOUVELLE MÉTHODE pour gérer le redimensionnement du canvas
+    handleCanvasResized(data) {
+        if (this.cameraModel && data) {
+            this.cameraModel.width = data.width;
+            this.cameraModel.height = data.height;
+            this.cameraModel.offsetX = data.width / 2;
+            this.cameraModel.offsetY = data.height / 2;
+            console.log(`[GameController] CameraModel dimensions updated due to canvas resize: ${data.width}x${data.height}`);
+
+            // Si le jeu est en cours et n'est pas en pause, emitUpdatedStates sera appelé par la boucle de jeu.
+            // Si le jeu est en pause, il faut s'assurer que l'UI est redessinée avec la nouvelle taille.
+            // Un emitUpdatedStates pourrait être trop lourd si appelé à chaque pixel de resize.
+            // Normalement, le RenderingController devrait gérer le redessin complet en pause.
+            // Cependant, si des éléments de l'UI dépendent de CameraModel pour leur positionnement/taille
+            // et que le jeu est en pause, il faut forcer un redessin.
+            // Pour l'instant, on suppose que le prochain cycle de rendu (si actif) ou le render en pause du UIView suffira.
+            // Si ce n'est pas le cas, un this.eventBus.emit(EVENTS.UI.NEEDS_REDRAW_STATIC) pourrait être une option plus ciblée.
         }
     }
 } 
