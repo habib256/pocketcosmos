@@ -140,6 +140,16 @@ class MissionManager {
     }
 
     /**
+     * Vérifie si au moins une mission dans la liste a le statut "completed".
+     * Utilisé par HeadlessRocketEnvironment pour déterminer si une récompense de mission doit être donnée
+     * ou si l'épisode doit se terminer.
+     * @returns {boolean} True si au moins une mission est complétée, false sinon.
+     */
+    isCurrentMissionSuccessful() {
+        return this.missions.some(mission => mission.status === "completed");
+    }
+
+    /**
      * Réinitialise la liste des missions à un état prédéfini.
      * Vide les missions existantes et en crée de nouvelles (par exemple, pour démarrer une nouvelle partie).
      */

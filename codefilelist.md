@@ -9,39 +9,41 @@
 │   ├── screenshots/  # Captures d'écran du jeu
 │   └── video/        # Vidéos (cinématiques, tutoriels, etc.)
 ├── controllers/      # Logique de contrôle, gestion des états et interactions
-│   ├── BodyFactory.js
+│   ├── BodyFactory.js          # Crée les corps physiques Matter.js (génériques, ex: fusée) à partir des modèles
 │   ├── CameraController.js     # Gère le zoom, le centrage et le drag de la caméra
 │   ├── CelestialBodyFactory.js # Crée les modèles de corps célestes et leurs corps physiques Matter.js
-│   ├── CollisionHandler.js
-│   ├── EventBus.js
+│   ├── CollisionHandler.js     # Gère les collisions entre corps physiques, met à jour RocketModel
+│   ├── ControllerContainer.js  # Gère l'organisation ou l'accès aux contrôleurs
+│   ├── EventBus.js             # Système Publish/Subscribe pour la communication interne découplée
 │   ├── GameController.js       # Orchestrateur principal, boucle de jeu, gestion des états globaux
 │   ├── GameSetupController.js  # Initialise les composants majeurs du jeu (modèles, vues, contrôleurs)
-│   ├── InputController.js
-│   ├── MissionManager.js
-│   ├── ParticleController.js
-│   ├── PhysicsController.js
-│   ├── PhysicsVectors.js
-│   ├── RenderingController.js
-│   ├── RocketAgent.js
-│   ├── RocketCargo.js
-│   ├── RocketController.js
-│   ├── SynchronizationManager.js
-│   └── ThrusterPhysics.js
+│   ├── HeadlessRocketEnvironment.js # Environnement de simulation pour la fusée sans rendu graphique
+│   ├── InputController.js        # Entrées clavier/souris/joystick, publie sur EventBus
+│   ├── MissionManager.js       # Gère la logique des missions, leurs objectifs, et leur complétion
+│   ├── ParticleController.js   # Gère la logique des particules (création, mise à jour, suppression)
+│   ├── PhysicsController.js    # Gère le moteur Matter.js et la simulation physique globale
+│   ├── PhysicsVectors.js       # Calcule et fournit les vecteurs physiques pour affichage et simulation
+│   ├── RenderingController.js  # Coordonne toutes les vues pour le rendu, gère les toggles d'affichage
+│   ├── RocketAI.js             # Gère l'IA de contrôle de la fusée avec TensorFlow.js
+│   ├── RocketCargo.js          # Gère le cargo de la fusée (chargement, déchargement, ressources)
+│   ├── RocketController.js     # Gère la logique spécifique à la fusée (propulsion, rotation)
+│   ├── SynchronizationManager.js # Synchronise état logique (modèles) et physique (Matter.js)
+│   └── ThrusterPhysics.js      # Applique les forces des propulseurs de la fusée au moteur physique
 ├── models/           # Représentation des données et de l'état
-│   ├── CameraModel.js
-│   ├── CelestialBodyModel.js
-│   ├── ParticleModel.js
-│   ├── ParticleSystemModel.js
-│   ├── RocketModel.js
-│   └── UniverseModel.js
+│   ├── CameraModel.js          # Gère la position, le zoom et le suivi de la caméra
+│   ├── CelestialBodyModel.js   # Représente un corps céleste (masse, position, rayon)
+│   ├── ParticleModel.js        # Représente une particule individuelle et ses propriétés
+│   ├── ParticleSystemModel.js  # Modélise les systèmes de particules (émission, durée de vie)
+│   ├── RocketModel.js          # Représente l'état de la fusée (position, vitesse, carburant)
+│   └── UniverseModel.js        # Gère la collection de corps célestes et logique du système planétaire
 ├── views/            # Rendu visuel des modèles sur le canvas
-│   ├── CelestialBodyView.js
-│   ├── ParticleView.js
-│   ├── RocketView.js
-│   ├── TraceView.js
-│   ├── UniverseView.js
-│   ├── VectorsView.js
-│   └── UIView.js
+│   ├── CelestialBodyView.js    # Affiche un corps céleste individuel
+│   ├── ParticleView.js         # Affiche les particules (propulsion, débris, effets)
+│   ├── RocketView.js           # Affiche la fusée et ses états (propulseurs, image, crash)
+│   ├── TraceView.js            # Affiche la trajectoire de la fusée
+│   ├── UniverseView.js         # Affiche le fond, les étoiles, coordonne dessin des corps célestes
+│   ├── VectorsView.js          # Affiche les vecteurs physiques (poussée, vitesse, gravité, etc.)
+│   └── UIView.js               # Affiche l'interface utilisateur (infos, missions, cargo, messages)
 ├── constants.js      # Constantes globales (physique, rendu, configuration fusée)
 ├── EventTypes.js     # Centralisation des clés d'événements de l'EventBus
 ├── index.html        # Structure HTML, chargement des librairies et scripts
@@ -94,7 +96,7 @@ Le projet suit une architecture MVC étendue :
 - **EventBus.js** : Système Publish/Subscribe pour la communication interne découplée.
 - **ParticleController.js** : Gère la logique des particules (création, mise à jour, suppression pour effets visuels).
 - **MissionManager.js** : Gère la logique des missions, leurs objectifs, et leur complétion.
-- **RocketAgent.js** : Gère l'IA de contrôle de la fusée avec TensorFlow.js (prise de décision, apprentissage par renforcement).
+- **RocketAI.js** : Gère l'IA de contrôle de la fusée avec TensorFlow.js (prise de décision, apprentissage par renforcement).
 - **RocketCargo.js** : Gère le cargo de la fusée (chargement, déchargement, gestion des ressources).
 
 ## Points d'Entrée Importants
@@ -103,6 +105,9 @@ Le projet suit une architecture MVC étendue :
 - **GameController.js** : Boucle de jeu, gestion des états principaux.
 - **RenderingController.js** : Rendu global, gestion du toggle des vecteurs.
 
+
+
+## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
 ## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
 - ** IL N'Y A PAS DE PROBLEME AVEC MATTER.JS et son plugin **
 - **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre d'inclusion est crucial. Il ne doit pas y avoir d'import ES6
@@ -116,20 +121,13 @@ Le projet suit une architecture MVC étendue :
 
 ////////  PROCHAINES ETAPES ENVISAGEABLES ///////
 
-Découplage et patterns
+
 Éviter les scripts "monolithiques" : chaque controller trop gros avec par exemple plus de 600 lignes (GameController.js ...) devrait être refactorisé
 
-Moteur physique & optimisation
-Déléguer au plugin matter-attractors tout le calcul de gravité : ajouter les attracteurs (planètes, lunes) comme bodies statiques dotés de la propriété plugin.attractors.
+En cas de très nombreux corps : envisager une structure de type Barnes-Hut pour le calcul de champ gravitationnel
 
-En cas de nombreux corps : envisager une structure de type Barnes-Hut pour le calcul de champ gravitationnel
+Etendre la logique IA (RocketAI), isoler l'environnement de simulation dans un module "headless" pour pouvoir faire tourner de l'entraînement sans affichage.
 
-Performance Canvas & UX
-S'assurer d'utiliser requestAnimationFrame pour le rendu, et ne pas mélanger avec setInterval.
-Regrouper au maximum les appels de dessin sur le canvas (batching).
-Pour la vue trace/particules, recycler les objets (object pooling) plutôt que de créer/supprimer à chaque frame.
-Extension & évolutivité
-Si vous envisagez d'étendre la logique IA (RocketAgent), isoler l'environnement de simulation dans un module "headless" pour pouvoir faire tourner de l'entraînement sans affichage.
 Prévoir un "GamepadController" dédié pour centraliser lecture et mapping, plutôt que de tester ad hoc sur https://hardwaretester.com.
 
 

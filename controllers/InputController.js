@@ -527,6 +527,7 @@ class InputController {
                 this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
                 break;
             case 'toggleAI':
+                console.log("[InputController] Émission de EVENTS.AI.TOGGLE_CONTROL due à KeyI (keyup)");
                 this.eventBus.emit(EVENTS.AI.TOGGLE_CONTROL);
                 break;
             case 'pauseGame':

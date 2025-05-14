@@ -24,55 +24,138 @@ let eventBus = null;
  * et affiche les instructions initiales.
  */
 function init() {
-    // Créer l'élément <canvas> et l'ajouter au corps du document.
-    const canvas = document.createElement('canvas');
-    canvas.width = window.innerWidth; // Adapter à la largeur de la fenêtre
-    canvas.height = window.innerHeight; // Adapter à la hauteur de la fenêtre
-    document.body.appendChild(canvas);
-    
-    // Créer l'instance unique de l'EventBus pour la communication découplée.
-    eventBus = new EventBus();
-    // Rendre l'EventBus accessible globalement (pour le débogage ou accès facile).
-    // Attention: Ceci est une pratique qui peut rompre l'encapsulation.
-    window.eventBus = eventBus; 
-    
-    // Container pour gérer automatiquement les désabonnements (DI simple)
-    window.controllerContainer = {
-        subscriptions: [],
-        track(fn) { this.subscriptions.push(fn); },
-        cleanup() {
-            this.subscriptions.forEach(unsub => unsub());
-            this.subscriptions = [];
-            // nettoyer l'EventBus
-            if (window.eventBus && window.eventBus.clear) window.eventBus.clear();
+    // Initialisation du ControllerContainer global pour le suivi des abonnements EventBus
+    // Cela doit être fait une seule fois, AVANT l'instanciation des contrôleurs qui l'utilisent.
+    if (!window.controllerContainer) {
+        // Supposant que ControllerContainer est une classe définie globalement ou via un script inclus.
+        // Si ce n'est pas le cas, il faudra s'assurer que le fichier ControllerContainer.js est inclus
+        // ou revenir à l'ancienne définition d'objet simple.
+        try {
+            window.controllerContainer = new ControllerContainer();
+        } catch (e) {
+            console.error("Erreur lors de l'instanciation de ControllerContainer. Vérifiez que la classe est définie et accessible.", e);
+            // Fallback à l'ancienne structure si l'instanciation échoue, pour éviter de bloquer plus loin.
+            // Cela suppose que l'ancienne structure est toujours préférable à une erreur complète.
+            console.warn("Fallback à l'ancienne structure de window.controllerContainer.");
+            window.controllerContainer = {
+                subscriptions: [],
+                track(unsubscribeFn) { this.subscriptions.push(unsubscribeFn); },
+                cleanup() {
+                    this.subscriptions.forEach(unsub => unsub());
+                    this.subscriptions = [];
+                    if (window.eventBus && typeof window.eventBus.clearAllSubscribers === 'function') {
+                         window.eventBus.clearAllSubscribers(); // S'assurer que cela correspond à l'API de EventBus
+                    }
+                }
+            };
         }
-    };
-    
+    }
+
+    // Initialisation de l'EventBus global pour la communication inter-modules.
+    const eventBus = new EventBus();
+    window.eventBus = eventBus; // Exposition globale temporaire
+
+    // Récupérer l'élément canvas du DOM.
+    const canvas = document.getElementById('gameCanvas');
+    if (!canvas) {
+        console.error("L'élément canvas avec l'ID 'gameCanvas' est introuvable. Assurez-vous qu'il existe dans index.html.");
+        return; // Arrêter l'initialisation si le canvas n'est pas trouvé.
+    }
+
+    // Initialisation des contrôleurs et modèles principaux
+    // L'ordre d'instanciation peut être important pour les dépendances injectées via constructeur.
+    const missionManager = new MissionManager(eventBus);
+    const gameController = new GameController(eventBus, missionManager);
+
     // Instancier les contrôleurs requis, en leur injectant l'EventBus.
     const inputController = new InputController(eventBus);
     const renderingController = new RenderingController(eventBus, canvas);
-    const rocketAgent = new RocketAgent(eventBus);
+    const rocketAI = new RocketAI(eventBus);
     
     // Instancier le gestionnaire de missions.
-    const missionManager = new MissionManager(eventBus);
-    // Initialiser les missions par défaut dès le début.
-    missionManager.resetMissions();
-    
-    // Instancier le contrôleur de jeu principal, en lui passant l'EventBus et le MissionManager.
-    gameController = new GameController(eventBus, missionManager);
-    
-    // Injecter les dépendances (autres contrôleurs) dans le GameController.
+    // const missionManager = new MissionManager(eventBus); // Déjà instancié plus haut
+
+    // Configurer GameController avec les contrôleurs dont il dépend.
+    // GameController est le chef d'orchestre et a besoin de références à d'autres systèmes.
     gameController.setControllers({
         inputController,
         renderingController,
-        rocketAgent
+        rocketAI
     });
     
     // Initialiser le GameController (ne prend plus le canvas).
-    gameController.init(/*canvas*/);
-    
-    // Afficher les instructions de jeu à l'utilisateur.
+    // Le canvas est maintenant passé à RenderingController et GameSetupController s'en occupe.
+    // GameController reçoit le canvas via sa méthode init(), qui le transmettra à GameSetupController.
+    const config = {
+        missions: [
+            { id: 'deliverMoon', type: 'DELIVERY', itemName: 'Moonrocks', quantity: 5, origin: 'Earth', destination: 'Moon', reward: 100, description: 'Livrer 5 unités de roches lunaires de la Terre à la Lune.' },
+            { id: 'collectMars', type: 'COLLECTION', itemName: 'MarsSoil', quantity: 10, origin: 'Mars', reward: 150, description: 'Collecter 10 unités de sol martien sur Mars.' }
+        ]
+        // ... autres configurations ...
+    };
+    gameController.init(canvas, config); // Passer le canvas et la config ici
+
+    // Afficher les instructions initiales à l'utilisateur
     showInstructions();
+
+    // Gérer la fermeture de la modal des instructions
+    const instructionsModal = document.getElementById('instructionsModal');
+    const closeButton = document.querySelector('.close-button');
+    const understoodButton = document.getElementById('understoodButton');
+
+    function closeModal() {
+        if (instructionsModal) {
+            instructionsModal.style.display = 'none';
+        }
+        // Reprendre le jeu si nécessaire (par exemple, s'il était en pause à cause de la modale)
+        eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED); 
+        // Demander à CameraController de centrer sur la fusée après la fermeture des instructions
+        if (gameController && gameController.cameraModel && gameController.rocketModel) {
+            console.log("[main.js] Réglage de la caméra pour suivre la fusée après fermeture des instructions.");
+            gameController.cameraModel.setTarget(gameController.rocketModel, 'rocket');
+        }
+    }
+
+    if (closeButton) {
+        closeButton.onclick = closeModal;
+    }
+    if (understoodButton) {
+        understoodButton.onclick = closeModal;
+    }
+
+    // Afficher la modal au démarrage (si elle n'a pas été cachée par CSS initialement)
+    // if (instructionsModal) {
+    //     instructionsModal.style.display = 'block';
+    //     eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE); // Mettre en pause pendant que les instructions sont visibles
+    // }
+
+    // Gestionnaire global d'erreurs pour l'interface utilisateur
+    const errorOverlay = document.getElementById('errorOverlay');
+    const errorMessageElement = document.getElementById('errorMessage');
+    const closeErrorButton = document.getElementById('closeError');
+
+    if (errorOverlay && errorMessageElement && closeErrorButton) {
+        window.addEventListener('error', function(event) {
+            let message = event.message;
+            if (event.filename) {
+                message += `\nFichier: ${event.filename.substring(event.filename.lastIndexOf('/') + 1)}`;
+            }
+            if (event.lineno) {
+                message += ` Ligne: ${event.lineno}`;
+            }
+            if (event.colno) {
+                message += ` Colonne: ${event.colno}`;
+            }
+            errorMessageElement.textContent = message;
+            errorOverlay.style.display = 'flex';
+        });
+
+        closeErrorButton.onclick = function() {
+            errorOverlay.style.display = 'none';
+        };
+    } else {
+        console.warn("Éléments de l'overlay d'erreur non trouvés. L'affichage des erreurs dans l'UI est désactivé.");
+    }
 }
 
 /**
@@ -208,4 +291,137 @@ window.addEventListener('beforeunload', cleanup);
  * Écouteur d'événement qui déclenche l'initialisation (`init`)
  * une fois que le contenu HTML de la page est complètement chargé et analysé.
  */
-document.addEventListener('DOMContentLoaded', init); 
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialisation du ControllerContainer global pour le suivi des abonnements EventBus
+    // Cela doit être fait une seule fois, AVANT l'instanciation des contrôleurs qui l'utilisent.
+    if (!window.controllerContainer) {
+        // Supposant que ControllerContainer est une classe définie globalement ou via un script inclus.
+        // Si ce n'est pas le cas, il faudra s'assurer que le fichier ControllerContainer.js est inclus
+        // ou revenir à l'ancienne définition d'objet simple.
+        try {
+            window.controllerContainer = new ControllerContainer();
+        } catch (e) {
+            console.error("Erreur lors de l'instanciation de ControllerContainer. Vérifiez que la classe est définie et accessible.", e);
+            // Fallback à l'ancienne structure si l'instanciation échoue, pour éviter de bloquer plus loin.
+            // Cela suppose que l'ancienne structure est toujours préférable à une erreur complète.
+            console.warn("Fallback à l'ancienne structure de window.controllerContainer.");
+            window.controllerContainer = {
+                subscriptions: [],
+                track(unsubscribeFn) { this.subscriptions.push(unsubscribeFn); },
+                cleanup() {
+                    this.subscriptions.forEach(unsub => unsub());
+                    this.subscriptions = [];
+                    if (window.eventBus && typeof window.eventBus.clearAllSubscribers === 'function') {
+                         window.eventBus.clearAllSubscribers(); // S'assurer que cela correspond à l'API de EventBus
+                    }
+                }
+            };
+        }
+    }
+
+    // Initialisation de l'EventBus global pour la communication inter-modules.
+    const eventBus = new EventBus();
+    window.eventBus = eventBus; // Exposition globale temporaire
+
+    // Récupérer l'élément canvas du DOM.
+    const canvas = document.getElementById('gameCanvas');
+    if (!canvas) {
+        console.error("L'élément canvas avec l'ID 'gameCanvas' est introuvable. Assurez-vous qu'il existe dans index.html.");
+        return; // Arrêter l'initialisation si le canvas n'est pas trouvé.
+    }
+
+    // Initialisation des contrôleurs et modèles principaux
+    // L'ordre d'instanciation peut être important pour les dépendances injectées via constructeur.
+    const missionManager = new MissionManager(eventBus);
+    const gameController = new GameController(eventBus, missionManager);
+
+    // Instancier les contrôleurs requis, en leur injectant l'EventBus.
+    const inputController = new InputController(eventBus);
+    const renderingController = new RenderingController(eventBus, canvas);
+    const rocketAI = new RocketAI(eventBus);
+    
+    // Instancier le gestionnaire de missions.
+    // const missionManager = new MissionManager(eventBus); // Déjà instancié plus haut
+
+    // Configurer GameController avec les contrôleurs dont il dépend.
+    // GameController est le chef d'orchestre et a besoin de références à d'autres systèmes.
+    gameController.setControllers({
+        inputController,
+        renderingController,
+        rocketAI
+    });
+    
+    // Initialiser le GameController (ne prend plus le canvas).
+    // Le canvas est maintenant passé à RenderingController et GameSetupController s'en occupe.
+    // GameController reçoit le canvas via sa méthode init(), qui le transmettra à GameSetupController.
+    const config = {
+        missions: [
+            { id: 'deliverMoon', type: 'DELIVERY', itemName: 'Moonrocks', quantity: 5, origin: 'Earth', destination: 'Moon', reward: 100, description: 'Livrer 5 unités de roches lunaires de la Terre à la Lune.' },
+            { id: 'collectMars', type: 'COLLECTION', itemName: 'MarsSoil', quantity: 10, origin: 'Mars', reward: 150, description: 'Collecter 10 unités de sol martien sur Mars.' }
+        ]
+        // ... autres configurations ...
+    };
+    gameController.init(canvas, config); // Passer le canvas et la config ici
+
+    // Afficher les instructions initiales à l'utilisateur
+    showInstructions();
+
+    // Gérer la fermeture de la modal des instructions
+    const instructionsModal = document.getElementById('instructionsModal');
+    const closeButton = document.querySelector('.close-button');
+    const understoodButton = document.getElementById('understoodButton');
+
+    function closeModal() {
+        if (instructionsModal) {
+            instructionsModal.style.display = 'none';
+        }
+        // Reprendre le jeu si nécessaire (par exemple, s'il était en pause à cause de la modale)
+        eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED); 
+        // Demander à CameraController de centrer sur la fusée après la fermeture des instructions
+        if (gameController && gameController.cameraModel && gameController.rocketModel) {
+            console.log("[main.js] Réglage de la caméra pour suivre la fusée après fermeture des instructions.");
+            gameController.cameraModel.setTarget(gameController.rocketModel, 'rocket');
+        }
+    }
+
+    if (closeButton) {
+        closeButton.onclick = closeModal;
+    }
+    if (understoodButton) {
+        understoodButton.onclick = closeModal;
+    }
+
+    // Afficher la modal au démarrage (si elle n'a pas été cachée par CSS initialement)
+    // if (instructionsModal) {
+    //     instructionsModal.style.display = 'block';
+    //     eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE); // Mettre en pause pendant que les instructions sont visibles
+    // }
+
+    // Gestionnaire global d'erreurs pour l'interface utilisateur
+    const errorOverlay = document.getElementById('errorOverlay');
+    const errorMessageElement = document.getElementById('errorMessage');
+    const closeErrorButton = document.getElementById('closeError');
+
+    if (errorOverlay && errorMessageElement && closeErrorButton) {
+        window.addEventListener('error', function(event) {
+            let message = event.message;
+            if (event.filename) {
+                message += `\nFichier: ${event.filename.substring(event.filename.lastIndexOf('/') + 1)}`;
+            }
+            if (event.lineno) {
+                message += ` Ligne: ${event.lineno}`;
+            }
+            if (event.colno) {
+                message += ` Colonne: ${event.colno}`;
+            }
+            errorMessageElement.textContent = message;
+            errorOverlay.style.display = 'flex';
+        });
+
+        closeErrorButton.onclick = function() {
+            errorOverlay.style.display = 'none';
+        };
+    } else {
+        console.warn("Éléments de l'overlay d'erreur non trouvés. L'affichage des erreurs dans l'UI est désactivé.");
+    }
+}); 

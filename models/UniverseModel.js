@@ -166,4 +166,22 @@ class UniverseModel {
             // pour les corps célestes au-delà de l'orbite, elle devrait être gérée de manière cohérente.
         }
     }
+
+    /**
+     * Réinitialise l'état de l'univers.
+     * Actuellement, cela recrée les étoiles et vide la liste des corps célestes.
+     * Une configuration pourrait être passée pour recréer les corps célestes.
+     * @param {object} [config={}] - Configuration optionnelle pour la réinitialisation.
+     */
+    reset(config = {}) {
+        this.celestialBodies = [];
+        this.stars = [];
+        this.elapsedTime = 0;
+        this.initializeStars();
+        // Logique future potentielle :
+        // if (config && config.celestialBodies) {
+        //     this.initializeCelestialBodies(config.celestialBodies); // Méthode à créer
+        // }
+        console.log("UniverseModel: État réinitialisé.");
+    }
 } 

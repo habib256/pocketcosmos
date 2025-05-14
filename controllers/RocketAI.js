@@ -1,6 +1,6 @@
 // TensorFlow.js est chargé globalement via le script dans index.html
 
-class RocketAgent {
+class RocketAI {
     constructor(eventBus) {
         // Référence à l'EventBus pour communiquer avec les autres composants
         this.eventBus = eventBus;
@@ -124,6 +124,7 @@ class RocketAgent {
     
     // Activer/désactiver l'agent
     toggleActive() {
+        console.log("[RocketAI] toggleActive() appelée. isActive avant changement:", this.isActive);
         this.isActive = !this.isActive;
         console.log(`Agent IA ${this.isActive ? 'activé' : 'désactivé'}`);
         
@@ -447,7 +448,7 @@ class RocketAgent {
     // Sauvegarder le modèle
     async saveModel() {
         try {
-            await this.model.save('localstorage://rocket-agent-model');
+            await this.model.save('localstorage://rocket-ai-model'); // Modifié pour RocketAI
             console.log(`Modèle sauvegardé à l'étape ${this.totalSteps}`);
         } catch (error) {
             console.error('Erreur lors de la sauvegarde du modèle:', error);
@@ -457,7 +458,7 @@ class RocketAgent {
     // Charger le modèle
     async loadModel() {
         try {
-            this.model = await tf.loadLayersModel('localstorage://rocket-agent-model');
+            this.model = await tf.loadLayersModel('localstorage://rocket-ai-model'); // Modifié pour RocketAI
             this.model.compile({
                 optimizer: tf.train.adam(this.config.learningRate),
                 loss: 'meanSquaredError'
@@ -582,7 +583,7 @@ class RocketAgent {
         this.missionManager = missionManager || this.missionManager;
         this.rocketController = rocketController || this.rocketController;
         
-        console.log("RocketAgent: Dépendances injectées/mises à jour.", {
+        console.log("RocketAI: Dépendances injectées/mises à jour.", { // Modifié pour RocketAI
             rocketModel: !!this.rocketModel,
             universeModel: !!this.universeModel,
             physicsController: !!this.physicsController,
@@ -594,4 +595,4 @@ class RocketAgent {
         // doit effectuer des actions spécifiques une fois les dépendances reçues.
         // Par exemple: this.onDependenciesReady();
     }
-}
+} 

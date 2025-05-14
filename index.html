@@ -116,6 +116,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
 </head>
 <body> 
+    <!-- Élément Canvas pour le rendu du jeu -->
+    <canvas id="gameCanvas"></canvas>
+    
     <!-- Élément audio pour la musique d'ambiance -->
     <audio id="ambientAudio" loop></audio>
     
@@ -226,6 +229,15 @@
         });
     </script>
     
+    <!-- Overlay pour afficher les erreurs JavaScript -->
+    <div id="errorOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); color: white; z-index: 10000; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: monospace; padding: 20px; box-sizing: border-box;">
+        <div style="background-color: #333; padding: 20px; border-radius: 5px; max-width: 80%; max-height: 80%; overflow: auto;">
+            <h3 style="color: #ff8080; margin-top: 0;">Erreur d'exécution</h3>
+            <pre id="errorMessage" style="white-space: pre-wrap; word-wrap: break-word; text-align: left;"></pre>
+            <button id="closeError" style="margin-top: 15px; padding: 8px 15px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer;">Fermer</button>
+        </div>
+    </div>
+
     <!-- Constantes globales -->
     <script src="constants.js"></script>
     
@@ -253,11 +265,12 @@
     <script src="controllers/RenderingController.js"></script>
     <script src="controllers/ParticleController.js"></script>
     <script src="controllers/RocketController.js"></script>
-    <script src="controllers/RocketAgent.js"></script>
+    <script src="controllers/RocketAI.js"></script>
     <script src="controllers/MissionManager.js"></script>
     <script src="controllers/RocketCargo.js"></script>
     <!-- NOUVEAUX SCRIPTS POUR LA REFACTORISATION -->
     <script src="controllers/CelestialBodyFactory.js"></script>
+    <script src="controllers/ControllerContainer.js"></script>
     <script src="controllers/GameSetupController.js"></script>
     <script src="controllers/GameController.js"></script>
 

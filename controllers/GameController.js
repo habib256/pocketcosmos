@@ -41,7 +41,7 @@ class GameController {
         // Contrôleurs Externes (fournis via setControllers)
         this.inputController = null;
         this.renderingController = null;
-        this.rocketAgent = null; // Peut être fourni ou créé par GameSetupController
+        this.rocketAI = null; // MODIFIÉ: rocketAgent -> rocketAI
         
         // Contrôleurs Internes (créés par GameSetupController)
         this.physicsController = null;
@@ -280,53 +280,84 @@ class GameController {
      * Configure les modèles, vues et contrôleurs internes.
      * Réinitialise la fusée et démarre la boucle de jeu.
      */
-    init() {
-        const gameSetupController = new GameSetupController(
-            this.eventBus,
-            this.missionManager,
-            {
-                renderingController: this.renderingController,
-                rocketAgent: this.rocketAgent
-            }
+    init(canvas, initialConfig) {
+        // console.log('[GameController.init] Canvas reçu initialement:', canvas); // SUPPRESSION DE LOG
+
+        // 1. Initialiser le CameraModel avec les dimensions du canvas
+        if (this.cameraModel && canvas) {
+            this.cameraModel.width = canvas.width;
+            this.cameraModel.height = canvas.height;
+            this.cameraModel.offsetX = canvas.width / 2;
+            this.cameraModel.offsetY = canvas.height / 2;
+            // console.log('[GameController.init] CameraModel dimensions updated:', { 
+            //     width: this.cameraModel.width, 
+            //     height: this.cameraModel.height, 
+            //     offsetX: this.cameraModel.offsetX, 
+            //     offsetY: this.cameraModel.offsetY 
+            // }); // SUPPRESSION DE LOG
+        } else {
+            console.warn('[GameController.init] CameraModel ou Canvas non disponible pour la mise à jour des dimensions.');
+        }
+        
+        // 2. Initialiser GameSetupController
+        const gameSetupController = new GameSetupController(this.eventBus, this.missionManager);
+
+        // 3. Préparer les contrôleurs externes à passer à GameSetupController
+        // Assurez-vous que tous les contrôleurs externes requis par GameSetupController sont bien initialisés
+        // dans GameController AVANT cet appel (typiquement via setControllers).
+        const externalControllers = {
+            inputController: this.inputController,
+            renderingController: this.renderingController,
+            rocketAI: this.rocketAI, // MODIFIÉ: Utiliser this.rocketAI
+            gameController: this,
+            cameraController: this.cameraController
+        };
+        console.log('[GameController.init] Contrôleurs externes passés à GameSetupController:', externalControllers);
+
+
+        // 4. Initialiser les composants du jeu via GameSetupController
+        // GameSetupController est responsable de créer/configurer les modèles, vues, et contrôleurs internes.
+        const components = gameSetupController.initializeGameComponents(
+            initialConfig,
+            canvas, // Toujours passer le canvas, GameSetupController le donnera à RenderingController
+            externalControllers
         );
 
-        const components = gameSetupController.initializeGameComponents(this.cameraModel);
-
+        // 5. Récupérer les composants initialisés depuis GameSetupController
         this.rocketModel = components.rocketModel;
         this.universeModel = components.universeModel;
         this.particleSystemModel = components.particleSystemModel;
-
+        this.physicsController = components.physicsController;
+        this.rocketController = components.rocketController;
+        this.particleController = components.particleController;
+        
+        // Vues (si gérées et retournées par GameSetupController)
         this.rocketView = components.rocketView;
         this.universeView = components.universeView;
-        this.celestialBodyView = components.celestialBodyView;
         this.particleView = components.particleView;
+        this.celestialBodyView = components.celestialBodyView;
         this.traceView = components.traceView;
-        this.uiView = components.uiView;
+        this.uiView = components.uiView; // UIView est maintenant initialisé par GameSetupController
 
-        this.physicsController = components.physicsController;
-        this.particleController = components.particleController;
-        this.rocketController = components.rocketController;
-        this.rocketAgent = components.rocketAgent;
+        // Important: S'assurer de récupérer l'instance de rocketAI (celle passée ou celle créée)
+        this.rocketAI = components.rocketAI || this.rocketAI; // MODIFIÉ: S'assurer d'avoir la bonne instance
+        console.log('[GameController.init] RocketAI instance après GameSetupController:', this.rocketAI);
+
+        // Le RenderingController est maintenant supposé être initialisé par GameSetupController
+        // et avoir reçu le canvas.
+
+        // Autres initialisations spécifiques à GameController
+        // this.missionManager.setModels(this.rocketModel, this.universeModel); // SUPPRIMÉ: MissionManager ne possède pas cette méthode
+        // this.missionManager.loadMissions(initialConfig.missions); // COMMENTÉ: MissionManager ne possède pas cette méthode pour l'instant
         
+        // Réinitialiser la fusée pour la positionner correctement, etc.
         this.resetRocket();
         
-        // S'assurer que CameraModel a les dimensions correctes du canvas après initialisation
-        if (this.renderingController && this.cameraModel) {
-            const dims = this.renderingController.getCanvasDimensions();
-            if (dims) {
-                console.log("[GameController.init] Mise à jour initiale de CameraModel avec les dimensions du canvas:", dims);
-                this.cameraModel.width = dims.width;
-                this.cameraModel.height = dims.height;
-                this.cameraModel.offsetX = dims.width / 2;
-                this.cameraModel.offsetY = dims.height / 2;
-            } else {
-                console.warn("[GameController.init] Impossible d'obtenir les dimensions du canvas depuis RenderingController pour CameraModel.");
-            }
-        }
-        
-        this.start();
-        
-        console.log("GameController initialisé (via GameSetupController) et boucle démarrée.");
+        console.log("GameController initialisé (via GameSetupController). Tentative de démarrage de la boucle..."); // LOG MODIFIÉ
+
+        // Toujours appeler start() pour mettre isRunning = true.
+        // Start() gérera le lancement de gameLoop en fonction de isPaused.
+        this.start(); 
     }
     
     /**
@@ -334,17 +365,25 @@ class GameController {
      * @param {object} controllers - Un objet contenant les instances des contrôleurs.
      * @param {InputController} [controllers.inputController] - Le contrôleur des entrées utilisateur.
      * @param {RenderingController} [controllers.renderingController] - Le contrôleur du rendu graphique.
-     * @param {RocketAgent} [controllers.rocketAgent] - L'agent IA pour la fusée (optionnel).
+     * @param {RocketAI} [controllers.rocketAI] - L'agent IA pour la fusée (optionnel).
      */
     setControllers(controllers) {
-        if (controllers.inputController) {
-            this.inputController = controllers.inputController;
+        this.inputController = controllers.inputController;
+        this.renderingController = controllers.renderingController;
+        this.rocketAI = controllers.rocketAI || null; // MODIFIÉ: Utiliser rocketAI
+        console.log('[GameController.setControllers] RocketAI reçu:', this.rocketAI);
+
+        // Si CameraController est créé ici ou dépend de contrôleurs externes, initialisez/mettez à jour ici.
+        // Actuellement, CameraController est créé dans le constructeur de GameController.
+        // Il a besoin de l'eventBus et du cameraModel, qui sont disponibles à ce moment-là.
+        // Si RenderingController est nécessaire pour CameraController, assurez-vous de l'ordre.
+        if (this.renderingController && this.cameraController) {
+            // Supposons que CameraController a une méthode pour définir son RenderingController si nécessaire
+            // this.cameraController.setRenderingController(this.renderingController);
         }
-        if (controllers.renderingController) {
-            this.renderingController = controllers.renderingController;
-        }
-        if (controllers.rocketAgent) {
-            this.rocketAgent = controllers.rocketAgent;
+        if (this.inputController && this.cameraController) {
+            // Supposons que CameraController a une méthode pour définir son InputController si nécessaire
+            // this.cameraController.setInputController(this.inputController);
         }
     }
     
@@ -353,16 +392,25 @@ class GameController {
      * Si le jeu est en pause au démarrage, un événement GAME_PAUSED est émis.
      */
     start() {
-        if (!this.isRunning) {
+        if (!this.isRunning) { // Empêche les démarrages multiples si déjà en cours
+            // console.log('[GameController.start] Exécution de GameController.start(). isPaused initialement:', this.isPaused); // SUPPRESSION DE LOG
             this.isRunning = true;
+            // this.isPaused = false; // Ne pas dé-pauser automatiquement ici, respecter l'état de pause actuel.
             this.lastTimestamp = performance.now();
             
-            if (this.isPaused) {
+            if (!this.isPaused) {
+                // console.log('[GameController.start] Démarrage de la boucle de jeu (gameLoop)...'); // SUPPRESSION DE LOG
+                this.gameLoop(performance.now());
+                this.eventBus.emit(EVENTS.GAME.GAME_RESUMED); // Émettre RESUMED si on démarre non-pausé
+            } else {
+                // console.log('[GameController.start] Le jeu est en pause. La boucle de jeu ne démarrera pas immédiatement. Un événement GAME_PAUSED sera émis.'); // SUPPRESSION DE LOG
+                // Émettre GAME_PAUSED si on démarre en étant déjà en pause (ex: par visibilityChange)
                 this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
             }
-
-            requestAnimationFrame((timestamp) => this.gameLoop(timestamp));
-            console.log("GameController started.");
+            this.eventBus.emit(EVENTS.GAME.GAME_STARTED); // Signale que le jeu a "commencé" (même si en pause)
+            // console.log("GameController started. isRunning:", this.isRunning, "isPaused:", this.isPaused); // SUPPRESSION DE LOG
+        } else {
+            // console.log('[GameController.start] Appel ignoré, le jeu est déjà en cours (isRunning est true).'); // SUPPRESSION DE LOG
         }
     }
     
@@ -374,37 +422,27 @@ class GameController {
      * @private
      */
     gameLoop(timestamp) {
-        if (!this.isRunning) return;
+        // console.log('[GameController.gameLoop] Entrée dans gameLoop, timestamp:', timestamp); // SUPPRESSION DE LOG
 
-        const deltaTime = (timestamp - this.lastTimestamp) / 1000;
+        const deltaTime = (timestamp - this.lastTimestamp) / 1000; // deltaTime en secondes
         this.lastTimestamp = timestamp;
         this.elapsedTime += deltaTime;
 
         if (!this.isPaused) {
+            // console.log('[GameController.gameLoop] Appel de this.update(), deltaTime:', deltaTime); // SUPPRESSION DE LOG
             this.update(deltaTime);
+            // console.log('[GameController.gameLoop] Retour de this.update()'); // SUPPRESSION DE LOG
         }
 
-        const activeMissionsForRender = this.missionManager ? this.missionManager.getActiveMissions() : [];
-        // const totalAccelerationForRender = this.physicsController && this.physicsController.physicsVectors 
-        //     ? this.physicsController.physicsVectors.getTotalAcceleration() 
-        //     : null; // Semble inutilisé par renderingController.render
-        
-        this.renderingController.render(
-            this.elapsedTime,
-            this.rocketModel,
-            this.universeModel,
-            this.particleSystemModel,
-            this.cameraModel,
-            activeMissionsForRender,
-            this.totalCreditsEarned,
-            this.missionJustSucceededFlag
-        );
+        // console.log('[GameController.gameLoop] Appel de this.render()'); // SUPPRESSION DE LOG
+        this.render(timestamp); // Appel de la méthode render de GameController
 
-        if (this.missionJustSucceededFlag) {
-            this.missionJustSucceededFlag = false;
+        // Rappeler gameLoop pour la prochaine frame d'animation
+        if (this.isRunning) { // Seulement si le jeu est toujours censé tourner
+            requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
+        } else {
+            // console.log('[GameController.gameLoop] this.isRunning est false, arrêt de la boucle.'); // SUPPRESSION DE LOG
         }
-
-        requestAnimationFrame((ts) => this.gameLoop(ts));
     }
     
     /**
@@ -448,11 +486,11 @@ class GameController {
             this.rocketModel.landedOn = 'Terre';
 
             if (this.cameraModel) {
-                console.log("[GameController.resetRocket] Avant cameraModel.setPosition:", 
-                    { rocketPos: { x: rocketStartX, y: rocketStartY }, camPos: { x: this.cameraModel.x, y: this.cameraModel.y } });
+                // console.log("[GameController.resetRocket] Avant cameraModel.setPosition:", 
+                //     { rocketPos: { x: rocketStartX, y: rocketStartY }, camPos: { x: this.cameraModel.x, y: this.cameraModel.y } }); // SUPPRESSION DE LOG
                 this.cameraModel.setPosition(rocketStartX, rocketStartY);
-                console.log("[GameController.resetRocket] Après cameraModel.setPosition:", 
-                    { camPos: { x: this.cameraModel.x, y: this.cameraModel.y } });
+                // console.log("[GameController.resetRocket] Après cameraModel.setPosition:", 
+                //     { camPos: { x: this.cameraModel.x, y: this.cameraModel.y } }); // SUPPRESSION DE LOG
             }
         } else {
             console.error("Impossible de trouver la Terre pour repositionner la fusée.");
@@ -487,23 +525,23 @@ class GameController {
         }
 
         if (this.cameraModel && this.rocketModel) {
-            console.log("[GameController.resetRocket] Avant cameraModel.setTarget:", 
-                { target: this.cameraModel.target, mode: this.cameraModel.mode, rocketModelPos: this.rocketModel.position });
+            // console.log("[GameController.resetRocket] Avant cameraModel.setTarget:", 
+            //     { target: this.cameraModel.target, mode: this.cameraModel.mode, rocketModelPos: this.rocketModel.position }); // SUPPRESSION DE LOG
             this.cameraModel.setTarget(this.rocketModel, 'rocket');
-            console.log("[GameController.resetRocket] Après cameraModel.setTarget:", 
-                { targetIsRocket: this.cameraModel.target === this.rocketModel, mode: this.cameraModel.mode });
+            // console.log("[GameController.resetRocket] Après cameraModel.setTarget:", 
+            //     { targetIsRocket: this.cameraModel.target === this.rocketModel, mode: this.cameraModel.mode }); // SUPPRESSION DE LOG
             
             // Forcer la position ici aussi pour être absolument sûr, même si setPosition a été appelé avant.
             if (this.rocketModel.position) {
-                console.log("[GameController.resetRocket] Forçage de la position caméra sur rocketModel.position après setTarget:", 
-                    { rocketPos: this.rocketModel.position, camPrevPos: {x: this.cameraModel.x, y: this.cameraModel.y}});
+                // console.log("[GameController.resetRocket] Forçage de la position caméra sur rocketModel.position après setTarget:", 
+                //     { rocketPos: this.rocketModel.position, camPrevPos: {x: this.cameraModel.x, y: this.cameraModel.y}}); // SUPPRESSION DE LOG
                 this.cameraModel.setPosition(this.rocketModel.position.x, this.rocketModel.position.y);
-                console.log("[GameController.resetRocket] Position caméra APRES forçage:", 
-                    { camFinalPos: {x: this.cameraModel.x, y: this.cameraModel.y}}); 
+                // console.log("[GameController.resetRocket] Position caméra APRES forçage:", 
+                //     { camFinalPos: {x: this.cameraModel.x, y: this.cameraModel.y}});  // SUPPRESSION DE LOG
             }
         }
 
-        console.log("Fusée réinitialisée.");
+        // console.log("Fusée réinitialisée."); // CONSERVER CE LOG ? Il est informatif.
         this._lastRocketDestroyed = false;
         this.emitUpdatedStates();
     }
@@ -531,8 +569,8 @@ class GameController {
             this.rocketController.update(deltaTime);
         }
 
-        if (this.rocketAgent && this.rocketAgent.isActive) {
-             this.rocketAgent.update(deltaTime);
+        if (this.rocketAI && this.rocketAI.isActive) {
+             this.rocketAI.update(deltaTime);
         }
 
         if (this.particleController) {
@@ -578,8 +616,8 @@ class GameController {
         if (this.rocketController && typeof this.rocketController.cleanup === 'function') {
             this.rocketController.cleanup();
         }
-        if (this.rocketAgent && typeof this.rocketAgent.cleanup === 'function') {
-            this.rocketAgent.cleanup();
+        if (this.rocketAI && typeof this.rocketAI.cleanup === 'function') {
+            this.rocketAI.cleanup();
         }
         if (this.cameraController && typeof this.cameraController.cleanup === 'function') { // AJOUT
             this.cameraController.cleanup();
@@ -654,11 +692,26 @@ class GameController {
 
     /**
      * Bascule le contrôle de la fusée par l'IA.
-     * Émet un événement pour que RocketAgent puisse prendre ou rendre le contrôle.
+     * Émet un événement pour que RocketAI puisse prendre ou rendre le contrôle.
      */
     toggleAIControl() {
-        if (!this.rocketAgent) return;
-        this.eventBus.emit(EVENTS.AI.TOGGLE, {});
+        // Cette méthode dans GameController peut-être utilisée pour une logique de plus haut niveau
+        // si GameController doit réagir directement au changement de contrôle de l'IA.
+        // Par exemple, pour mettre à jour l'UI ou changer certains comportements du jeu.
+        
+        // Actuellement, RocketAI s'abonne directement à EVENTS.AI.TOGGLE_CONTROL.
+        // Si GameController a aussi besoin de savoir, il peut écouter cet événement.
+        // Pour l'instant, on pourrait simplement logguer ici que l'événement a été reçu
+        // ou le supprimer si GameController n'a pas de rôle direct à jouer dans ce basculement.
+
+        // Exemple : si on voulait que GameController gère l'activation/désactivation de l'instance rocketAI
+        if (this.rocketAI && typeof this.rocketAI.toggleActive === 'function') {
+            // NE FAITES PAS CELA ICI SI ROCKETAI S'ABONNE DÉJÀ LUI-MEME. CELA CAUSERAIT UN DOUBLE APPEL.
+            // this.rocketAI.toggleActive();
+            console.log("[GameController] toggleAIControl: l'événement a été reçu. RocketAI gère son propre état.");
+        } else {
+            console.warn("[GameController] toggleAIControl: Pas d'instance de RocketAI ou de méthode toggleActive disponible.");
+        }
     }
 
     /**
@@ -705,4 +758,29 @@ class GameController {
 
     // La méthode handleCanvasResized(data) a été déplacée vers CameraController.js
     // et le code commenté correspondant a été supprimé.
+
+    render(timestamp) {
+        // console.log('[GameController.render] Entrée dans GameController.render'); // SUPPRESSION DE LOG
+        // console.log('[GameController.render] Vérification de this.renderingController:', this.renderingController); // SUPPRESSION DE LOG
+
+        if (this.renderingController) {
+            // console.log('[GameController.render] Appel de this.renderingController.render()'); // Log déplacé dans RenderingController.render lui-même // SUPPRESSION DE LOG
+            this.renderingController.render(
+                this.elapsedTime,
+                this.rocketModel,
+                this.universeModel,
+                this.particleSystemModel,
+                this.cameraModel,
+                this.missionManager ? this.missionManager.getActiveMissions() : [],
+                this.totalCreditsEarned,
+                this.missionJustSucceededFlag
+            );
+        } else {
+            // console.warn('[GameController.render] this.renderingController est null ou undefined. Le rendu ne sera pas effectué.'); // CONSERVER CE WARN ? Il est utile.
+        }
+        // Réinitialiser le flag après le rendu
+        if (this.missionJustSucceededFlag) {
+            this.missionJustSucceededFlag = false;
+        }
+    }
 }
