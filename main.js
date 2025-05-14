@@ -175,6 +175,19 @@ function showInstructions() {
         }
         // Jouer le son de compte à rebours après fermeture.
         playCountdownSound();
+
+        // S'assurer que la caméra suit la fusée après la fermeture des instructions
+        if (gameController && gameController.cameraModel && gameController.rocketModel) {
+            console.log("[main.js] Réglage de la caméra pour suivre la fusée après fermeture des instructions.");
+            gameController.cameraModel.setTarget(gameController.rocketModel, 'rocket');
+            // Optionnel: forcer la position pour un centrage visuel immédiat si le lissage de CameraModel.update() pose problème ici
+            // ou si les offsets n'étaient pas encore parfaits au moment du gameController.init()
+            // Normalement, la mise à jour des offsets dans gameController.init() devrait suffire,
+            // et setTarget + cameraModel.update() devrait gérer le suivi.
+            if (gameController.rocketModel.position) {
+                 gameController.cameraModel.setPosition(gameController.rocketModel.position.x, gameController.rocketModel.position.y);
+            }
+        }
     };
     
     // Ajouter le bouton au panneau d'instructions.

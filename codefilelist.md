@@ -10,6 +10,7 @@
 │   └── video/        # Vidéos (cinématiques, tutoriels, etc.)
 ├── controllers/      # Logique de contrôle, gestion des états et interactions
 │   ├── BodyFactory.js
+│   ├── CameraController.js     # Gère le zoom, le centrage et le drag de la caméra
 │   ├── CelestialBodyFactory.js # Crée les modèles de corps célestes et leurs corps physiques Matter.js
 │   ├── CollisionHandler.js
 │   ├── EventBus.js
@@ -78,7 +79,7 @@ Le projet suit une architecture MVC étendue :
 - **CameraModel.js** : Gère la position, le zoom et le suivi de la caméra.
 
 ## Contrôleurs clés (`controllers/`)
-- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs mais délègue la logique spécifique (par ex. à RocketController). Gère l'état du jeu (pause, etc.) et la logique de mission de haut niveau.
+- **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs (y compris `CameraController` pour la gestion de la caméra) et délègue la logique spécifique (par ex. à `RocketController`). Gère l'état du jeu (pause, etc.) et la logique de mission de haut niveau.
 - **GameSetupController.js** : Responsable de l'initialisation et de la configuration de tous les composants majeurs du jeu au démarrage, y compris les modèles, les vues et les autres contrôleurs.
 - **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
 - **RocketController.js** : Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée. Met à jour `RocketModel` et `ParticleSystemModel`.

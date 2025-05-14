@@ -10,7 +10,7 @@ class GameController {
         this.rocketModel = null;
         this.universeModel = null;
         this.particleSystemModel = null;
-        this.cameraModel = new CameraModel(); // CameraModel est créé ici et passé à GameSetupController
+        this.cameraModel = new CameraModel(this); // MODIFIÉ: Passer this (GameController)
         
         // Vues - Seront initialisées par GameSetupController
         this.rocketView = null;
@@ -29,6 +29,7 @@ class GameController {
         this.physicsController = null;
         this.particleController = null;
         this.rocketController = null;
+        this.cameraController = new CameraController(this.eventBus, this.cameraModel, this); // Ajout du CameraController
         
         // État du jeu
         this.isRunning = false;
@@ -38,12 +39,12 @@ class GameController {
         
         // Canvas et contexte (supprimés, car gérés par RenderingController)
         
-        // Variables pour le glisser-déposer
-        this.isDragging = false;
-        this.dragStartX = 0;
-        this.dragStartY = 0;
-        this.dragStartRocketX = 0;
-        this.dragStartRocketY = 0;
+        // Variables pour le glisser-déposer - SUPPRIMÉES (gérées par CameraController)
+        // this.isDragging = false;
+        // this.dragStartX = 0;
+        // this.dragStartY = 0;
+        // this.dragStartRocketX = 0; // Note: Celles-ci semblaient liées à un drag de la fusée, pas caméra. À vérifier.
+        // this.dragStartRocketY = 0; // Si c'était pour la caméra, c'est bien supprimé.
 
         // Crédits gagnés - Initialiser à 10 (ou valeur par défaut au reset)
         this.totalCreditsEarned = 10;
@@ -115,15 +116,6 @@ class GameController {
         const ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged'; // Doit correspondre à celui dans RocketController
         window.controllerContainer.track(this.eventBus.subscribe(ROCKET_INTERNAL_STATE_CHANGED_EVENT, () => this.emitUpdatedStates()));
 
-        // Événements sémantiques pour la caméra
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.ZOOM_IN, () => this.handleZoomIn()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.ZOOM_OUT, () => this.handleZoomOut()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.CENTER_ON_ROCKET, () => this.handleCenterCamera()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.START_DRAG, (data) => this.handleCameraStartDrag(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.DRAG, (data) => this.handleCameraDrag(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.STOP_DRAG, () => this.handleCameraStopDrag()));
-
-
         // Événements sémantiques pour le jeu et l'UI
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.TOGGLE_PAUSE, () => this.handleTogglePause()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.RESUME_IF_PAUSED, () => this.handleResumeIfPaused()));
@@ -171,18 +163,6 @@ class GameController {
     // Gérer les événements d'entrée sémantiques
     // LES GESTIONNAIRES POUR THRUST/ROTATE SONT DANS RocketController.js
 
-    handleZoomIn() {
-        if (this.isPaused) return;
-        this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
-        this.emitUpdatedStates();
-    }
-
-    handleZoomOut() {
-        if (this.isPaused) return;
-        this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
-        this.emitUpdatedStates();
-    }
-    
     handleTogglePause() {
         this.isPaused = !this.isPaused;
         if (this.isPaused) {
@@ -203,50 +183,10 @@ class GameController {
         this.resetRocket();
     }
 
-    handleCenterCamera() {
-        if (this.isPaused) return;
-        if (this.cameraModel && this.rocketModel) {
-            this.cameraModel.setTarget(this.rocketModel, 'rocket');
-        }
-    }
-
     handleToggleForces() {
-        if (this.isPaused) return;
         if (this.physicsController) {
             this.physicsController.toggleForceVectors();
         }
-    }
-
-    // GESTION SOURIS (via événements sémantiques)
-    handleCameraStartDrag(data) {
-        if (this.isPaused) return;
-        
-        this.isDragging = true;
-        this.dragStartX = data.x;
-        this.dragStartY = data.y;
-        
-        if (this.cameraModel) {
-            this.dragStartCameraX = this.cameraModel.x;
-            this.dragStartCameraY = this.cameraModel.y;
-        }
-    }
-    
-    handleCameraDrag(data) {
-        if (!this.isDragging || this.isPaused) return;
-        
-        const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
-        const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
-        
-        if (this.cameraModel) {
-            this.cameraModel.setPosition(
-                this.dragStartCameraX - dx,
-                this.dragStartCameraY - dy
-            );
-        }
-    }
-    
-    handleCameraStopDrag() {
-        this.isDragging = false;
     }
 
     handleToggleAssistedControlsFromUI() {
@@ -465,6 +405,20 @@ class GameController {
         
         this.resetRocket();
         
+        // S'assurer que CameraModel a les dimensions correctes du canvas après initialisation
+        if (this.renderingController && this.cameraModel) {
+            const dims = this.renderingController.getCanvasDimensions();
+            if (dims) {
+                console.log("[GameController.init] Mise à jour initiale de CameraModel avec les dimensions du canvas:", dims);
+                this.cameraModel.width = dims.width;
+                this.cameraModel.height = dims.height;
+                this.cameraModel.offsetX = dims.width / 2;
+                this.cameraModel.offsetY = dims.height / 2;
+            } else {
+                console.warn("[GameController.init] Impossible d'obtenir les dimensions du canvas depuis RenderingController pour CameraModel.");
+            }
+        }
+        
         this.start();
         
         console.log("GameController initialisé (via GameSetupController) et boucle démarrée.");
@@ -493,15 +447,6 @@ class GameController {
 
             requestAnimationFrame((timestamp) => this.gameLoop(timestamp));
             console.log("GameController started.");
-        }
-    }
-    
-    togglePause() { // Ce togglePause est appelé par l'événement, conservez-le
-        this.isPaused = !this.isPaused;
-        if (this.isPaused) {
-            this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
-        } else {
-            this.eventBus.emit(EVENTS.GAME.GAME_RESUMED);
         }
     }
     
@@ -574,7 +519,11 @@ class GameController {
             this.rocketModel.landedOn = 'Terre';
 
             if (this.cameraModel) {
+                console.log("[GameController.resetRocket] Avant cameraModel.setPosition:", 
+                    { rocketPos: { x: rocketStartX, y: rocketStartY }, camPos: { x: this.cameraModel.x, y: this.cameraModel.y } });
                 this.cameraModel.setPosition(rocketStartX, rocketStartY);
+                console.log("[GameController.resetRocket] Après cameraModel.setPosition:", 
+                    { camPos: { x: this.cameraModel.x, y: this.cameraModel.y } });
             }
         } else {
             console.error("Impossible de trouver la Terre pour repositionner la fusée.");
@@ -607,7 +556,20 @@ class GameController {
         }
 
         if (this.cameraModel && this.rocketModel) {
+            console.log("[GameController.resetRocket] Avant cameraModel.setTarget:", 
+                { target: this.cameraModel.target, mode: this.cameraModel.mode, rocketModelPos: this.rocketModel.position });
             this.cameraModel.setTarget(this.rocketModel, 'rocket');
+            console.log("[GameController.resetRocket] Après cameraModel.setTarget:", 
+                { targetIsRocket: this.cameraModel.target === this.rocketModel, mode: this.cameraModel.mode });
+            
+            // Forcer la position ici aussi pour être absolument sûr, même si setPosition a été appelé avant.
+            if (this.rocketModel.position) {
+                console.log("[GameController.resetRocket] Forçage de la position caméra sur rocketModel.position après setTarget:", 
+                    { rocketPos: this.rocketModel.position, camPrevPos: {x: this.cameraModel.x, y: this.cameraModel.y}});
+                this.cameraModel.setPosition(this.rocketModel.position.x, this.rocketModel.position.y);
+                console.log("[GameController.resetRocket] Position caméra APRES forçage:", 
+                    { camFinalPos: {x: this.cameraModel.x, y: this.cameraModel.y}}); 
+            }
         }
 
         console.log("Fusée réinitialisée.");
@@ -632,9 +594,8 @@ class GameController {
             this.rocketController.update(deltaTime);
         }
 
-        if (this.rocketAgent && this.rocketAgent.isControlling) {
-            const currentState = this.rocketAgent.getCurrentState(this.rocketModel, this.universeModel, this.missionManager);
-            this.rocketAgent.act(currentState);
+        if (this.rocketAgent && this.rocketAgent.isActive) {
+             this.rocketAgent.update(deltaTime);
         }
 
         if (this.particleController) {
@@ -649,6 +610,14 @@ class GameController {
             this.cameraModel.update(deltaTime);
         }
 
+        // Mise à jour de la caméra (suivi, etc.)
+        // Si CameraModel a une méthode update, elle devrait être appelée ici ou dans RenderingController.
+        // Pour l'instant, les mises à jour de position/zoom sont événementielles.
+        // Si un suivi continu est nécessaire (ex: smooth follow), CameraModel ou CameraController aurait une méthode update.
+
+        // Aucune logique de caméra spécifique à mettre à jour ici pour le moment,
+        // car les changements de caméra sont pilotés par des événements dans CameraController.
+
         this.updateTrace();
 
         if (this.missionManager && this.rocketModel && !this.rocketModel.isDestroyed) {
@@ -657,8 +626,30 @@ class GameController {
     }
     
     cleanup() {
-        this.isRunning = false;
-        // Le nettoyage des abonnements est géré par l'EventBus
+        // Code pour se désabonner des événements et nettoyer les ressources
+        // Par exemple, si EventBus a une méthode pour se désabonner de tous les événements
+        // this.eventBus.unsubscribeAll(this); // Exemple conceptuel
+
+        // Appeler cleanup sur les contrôleurs qui en ont un
+        if (this.physicsController && typeof this.physicsController.cleanup === 'function') {
+            this.physicsController.cleanup();
+        }
+        if (this.particleController && typeof this.particleController.cleanup === 'function') {
+            this.particleController.cleanup();
+        }
+        if (this.rocketController && typeof this.rocketController.cleanup === 'function') {
+            this.rocketController.cleanup();
+        }
+        if (this.rocketAgent && typeof this.rocketAgent.cleanup === 'function') {
+            this.rocketAgent.cleanup();
+        }
+        if (this.cameraController && typeof this.cameraController.cleanup === 'function') { // AJOUT
+            this.cameraController.cleanup();
+        }
+
+        // Important : Utiliser window.controllerContainer.destroy() pour nettoyer tous les abonnements suivis
+        // Ceci est géré globalement par controllerContainer.
+        // console.log("GameController cleanup executed.");
     }
 
     toggleThrusterPositions() {

@@ -55,6 +55,15 @@
             border: 1px solid #888;
             padding: 1px 4px;
         }
+        #instructions .key {
+            font-weight: bold;
+            display: inline-block;
+            min-width: 40px; /* Ajustez si nécessaire */
+            text-align: center;
+        }
+        #instructions .action {
+            text-align: left;
+        }
         #instructions .sous-texte {
             font-size: 0.78em;
             color: #aaa;
@@ -240,6 +249,7 @@
     <!-- Contrôleur physique principal (maintenant réorganisé) -->
     <script src="controllers/PhysicsController.js"></script>
     <script src="controllers/InputController.js"></script>
+    <script src="controllers/CameraController.js"></script>
     <script src="controllers/RenderingController.js"></script>
     <script src="controllers/ParticleController.js"></script>
     <script src="controllers/RocketController.js"></script>

@@ -6,8 +6,9 @@
 class CameraModel {
     /**
      * Initialise une nouvelle caméra.
+     * @param {object} [gameController=null] - Référence optionnelle à GameController pour certains logs.
      */
-    constructor() {
+    constructor(gameController = null) {
         /** @type {number} Position horizontale de la caméra dans le monde. */
         this.x = 0;
         /** @type {number} Position verticale de la caméra dans le monde. */
@@ -54,6 +55,8 @@ class CameraModel {
          * N'est pas directement utilisée par la logique interne de CameraModel, mais essentielle pour calculer l'offsetY.
          */
         this.height = 600; // Valeur par défaut, devrait être mise à jour par le système de rendu.
+        
+        this.gameController = gameController; // AJOUT: Stocker la référence
     }
 
     /**
@@ -97,7 +100,10 @@ class CameraModel {
     followRocket(deltaTime) {
         // Vérifie si la cible et sa position existent avant d'essayer d'y accéder.
         if (!this.target || typeof this.target.position?.x !== 'number' || typeof this.target.position?.y !== 'number') {
-            console.warn("Camera target or target position is invalid for following.");
+            console.warn("[CameraModel.followRocket] Cible ou position de la cible invalide.", {
+                target: this.target,
+                targetPosition: this.target ? this.target.position : undefined
+            });
             return;
         }
         
@@ -106,11 +112,23 @@ class CameraModel {
         const targetY = this.target.position.y;
         
         // Interpolation linéaire pour un mouvement doux vers la cible.
-        // se rapprocher de la cible = targetX - this.x
-        // facteur de rapprochement = this.smoothing * deltaTime 
-        // (ajuste la vitesse en fonction du temps écoulé et du facteur de lissage)
-        this.x += (targetX - this.x) * this.smoothing * deltaTime;
-        this.y += (targetY - this.y) * this.smoothing * deltaTime;
+        const deltaX = (targetX - this.x) * this.smoothing * deltaTime;
+        const deltaY = (targetY - this.y) * this.smoothing * deltaTime;
+
+        this.x += deltaX;
+        this.y += deltaY;
+
+        // Log temporaire pour les premières frames
+        if (this.gameController && this.gameController.elapsedTime < 3) { // Supposant que gameController a elapsedTime
+            console.log("[CameraModel.followRocket] Update:", {
+                currentTime: this.gameController.elapsedTime,
+                camX: this.x, camY: this.y,
+                targetX: targetX, targetY: targetY,
+                deltaX: deltaX, deltaY: deltaY,
+                smoothing: this.smoothing,
+                deltaTime: deltaTime
+            });
+        }
     }
 
     // La méthode followEarth a été supprimée car elle n'était pas implémentée.

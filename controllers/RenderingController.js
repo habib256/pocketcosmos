@@ -172,7 +172,7 @@ class RenderingController {
         // Rendre le fond et les corps séparément, en utilisant uniquement les états internes
         if (this.universeView) {
             this.universeView.renderBackground(ctx, camera);
-            this.universeView.render(ctx, camera, this.universeState.stars, universeModel ? universeModel.celestialBodies : [], time);
+            this.universeView.render(ctx, camera, this.universeState.stars, [], time);
         }
         
         // Rendre les étoiles
