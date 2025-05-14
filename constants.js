@@ -178,13 +178,13 @@ const CELESTIAL_BODY = {
 
     // --- Lunes de Mars ---
     PHOBOS: {
-        MASS: 1e8,           // Masse très faible (simulation)
+        MASS: 8e8,           // Masse très faible (simulation)
         RADIUS: 40,            // Rayon petit (augmenté x2)
         ORBIT_DISTANCE: 1200,  // Distance orbitale de Mars (augmentée x1.5)
         ORBIT_SPEED: 0.8,    // Vitesse orbitale rapide (simulation)
     },
     DEIMOS: {
-        MASS: 2e7,            // Masse encore plus faible (simulation)
+        MASS: 5e8,            // Masse encore plus faible (simulation)
         RADIUS: 30,            // Rayon très petit (augmenté x2)
         ORBIT_DISTANCE: 1800,  // Distance orbitale plus grande (augmentée x1.5)
         ORBIT_SPEED: 0.4,    // Vitesse orbitale plus lente (simulation)

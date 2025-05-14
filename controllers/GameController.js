@@ -719,17 +719,17 @@ class GameController {
     handleZoomCommand(data) {
          if (!this.cameraModel || this.isPaused) return;
          
-         const zoomValue = data.value;
-         const zoomSpeedFactor = Math.abs(zoomValue) * (RENDER.ZOOM_SPEED || 0.01) * 1.5; // Valeur par défaut et ajustement
-                 
-         if (zoomValue < 0) { // Zoom arrière/OUT (axe joystick < 0) -> Dézoomer, facteur < 1
-              this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 / (1 + zoomSpeedFactor) });
-         } else if (zoomValue > 0) { // Zoom avant/IN (axe joystick > 0) -> Zoomer, facteur > 1
-             this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 + zoomSpeedFactor });
+         const zoomValue = data.value; // Valeur brute de l'axe du joystick
+         const zoomSpeedFactor = Math.abs(zoomValue) * (RENDER.ZOOM_SPEED || 0.01) * 1.5; 
+
+         // Si zoomValue < 0 (généralement joystick vers le HAUT), on veut ZOOMER (facteur > 1)
+         // Si zoomValue > 0 (généralement joystick vers le BAS), on veut DÉZOOMER (facteur < 1)
+         if (zoomValue < 0) { 
+              this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 + zoomSpeedFactor });
+         } else if (zoomValue > 0) { 
+             this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 / (1 + zoomSpeedFactor) });
          }
-         // L'appel à this.emitUpdatedStates() n'est probablement plus nécessaire ici,
-         // car CameraController ou CameraModel devrait gérer la signalisation des changements d'état
-         // qui pourraient affecter la simulation ou l'UI.
+         // Pas d'action si zoomValue est 0 (ou dans la zone morte, déjà géré par InputController)
     }
 
     toggleGravityField() {
