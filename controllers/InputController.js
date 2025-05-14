@@ -370,126 +370,118 @@ class InputController {
     
     // Mettre à jour l'état des entrées (joystick uniquement maintenant)
     update() {
-        // --- Gestion Joystick ---
-        if (this.gamepad) {
-            const currentGamepad = navigator.getGamepads()[this.gamepad.index];
-            if (!currentGamepad) {
-                // Si le gamepad se déconnecte sans événement, le marquer comme déconnecté ici
-                if(this.gamepad){ // Vérifier s'il était précédemment connecté
-                    this.disconnectGamepad(this.gamepad.id);
-                }
-                return;
+        if (!this.gamepad) {
+            if (!this.noGamepadLogged) {
+                // console.log("[InputController] Aucun gamepad connecté ou actif."); // Optionnel
+                this.noGamepadLogged = true;
             }
-
-            const currentHeldAxes = {};
-            for (let i = 0; i < currentGamepad.axes.length; i++) {
-                const value = currentGamepad.axes[i];
-                const prevValue = this.gamepadState.axes[i] || 0; // S'assurer que prevValue est défini
-                const adjustedValue = Math.abs(value) < this.axisThreshold ? 0 : value;
-                const adjustedPrevValue = Math.abs(prevValue) < this.axisThreshold ? 0 : prevValue;
-
-                const action = this.gamepadMap.axes[i];
-
-                if (adjustedValue !== adjustedPrevValue) {
-                    this.gamepadState.axes[i] = value; // Stocker la valeur brute
-                    if (action) { // 'rotate' ou 'zoomAxis'
-                        this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, {
-                            action: action,
-                            axis: i,
-                            value: adjustedValue // Envoyer la valeur ajustée
-                        });
-                    }
-                }
-
-                if (action && adjustedValue !== 0) {
-                    currentHeldAxes[i] = true;
-                    // L'événement JOYSTICK_AXIS_HELD est toujours utile pour le zoom analogique continu
-                    if (action === 'zoomAxis') { // S'assurer que c'est bien l'action de zoom
-                         this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_HELD, {
-                            action: action,
-                            axis: i,
-                            value: adjustedValue
-                        });
-                    }
-                    this.heldAxes[i] = true;
-                }
-            }
-            // Gérer la fin du maintien d'un axe
-            for(const axisIndex in this.heldAxes) {
-                if (this.heldAxes[axisIndex] && !currentHeldAxes[axisIndex]) {
-                    const action = this.gamepadMap.axes[axisIndex];
-                    if (action) {
-                        // Émettre JOYSTICK_AXIS_RELEASED seulement si GameController l'utilise.
-                        // Actuellement, il ne s'y abonne pas explicitement pour 'rotate' ou 'zoomAxis'.
-                        // Le passage de la valeur à 0 dans JOYSTICK_AXIS_CHANGED gère l'arrêt.
-                        // this.eventBus.emit(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, {
-                        //     action: action,
-                        //     axis: parseInt(axisIndex, 10)
-                        // });
-                    }
-                    this.heldAxes[axisIndex] = false;
-                }
-            }
-
-            // Traiter les boutons
-            for (let i = 0; i < currentGamepad.buttons.length; i++) {
-                const button = currentGamepad.buttons[i];
-                const prevButtonState = this.gamepadState.buttons[i] || { pressed: false, value: 0 };
-
-                if (button.pressed !== prevButtonState.pressed) {
-                    this.gamepadState.buttons[i] = { pressed: button.pressed, value: button.value };
-                    const actionName = this.gamepadMap.buttons[i];
-                    
-                    if (actionName) {
-                        // Émettre des événements sémantiques basés sur actionName
-                        switch (actionName) {
-                            case 'boost': // alias pour thrustForward
-                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.THRUST_FORWARD_START : EVENTS.ROCKET.THRUST_FORWARD_STOP);
-                                break;
-                            case 'thrustBackward':
-                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.THRUST_BACKWARD_START : EVENTS.ROCKET.THRUST_BACKWARD_STOP);
-                                break;
-                             // Les rotations via D-Pad si mappées comme boutons
-                            case 'rotateLeft':
-                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.ROTATE_LEFT_START : EVENTS.ROCKET.ROTATE_LEFT_STOP);
-                                break;
-                            case 'rotateRight':
-                                this.eventBus.emit(button.pressed ? EVENTS.ROCKET.ROTATE_RIGHT_START : EVENTS.ROCKET.ROTATE_RIGHT_STOP);
-                                break;
-                            // Actions "coup unique" sur appui de bouton
-                            case 'zoomInButton':
-                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
-                                break;
-                            case 'zoomOutButton':
-                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT);
-                                break;
-                            case 'resetRocket':
-                                if (button.pressed) this.eventBus.emit(EVENTS.ROCKET.RESET);
-                                break;
-                            case 'centerCamera':
-                                if (button.pressed) this.eventBus.emit(EVENTS.CAMERA.CENTER_ON_ROCKET);
-                                break;
-                            case 'toggleVectors':
-                                if (button.pressed) this.eventBus.emit(EVENTS.RENDER.TOGGLE_VECTORS);
-                                break;
-                            case 'toggleTraces':
-                                if (button.pressed) this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
-                                break;
-                            case 'pauseGame':
-                                if (button.pressed) this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);
-                                break;
-                            // Ajouter d'autres actions si nécessaire (ex: toggleAI, thrust multipliers)
-                        }
-                    }
-                }
-            }
-        } else {
-            // Optionnel: logguer une fois si aucun gamepad n'est détecté après un certain temps
-            // if (!this.noGamepadLogged && this.initialGamepadCheckDone) {
-            //     console.log("Aucun gamepad détecté.");
-            //     this.noGamepadLogged = true;
-            // }
+            return; 
         }
+
+        const newGamepad = navigator.getGamepads()[this.gamepad.index];
+        if (!newGamepad) return; // Le gamepad pourrait avoir été déconnecté
+
+        this.gamepad = newGamepad; // Mettre à jour avec le dernier état
+
+        // --- Traitement des Axes ---
+        this.gamepad.axes.forEach((axisValue, index) => {
+            const lastAxisValue = this.gamepadState.axes[index];
+            const action = this.gamepadMap.axes[index];
+
+            if (Math.abs(axisValue) > this.axisThreshold) {
+                // L'axe est actif au-delà du seuil
+                if (action === 'rotate') {
+                    this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: axisValue });
+                } else if (action === 'zoomAxis') {
+                    this.eventBus.emit(EVENTS.INPUT.ZOOM_COMMAND, { value: axisValue });
+                }
+                // Conserver l'ancienne logique pour les autres types d'axes si nécessaire
+                // ou la supprimer si 'rotate' et 'zoomAxis' sont les seuls utilisés ici.
+                // Pour l'instant, on ne gère que rotate et zoomAxis pour les nouveaux événements sémantiques.
+
+                this.heldAxes[index] = axisValue; // Mettre à jour l'état maintenu
+            } else if (Math.abs(lastAxisValue) > this.axisThreshold && Math.abs(axisValue) <= this.axisThreshold) {
+                // L'axe vient d'être relâché (était au-delà du seuil, maintenant en dessous)
+                if (action === 'rotate') {
+                    // Pour la rotation, un relâchement pourrait signifier arrêter la rotation (valeur 0)
+                    this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
+                }
+                // Pour le zoom, l'événement ZOOM_COMMAND avec une valeur suffit, pas besoin d'événement de relâchement spécifique.
+                
+                delete this.heldAxes[index]; // Supprimer de l'état maintenu
+            }
+            this.gamepadState.axes[index] = axisValue; // Mettre à jour l'état
+        });
+
+
+        // --- Traitement des Boutons ---
+        this.gamepad.buttons.forEach((button, index) => {
+            const wasPressed = this.gamepadState.buttons[index] && this.gamepadState.buttons[index].pressed;
+            const isPressed = button.pressed;
+            const action = this.gamepadMap.buttons[index];
+
+            if (action) { // Si une action est mappée pour ce bouton
+                if (isPressed && !wasPressed) { // Le bouton vient d'être pressé
+                    // Émettre un événement sémantique direct basé sur le mapping
+                    // Ex: this.eventBus.emit(EVENTS.ROCKET.BOOST_START); si action === 'boost'
+                    // La logique actuelle de GameController attend des événements plus spécifiques (ex: EVENTS.GAME.TOGGLE_PAUSE)
+                    // Nous devons mapper 'action' aux événements attendus par GameController ou RocketController
+                    
+                    switch (action) {
+                        case 'boost': // SPACE ou Bouton A
+                            // Note: 'boost' est un alias pour 'thrustForward' dans le keyMap actuel
+                            // GameController/RocketController attend THRUST_FORWARD_START
+                            this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_START);
+                            this.activeKeyActions.add('thrustForward'); // Simuler un état actif pour la logique dekeyup
+                            break;
+                        case 'thrustBackward': // Bouton Y
+                            this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_START);
+                            this.activeKeyActions.add('thrustBackward');
+                            break;
+                        case 'toggleTraces': // Bouton LB
+                            this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
+                            break;
+                        case 'toggleVectors': // Bouton RB
+                            this.eventBus.emit(EVENTS.RENDER.TOGGLE_VECTORS);
+                            break;
+                        case 'zoomOutButton': // Bouton LT (si utilisé comme bouton)
+                            // Si c'est un bouton, il agit comme un 'tick' de zoom
+                            // CameraController s'attend à CAMERA_ZOOM_ADJUST avec un facteur
+                            this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 / RENDER.CAMERA_ZOOM_BUTTON_FACTOR });
+                            break;
+                        case 'zoomInButton': // Bouton RT (si utilisé comme bouton)
+                            this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: RENDER.CAMERA_ZOOM_BUTTON_FACTOR });
+                            break;
+                        case 'centerCamera': // Bouton View/Back
+                            this.eventBus.emit(EVENTS.CAMERA.CENTER_CAMERA_ON_ROCKET);
+                            break;
+                        case 'pauseGame': // Bouton Menu/Start
+                            this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);
+                            break;
+                        case 'resetRocket': // Bouton Stick Gauche Press
+                            this.eventBus.emit(EVENTS.ROCKET.RESET);
+                            break;
+                        // Ajouter d'autres cas pour les boutons mappés si nécessaire
+                    }
+
+                } else if (!isPressed && wasPressed) { // Le bouton vient d'être relâché
+                    // Gérer le relâchement si nécessaire (par exemple, pour arrêter une action continue)
+                    switch (action) {
+                        case 'boost':
+                            this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                            this.activeKeyActions.delete('thrustForward');
+                            break;
+                        case 'thrustBackward':
+                            this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                            this.activeKeyActions.delete('thrustBackward');
+                            break;
+                        // Les autres actions sont des "toggles" ou des actions uniques, pas besoin de _STOP
+                    }
+                }
+            }
+            // Mettre à jour l'état du bouton
+            this.gamepadState.buttons[index] = { pressed: isPressed, value: button.value };
+        });
     }
     
     // Gérer les événements de la molette souris

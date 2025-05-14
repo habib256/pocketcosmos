@@ -40,6 +40,7 @@ class RocketController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data)));
     }
 
     handleThrustForwardStart() {
@@ -131,5 +132,28 @@ class RocketController {
             this.particleSystemModel.setEmitterActive('right', false, this.rocketModel);
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
+    }
+
+    handleSetThrusterPower(data) {
+        if (!this.eventBus || !this.rocketModel || !data) return;
+
+        const thrusterId = data.thrusterId; // 'left', 'right', 'main', 'rear'
+        const power = data.power;
+
+        if (thrusterId && typeof power === 'number') {
+            this.rocketModel.setThrusterPower(thrusterId, power);
+            
+            if (this.particleSystemModel) {
+                // Gérer l'activation des particules pour les propulseurs de rotation
+                // Pour 'main' et 'rear', les handlers existants (handleThrustForwardStart/Stop) s'en chargent déjà.
+                // Ce handler est principalement pour 'left' et 'right' venant du joystick.
+                if (thrusterId === 'left' || thrusterId === 'right') {
+                    this.particleSystemModel.setEmitterActive(thrusterId, power > 0.01, this.rocketModel);
+                }
+            } else {
+                console.warn(`RocketController: particleSystemModel non disponible pour l'émetteur ${thrusterId}.`);
+            }
+            this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
+        }
     }
 } 

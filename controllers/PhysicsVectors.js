@@ -165,4 +165,189 @@ class PhysicsVectors {
     getTotalAcceleration() {
         return this.totalAcceleration;
     }
+
+    static calculateGravityVector(rocketModel, universeModel, PHYSICS_G) {
+        if (!rocketModel || !universeModel) return null;
+
+        let totalGravityX = 0;
+        let totalGravityY = 0;
+
+        for (const body of universeModel.celestialBodies) {
+            const dx = body.position.x - rocketModel.position.x;
+            const dy = body.position.y - rocketModel.position.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const distance = Math.sqrt(distanceSquared);
+
+            // Éviter la division par zéro si la fusée est exactement sur le corps céleste (improbable mais sûr)
+            if (distance === 0) continue;
+
+            const forceMagnitude = PHYSICS_G * body.mass * rocketModel.mass / distanceSquared;
+
+            const forceX = forceMagnitude * (dx / distance);
+            const forceY = forceMagnitude * (dy / distance);
+
+            totalGravityX += forceX / rocketModel.mass;
+            totalGravityY += forceY / rocketModel.mass;
+        }
+
+        return { x: totalGravityX, y: totalGravityY };
+    }
+
+    static calculateThrustVectors(rocketModel, physicsConstants) { // physicsConstants = { MAIN_THRUST, REAR_THRUST }
+        if (!rocketModel) return null;
+
+        const thrustVectors = {};
+
+        for (const thrusterName in rocketModel.thrusters) {
+            const thruster = rocketModel.thrusters[thrusterName];
+
+            if (thruster.power > 0) {
+                // La logique originale pour 'left' et 'right' était de les ignorer ici,
+                // car ils contribuent au couple, pas directement à la poussée calculée de cette manière.
+                // calculateTotalThrustVector les gère différemment.
+                // On conserve ce comportement pour l'instant.
+                if (thrusterName === 'left' || thrusterName === 'right') {
+                    continue;
+                }
+                let thrustAngle = 0;
+                let thrustMagnitude = 0;
+
+                switch (thrusterName) {
+                    case 'main':
+                        thrustAngle = rocketModel.angle + Math.PI / 2; // Angle original de GameController
+                        thrustMagnitude = physicsConstants.MAIN_THRUST * (thruster.power / thruster.maxPower);
+                        break;
+                    case 'rear':
+                        thrustAngle = rocketModel.angle - Math.PI / 2; // Angle original de GameController
+                        thrustMagnitude = physicsConstants.REAR_THRUST * (thruster.power / thruster.maxPower);
+                        break;
+                }
+
+                thrustVectors[thrusterName] = {
+                    position: {
+                        x: thruster.position.x,
+                        y: thruster.position.y
+                    },
+                    x: -Math.cos(thrustAngle), // Direction originale de GameController
+                    y: -Math.sin(thrustAngle), // Direction originale de GameController
+                    magnitude: thrustMagnitude
+                };
+            }
+        }
+        return thrustVectors;
+    }
+
+    static calculateTotalThrustVector(rocketModel, rocketConstants, physicsConstants) {
+        // rocketConstants = { THRUSTER_POSITIONS, MAIN_THRUST, REAR_THRUST, LATERAL_THRUST }
+        // physicsConstants = { THRUST_MULTIPLIER }
+        if (!rocketModel) return null;
+
+        let totalX = 0;
+        let totalY = 0;
+
+        for (const thrusterName in rocketModel.thrusters) {
+            const thruster = rocketModel.thrusters[thrusterName];
+
+            if (thruster.power > 0) {
+                const position = rocketConstants.THRUSTER_POSITIONS[thrusterName.toUpperCase()];
+                if (!position) continue;
+
+                let thrustAngle;
+
+                if (thrusterName === 'left' || thrusterName === 'right') {
+                    const propAngle = Math.atan2(position.distance * Math.sin(position.angle),
+                        position.distance * Math.cos(position.angle));
+                    const perpDirection = thrusterName === 'left' ? Math.PI / 2 : -Math.PI / 2;
+                    thrustAngle = rocketModel.angle + propAngle + perpDirection;
+                } else {
+                    switch (thrusterName) {
+                        case 'main':
+                            thrustAngle = rocketModel.angle - Math.PI / 2;
+                            break;
+                        case 'rear':
+                            thrustAngle = rocketModel.angle + Math.PI / 2;
+                            break;
+                        default:
+                            thrustAngle = rocketModel.angle; // Fallback, devrait être couvert par les cas ci-dessus
+                    }
+                }
+
+                let thrustForce;
+                switch (thrusterName) {
+                    case 'main':
+                        thrustForce = rocketConstants.MAIN_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        break;
+                    case 'rear':
+                        thrustForce = rocketConstants.REAR_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        break;
+                    case 'left':
+                    case 'right':
+                        thrustForce = rocketConstants.LATERAL_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        break;
+                    default:
+                        thrustForce = 0;
+                }
+
+                totalX += Math.cos(thrustAngle) * thrustForce;
+                totalY += Math.sin(thrustAngle) * thrustForce;
+            }
+        }
+
+        if (Math.abs(totalX) < 0.001 && Math.abs(totalY) < 0.001) {
+            return null; // Retourne null si la poussée est négligeable, comme dans GameController
+        }
+
+        return { x: totalX, y: totalY };
+    }
+
+    static calculateLunarAttractionVector(rocketModel, universeModel) {
+        if (!rocketModel || !universeModel) return null;
+
+        const moon = universeModel.celestialBodies.find(body => body.name === 'Lune');
+        if (!moon) return null;
+
+        const dx = moon.position.x - rocketModel.position.x;
+        const dy = moon.position.y - rocketModel.position.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const distance = Math.sqrt(distanceSquared);
+
+        if (distance === 0) return { vector: { x: 0, y: 0 }, distance: 0 }; // Pour éviter NaN si distance est 0
+
+        return {
+            vector: { x: dx / distance, y: dy / distance },
+            distance: distance
+        };
+    }
+
+    static calculateEarthAttractionVector(rocketModel, universeModel) {
+        if (!rocketModel || !universeModel) return null;
+
+        const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
+        if (!earth) return null;
+
+        const dx = earth.position.x - rocketModel.position.x;
+        const dy = earth.position.y - rocketModel.position.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const distance = Math.sqrt(distanceSquared);
+
+        if (distance === 0) return { x: 0, y: 0 }; // Pour éviter NaN si distance est 0
+
+        return { x: dx / distance, y: dy / distance }; // Retourne seulement le vecteur normalisé
+    }
+
+    static calculateEarthDistance(rocketModel, universeModel) {
+        if (!rocketModel || !universeModel) return null;
+
+        const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
+        if (!earth) return null;
+
+        const dx = earth.position.x - rocketModel.position.x;
+        const dy = earth.position.y - rocketModel.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // La distance à la surface ne peut pas être négative
+        const surfaceDistance = Math.max(0, distance - earth.radius);
+
+        return surfaceDistance;
+    }
 } 

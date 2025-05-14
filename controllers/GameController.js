@@ -135,10 +135,14 @@ class GameController {
         // Événement lorsque la fusée atterrit
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data)));
 
-        // --- Abonnements Joystick ---
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data)));
+        // --- Abonnements Joystick (Supprimés et remplacés par des commandes sémantiques) ---
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data)));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data)));
+
+        // +++ Nouveaux Abonnements aux commandes sémantiques d'InputController +++
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ZOOM_COMMAND, (data) => this.handleZoomCommand(data)));
 
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
@@ -195,12 +199,17 @@ class GameController {
     
     // Émettre un seul événement pour l'état complet de la simulation
     emitUpdatedStates() {
-        const gravityVector = this.calculateGravityVector();
-        const thrustVectors = this.calculateThrustVectors();
-        const totalThrustVector = this.calculateTotalThrustVector();
-        
-        const lunarAttraction = this.calculateLunarAttractionVector();
-        const earthAttraction = this.calculateEarthAttractionVector();
+        // Assurez-vous que PhysicsVectors est accessible ici
+        // Soit via import PhysicsVectors from './PhysicsVectors.js'; (si module ES6)
+        // Soit si PhysicsVectors est global (ex: window.PhysicsVectors)
+
+        const gravityVector = PhysicsVectors.calculateGravityVector(this.rocketModel, this.universeModel, PHYSICS.G);
+        const thrustVectors = PhysicsVectors.calculateThrustVectors(this.rocketModel, PHYSICS); // PHYSICS contient MAIN_THRUST, REAR_THRUST
+        const totalThrustVector = PhysicsVectors.calculateTotalThrustVector(this.rocketModel, ROCKET, PHYSICS); // ROCKET et PHYSICS contiennent les constantes nécessaires
+
+        const lunarAttraction = PhysicsVectors.calculateLunarAttractionVector(this.rocketModel, this.universeModel);
+        const earthAttraction = PhysicsVectors.calculateEarthAttractionVector(this.rocketModel, this.universeModel);
+        // calculateEarthDistance n'est pas directement utilisé dans emitUpdatedStates, donc pas d'appel ici.
 
         let calculatedAccelerationX = 0;
         let calculatedAccelerationY = 0;
@@ -247,132 +256,6 @@ class GameController {
         if (this.missionJustSucceededFlag) {
             this.missionJustSucceededFlag = false;
         }
-    }
-    
-    calculateGravityVector() {
-        if (!this.rocketModel || !this.universeModel) return null;
-        
-        let totalGravityX = 0;
-        let totalGravityY = 0;
-        
-        for (const body of this.universeModel.celestialBodies) {
-            const dx = body.position.x - this.rocketModel.position.x;
-            const dy = body.position.y - this.rocketModel.position.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const distance = Math.sqrt(distanceSquared);
-            
-            const forceMagnitude = PHYSICS.G * body.mass * this.rocketModel.mass / distanceSquared;
-            
-            const forceX = forceMagnitude * (dx / distance);
-            const forceY = forceMagnitude * (dy / distance);
-            
-            totalGravityX += forceX / this.rocketModel.mass;
-            totalGravityY += forceY / this.rocketModel.mass;
-        }
-        
-        return { x: totalGravityX, y: totalGravityY };
-    }
-    
-    calculateThrustVectors() {
-        if (!this.rocketModel) return null;
-        
-        const thrustVectors = {};
-        
-        for (const thrusterName in this.rocketModel.thrusters) {
-            const thruster = this.rocketModel.thrusters[thrusterName];
-            
-            if (thruster.power > 0) {
-                if (thrusterName === 'left' || thrusterName === 'right') {
-                    continue;
-                }
-                let thrustAngle = 0;
-                let thrustMagnitude = 0;
-                
-                switch (thrusterName) {
-                    case 'main':
-                        thrustAngle = this.rocketModel.angle + Math.PI/2;
-                        thrustMagnitude = PHYSICS.MAIN_THRUST * (thruster.power / thruster.maxPower);
-                        break;
-                    case 'rear':
-                        thrustAngle = this.rocketModel.angle - Math.PI/2;
-                        thrustMagnitude = PHYSICS.REAR_THRUST * (thruster.power / thruster.maxPower);
-                        break;
-                }
-                
-                thrustVectors[thrusterName] = {
-                    position: { 
-                        x: thruster.position.x, 
-                        y: thruster.position.y 
-                    },
-                    x: -Math.cos(thrustAngle),
-                    y: -Math.sin(thrustAngle),
-                    magnitude: thrustMagnitude
-                };
-            }
-        }
-        
-        return thrustVectors;
-    }
-    
-    calculateTotalThrustVector() {
-        if (!this.rocketModel) return null;
-        
-        let totalX = 0;
-        let totalY = 0;
-        
-        for (const thrusterName in this.rocketModel.thrusters) {
-            const thruster = this.rocketModel.thrusters[thrusterName];
-            
-            if (thruster.power > 0) {
-                const position = ROCKET.THRUSTER_POSITIONS[thrusterName.toUpperCase()];
-                if (!position) continue;
-                
-                let thrustAngle;
-                
-                if (thrusterName === 'left' || thrusterName === 'right') {
-                    const propAngle = Math.atan2(position.distance * Math.sin(position.angle), 
-                                               position.distance * Math.cos(position.angle));
-                    const perpDirection = thrusterName === 'left' ? Math.PI/2 : -Math.PI/2;
-                    thrustAngle = this.rocketModel.angle + propAngle + perpDirection;
-                } else {
-                    switch (thrusterName) {
-                        case 'main': 
-                            thrustAngle = this.rocketModel.angle - Math.PI/2;
-                            break;
-                        case 'rear':
-                            thrustAngle = this.rocketModel.angle + Math.PI/2;
-                            break;
-                        default:
-                            thrustAngle = this.rocketModel.angle;
-                    }
-                }
-                
-                let thrustForce;
-                switch (thrusterName) {
-                    case 'main': 
-                        thrustForce = ROCKET.MAIN_THRUST * (thruster.power / 100) * PHYSICS.THRUST_MULTIPLIER;
-                        break;
-                    case 'rear': 
-                        thrustForce = ROCKET.REAR_THRUST * (thruster.power / 100) * PHYSICS.THRUST_MULTIPLIER;
-                        break;
-                    case 'left':
-                    case 'right': 
-                        thrustForce = ROCKET.LATERAL_THRUST * (thruster.power / 100) * PHYSICS.THRUST_MULTIPLIER;
-                        break;
-                    default:
-                        thrustForce = 0;
-                }
-                
-                totalX += Math.cos(thrustAngle) * thrustForce;
-                totalY += Math.sin(thrustAngle) * thrustForce;
-            }
-        }
-        
-        if (Math.abs(totalX) < 0.001 && Math.abs(totalY) < 0.001) {
-            return null;
-        }
-        
-        return { x: totalX, y: totalY };
     }
     
     init() {
@@ -721,55 +604,9 @@ class GameController {
         }
     }
 
-    calculateLunarAttractionVector() {
-        if (!this.rocketModel || !this.universeModel) return null;
-        
-        const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
-        if (!moon) return null;
-        
-        const dx = moon.position.x - this.rocketModel.position.x;
-        const dy = moon.position.y - this.rocketModel.position.y;
-        const distanceSquared = dx * dx + dy * dy;
-        const distance = Math.sqrt(distanceSquared);
-        
-        return { 
-            vector: { x: dx / distance, y: dy / distance },
-            distance: distance
-        };
-    }
-
     toggleAIControl() {
         if (!this.rocketAgent) return;
         this.eventBus.emit(EVENTS.AI.TOGGLE, {});
-    }
-
-    calculateEarthDistance() {
-        if (!this.rocketModel || !this.universeModel) return null;
-        
-        const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
-        if (!earth) return null;
-        
-        const dx = earth.position.x - this.rocketModel.position.x;
-        const dy = earth.position.y - this.rocketModel.position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        const surfaceDistance = Math.max(0, distance - earth.radius);
-        
-        return surfaceDistance;
-    }
-
-    calculateEarthAttractionVector() {
-        if (!this.rocketModel || !this.universeModel) return null;
-        
-        const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
-        if (!earth) return null;
-        
-        const dx = earth.position.x - this.rocketModel.position.x;
-        const dy = earth.position.y - this.rocketModel.position.y;
-        const distanceSquared = dx * dx + dy * dy;
-        const distance = Math.sqrt(distanceSquared);
-        
-        return { x: dx / distance, y: dy / distance };
     }
 
     handleRocketLanded(data) {
@@ -828,62 +665,71 @@ class GameController {
         }
     }
 
-    // --- Gestionnaires d'événements Joystick ---
+    // --- Gestionnaires d'événements Joystick (Supprimés) ---
 
-    handleJoystickAxisChanged(data) {
+    // handleJoystickAxisChanged(data) { ... }
+    // handleJoystickAxisHeld(data) { ... }
+    // handleJoystickAxisReleased(data) { ... }
+
+    // +++ Nouveaux Gestionnaires pour commandes sémantiques +++
+    handleRotateCommand(data) {
         if (!this.rocketModel || this.isPaused) return;
 
-        // const axisThreshold = this.inputController ? this.inputController.axisThreshold : 0.1; // Semble inutilisé
+        const rotateValue = data.value;
+        // La logique de rotation de la fusée est typiquement dans RocketController.
+        // GameController pourrait ici relayer une commande plus abstraite à RocketController
+        // ou directement interagir avec rocketModel si c'est sa responsabilité.
+        // Pour l'instant, on garde la logique ici comme dans l'ancien handleJoystickAxisChanged.
 
-        switch (data.action) {
-            case 'rotate':
-                const rotateValue = data.value;
-                const power = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.RIGHT;
-                if (rotateValue < 0) { 
-                    this.rocketModel.setThrusterPower('right', power); 
-                    this.rocketModel.setThrusterPower('left', 0);
-                    this.particleSystemModel.setEmitterActive('right', power > 0.1);
-                    this.particleSystemModel.setEmitterActive('left', false);
-                } else if (rotateValue > 0) { 
-                    const powerLeft = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.LEFT;
-                    this.rocketModel.setThrusterPower('left', powerLeft); 
-                    this.rocketModel.setThrusterPower('right', 0);
-                    this.particleSystemModel.setEmitterActive('left', powerLeft > 0.1);
-                    this.particleSystemModel.setEmitterActive('right', false);
-                } else { 
-                    this.rocketModel.setThrusterPower('left', 0);
-                    this.rocketModel.setThrusterPower('right', 0);
-                    this.particleSystemModel.setEmitterActive('left', false);
-                    this.particleSystemModel.setEmitterActive('right', false);
-                }
-                break;
+        // On suppose que ROCKET.THRUSTER_POWER.RIGHT et ROCKET.THRUSTER_POWER.LEFT sont accessibles
+        // et que particleSystemModel est aussi accessible.
+        // Il serait préférable que RocketController gère cela en réponse à un événement plus générique.
+
+        if (rotateValue < 0) { // rotation vers la droite (physiquement, propulseur droit)
+            const power = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.RIGHT || ROCKET.DEFAULT_ROTATION_THRUST); // Valeur par défaut si non défini
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: power });
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
+            if (this.particleSystemModel) {
+                this.particleSystemModel.setEmitterActive('right', power > 0.1);
+                this.particleSystemModel.setEmitterActive('left', false);
+            }
+        } else if (rotateValue > 0) { // rotation vers la gauche (physiquement, propulseur gauche)
+            const power = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.LEFT || ROCKET.DEFAULT_ROTATION_THRUST);
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: power });
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
+            if (this.particleSystemModel) {
+                this.particleSystemModel.setEmitterActive('left', power > 0.1);
+                this.particleSystemModel.setEmitterActive('right', false);
+            }
+        } else { // rotateValue === 0 ou proche de zéro (relâchement)
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
+            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
+            if (this.particleSystemModel) {
+                this.particleSystemModel.setEmitterActive('left', false);
+                this.particleSystemModel.setEmitterActive('right', false);
+            }
         }
+        // Note: L'émission de EVENTS.ROCKET.SET_THRUSTER_POWER est une meilleure approche
+        // si RocketController écoute ces événements pour changer l'état de rocketModel.
+        // Si ce n'est pas le cas, il faudrait modifier rocketModel directement ici :
+        // this.rocketModel.setThrusterPower('right', powerRight);
+        // this.rocketModel.setThrusterPower('left', powerLeft);
     }
     
-    handleJoystickAxisHeld(data) {
+    handleZoomCommand(data) {
          if (!this.cameraModel || this.isPaused) return;
          
-         switch(data.action) {
-             case 'zoomAxis':
-                 const zoomValue = data.value;
-                 const zoomSpeedFactor = Math.abs(zoomValue) * RENDER.ZOOM_SPEED * 1.5;
+         const zoomValue = data.value;
+         const zoomSpeedFactor = Math.abs(zoomValue) * (RENDER.ZOOM_SPEED || 0.01) * 1.5; // Valeur par défaut et ajustement
                  
-                 if (zoomValue < 0) {
-                      this.cameraModel.setZoom(this.cameraModel.zoom * (1 + zoomSpeedFactor * (60/1000)));
-                 } else if (zoomValue > 0) {
-                     this.cameraModel.setZoom(this.cameraModel.zoom / (1 + zoomSpeedFactor * (60/1000)));
-                 }
-                 this.emitUpdatedStates(); 
-                 break;
+         if (zoomValue < 0) { // Zoom arrière/OUT (axe joystick < 0) -> Dézoomer, facteur < 1
+              this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 / (1 + zoomSpeedFactor) });
+         } else if (zoomValue > 0) { // Zoom avant/IN (axe joystick > 0) -> Zoomer, facteur > 1
+             this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 + zoomSpeedFactor });
          }
-    }
-    
-    handleJoystickAxisReleased(data) {
-        // Peut être utilisé pour des actions spécifiques au relâchement si nécessaire
-        // switch(data.action) {
-        //     case 'rotate':
-        //          break;
-        // }
+         // L'appel à this.emitUpdatedStates() n'est probablement plus nécessaire ici,
+         // car CameraController ou CameraModel devrait gérer la signalisation des changements d'état
+         // qui pourraient affecter la simulation ou l'UI.
     }
 
     toggleGravityField() {
