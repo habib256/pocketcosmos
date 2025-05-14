@@ -434,8 +434,8 @@ class GameController {
             this.missionManager.resetMissions();
         }
         
-        if(startLocation){
-            this.loadCargoForCurrentLocationMission(startLocation);
+        if(startLocation && this.missionManager){
+            this.missionManager.loadCargoForCurrentLocationMission(startLocation, this.rocketModel);
         }
 
         if (this.cameraModel && this.rocketModel) {
@@ -629,39 +629,8 @@ class GameController {
             }
             
             if (this.rocketModel) { 
-               this.loadCargoForCurrentLocationMission(data.landedOn);
+               this.missionManager.loadCargoForCurrentLocationMission(data.landedOn, this.rocketModel);
             }
-        }
-    }
-
-    /**
-     * Charge le cargo nécessaire pour la première mission active partant de la localisation donnée.
-     * @param {string} location - Le nom de la planète/lune où se trouve la fusée.
-     */
-    loadCargoForCurrentLocationMission(location) {
-        if (!this.missionManager || !this.rocketModel) return;
-
-        const activeMissions = this.missionManager.getActiveMissions();
-        const nextMission = activeMissions.find(m => m.from === location);
-
-        if (nextMission) {
-            this.rocketModel.cargo = new RocketCargo(); 
-            let allLoaded = true;
-
-            nextMission.requiredCargo.forEach(item => {
-                const loaded = this.rocketModel.cargo.addCargo(item.type, item.quantity);
-                if (!loaded) {
-                    allLoaded = false;
-                    // console.warn(`[GameController] Échec du chargement de ${item.quantity} x ${item.type} pour la mission ${nextMission.id}.`); // Log optionnel
-                }
-            });
-
-            // if (allLoaded) { // Log optionnel
-            //     const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
-            //     console.log(`%c[GameController] Cargo chargé pour la mission ${nextMission.id}: ${cargoString}`, 'color: lightblue;');
-            // }
-        } else {
-            // console.log(`%c[GameController] Aucune mission active au départ de ${location} trouvée.`, 'color: gray;'); // Log optionnel
         }
     }
 

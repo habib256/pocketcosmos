@@ -169,6 +169,49 @@ class MissionManager {
             this.eventBus.emit(EVENTS.MISSION.FAILED, { mission });
         }
     }
+
+    /**
+     * Charge le cargo nécessaire pour la première mission active partant de la localisation donnée.
+     * @param {string} location - Le nom de la planète/lune où se trouve la fusée.
+     * @param {RocketModel} rocketModel - Le modèle de la fusée pour accéder à son cargo.
+     */
+    loadCargoForCurrentLocationMission(location, rocketModel) {
+        if (!rocketModel) return;
+
+        const activeMissions = this.getActiveMissions();
+        const nextMission = activeMissions.find(m => m.from === location);
+
+        if (nextMission) {
+            // Assurez-vous que rocketModel.cargo est initialisé.
+            // Normalement, RocketModel devrait initialiser son propre cargo.
+            // Si ce n'est pas le cas, il faudrait le faire ici ou s'assurer qu'il l'est ailleurs.
+            if (!rocketModel.cargo) {
+                rocketModel.cargo = new RocketCargo(); 
+            }
+            // Vider le cargo actuel avant de charger celui de la nouvelle mission
+            rocketModel.cargo.cargoItems = [];
+
+            let allLoaded = true;
+
+            nextMission.requiredCargo.forEach(item => {
+                const loaded = rocketModel.cargo.addCargo(item.type, item.quantity);
+                if (!loaded) {
+                    allLoaded = false;
+                    // console.warn(`[MissionManager] Échec du chargement de ${item.quantity} x ${item.type} pour la mission ${nextMission.id}.`); 
+                }
+            });
+
+            // if (allLoaded) { // Log optionnel
+            //     const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
+            //     console.log(`%c[MissionManager] Cargo chargé pour la mission ${nextMission.id}: ${cargoString}`, 'color: lightblue;');
+            // }
+        } else {
+            // console.log(`%c[MissionManager] Aucune mission active au départ de ${location} trouvée.`, 'color: gray;');
+            if (rocketModel.cargo) {
+                 rocketModel.cargo.cargoItems = []; // Vider le cargo s'il n'y a pas de mission
+            }
+        }
+    }
 }
 
 // Supprimer l'instanciation globale et l'initialisation ici
