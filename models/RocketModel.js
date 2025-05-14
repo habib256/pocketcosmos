@@ -243,57 +243,29 @@ class RocketModel {
      * Cela améliorerait la séparation des responsabilités (MVC).
      */
     applyDamage(amount) {
-        if (this.isDestroyed) return; // Déjà détruite, ne rien faire
+        if (this.isDestroyed) return false; // Déjà détruite, ne rien faire et indiquer pas de changement d'état
 
+        const wasAlreadyDestroyed = this.isDestroyed; // Bien que redondant avec le check précédent, pour la logique claire
         this.health -= amount;
+        let justDestroyed = false;
         
         if (this.health <= 0) {
             this.health = 0;
-            this.isDestroyed = true;
-            
-            // Gérer l'attachement si détruite alors qu'elle était posée
-            if (this.landedOn) { // Était posée quelque part
-                // Conserver l'attachement pour que les débris suivent le corps
-                this.attachedTo = this.landedOn;
-                console.log(`Fusée détruite sur ${this.landedOn} - conservation de l'attachement pour les débris.`);
-            } else {
-                // N'était pas posée, pas d'attachement nécessaire
-                this.attachedTo = null;
-            }
+            if (!wasAlreadyDestroyed) {
+                this.isDestroyed = true;
+                justDestroyed = true; // La fusée vient d'être détruite par cet appel
+                this.isLanded = false; // Si détruite, elle n'est plus considérée comme "atterrie" proprement dit
 
-            // Une fusée détruite n'est plus considérée comme "atterrie"
-            this.isLanded = false;
-            this.landedOn = null; // Réinitialiser landedOn dans tous les cas de destruction
-
-            console.log(`Fusée détruite ${this.attachedTo ? 'sur ' + this.attachedTo : 'en vol'} !`);
-            
-            // Désactiver tous les propulseurs
-            for (const thrusterName in this.thrusters) {
-                this.setThrusterPower(thrusterName, 0);
+                // Désactiver tous les propulseurs
+                for (const thrusterName in this.thrusters) {
+                    this.setThrusterPower(thrusterName, 0);
+                }
+                
+                console.log(`RocketModel: Fusée détruite. Santé: ${this.health}, vient d'être détruite: ${justDestroyed}`);
+                // L'ancien dispatchEvent est supprimé ici
             }
-
-            // --- Effets secondaires (à déplacer idéalement) --- //
-            // Jouer le son de crash
-            try {
-                const crashSound = new Audio('assets/sound/crash.mp3');
-                crashSound.volume = 1.0; // Volume maximum
-                crashSound.play().catch(error => {
-                    console.error("Erreur lors de la lecture du son de crash:", error);
-                });
-            } catch (error) {
-                console.error("Erreur lors de la création/lecture du fichier crash.mp3:", error);
-            }
-
-            // Déclencher une explosion de particules
-            // Utilise l'API DOM directement, ce qui couple le modèle à l'environnement du navigateur.
-            // Préférer émettre un événement via EventBus.
-            if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
-                    detail: { x: this.position.x, y: this.position.y }
-                }));
-            }
-            // --- Fin des effets secondaires --- //
         }
+        return justDestroyed; // Retourne true si la fusée vient d'être détruite, false sinon
     }
     
     /**

@@ -34,13 +34,16 @@ class ParticleController {
             );
             // S'abonner à l'événement de crash de la fusée pour générer une explosion.
             // Cet événement doit être émis par le CollisionHandler ou un gestionnaire similaire.
-            if (window.EVENTS.ROCKET && window.EVENTS.ROCKET.ROCKET_CRASH_EXPLOSION) {
+            if (window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.DESTROYED) {
+                 console.log('[ParticleController] Subscribing to ROCKET.DESTROYED event. Event key:', window.EVENTS.ROCKET.DESTROYED);
                  window.controllerContainer.track(
-                    this.eventBus.subscribe(window.EVENTS.ROCKET.ROCKET_CRASH_EXPLOSION, (eventDetail) => {
-                        if (eventDetail) {
+                    this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, (eventDetail) => {
+                        console.log('[ParticleController] ROCKET.DESTROYED event received. Detail:', eventDetail);
+                        if (eventDetail && eventDetail.position) {
+                            console.log('[ParticleController] Calling createExplosion with position:', eventDetail.position);
                             this.createExplosion(
-                                eventDetail.x,
-                                eventDetail.y,
+                                eventDetail.position.x,
+                                eventDetail.position.y,
                                 120, // nombre de particules
                                 8,   // vitesse
                                 10,  // taille
@@ -48,9 +51,13 @@ class ParticleController {
                                 '#FFDD00', // couleur début (jaune vif)
                                 '#FF3300'  // couleur fin (rouge/orange)
                             );
+                        } else {
+                            console.warn('[ParticleController] ROCKET.DESTROYED event received, but eventDetail or eventDetail.position is missing.', eventDetail);
                         }
                     })
                 );
+            } else {
+                console.warn('[ParticleController] Did not subscribe to ROCKET.DESTROYED. Check window.EVENTS.ROCKET.DESTROYED definition.', window.EVENTS);
             }
         } else {
             // Avertissement si l'EventBus n'est pas correctement initialisé ou disponible,

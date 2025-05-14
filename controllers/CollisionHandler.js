@@ -121,15 +121,40 @@ class CollisionHandler {
                         this._lastLandedState[otherBody.label] = !!rocketModel.isLanded;
                     } else {
                         // Gérer une collision normale (pas un atterrissage en douceur).
+                        // Cette section est atteinte si isRocketLanded retourne false (soit c'est un crash, soit un contact non-atterrissage).
+                        // Si c'est un crash, rocketModel.isDestroyed sera déjà true à cause de la logique dans isRocketLanded.
                         const impactDamage = impactVelocity * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
 
                         if (otherBody.label !== 'rocket' && impactVelocity > COLLISION_THRESHOLD) {
-                            // Collision significative, appliquer des dégâts.
-                            if (!rocketModel.isDestroyed) {
-                                rocketModel.landedOn = otherBody.label; // Même en cas de crash, on note le contact.
-                                rocketModel.applyDamage(impactDamage);
-                                this.playCollisionSound(impactVelocity);
-                                console.log(`Collision IMPORTANTE avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Dégâts=${impactDamage.toFixed(2)}`);
+                            // Collision significative.
+                            if (!rocketModel.isDestroyed) { // Ce bloc ne sera PAS atteint si isRocketLanded a déjà détruit la fusée.
+                                rocketModel.landedOn = otherBody.label;
+                                console.log(`[CollisionHandler] Avant applyDamage (collision non-fatale). rocketModel.isDestroyed: ${rocketModel.isDestroyed}, impactDamage: ${impactDamage.toFixed(2)}`);
+                                const wasJustDestroyedByNonFatal = rocketModel.applyDamage(impactDamage);
+                                console.log(`[CollisionHandler] Après applyDamage (collision non-fatale). wasJustDestroyed: ${wasJustDestroyedByNonFatal}, rocketModel.isDestroyed: ${rocketModel.isDestroyed}`);
+                                
+                                this.playCollisionSound(impactVelocity); 
+                                console.log(`Collision IMPORTANTE (non-fatale) avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Dégâts=${impactDamage.toFixed(2)}`);
+
+                                if (wasJustDestroyedByNonFatal) { 
+                                    console.log('[CollisionHandler] Condition wasJustDestroyedByNonFatal est VRAIE (collision devenue fatale ici).');
+                                    if (this.physicsController && this.physicsController.eventBus) {
+                                        console.log('[CollisionHandler] Publishing ROCKET.DESTROYED event (collision devenue fatale).');
+                                        this.physicsController.eventBus.publish(window.EVENTS.ROCKET.DESTROYED, {
+                                            position: { ...rocketModel.position },
+                                            velocity: { ...rocketModel.velocity },
+                                            impactVelocity: impactVelocity,
+                                            destroyedOn: otherBody.label
+                                        });
+                                    } else {
+                                        console.warn('[CollisionHandler] eventBus non disponible, impossible de publier ROCKET.DESTROYED.');
+                                    }
+                                } else {
+                                    console.log('[CollisionHandler] Condition wasJustDestroyedByNonFatal est FAUSSE.');
+                                }
+                            } else {
+                                // Ce log est celui que vous voyez : la fusée a été détruite par isRocketLanded.
+                                console.log(`[CollisionHandler] Collision avec ${otherBody.label} mais fusée déjà détruite (probablement par isRocketLanded). Pas de dégâts supplémentaires ni d'événement depuis collisionStart.`);
                             }
                         } else if (otherBody.label !== 'rocket') {
                             // Collision légère, pas de dégâts.
@@ -221,9 +246,12 @@ class CollisionHandler {
      * @param {number} impactVelocity - La vélocité de l'impact.
      */
     playCollisionSound(impactVelocity) {
-        if (this.physicsController.rocketModel && this.physicsController.rocketModel.isDestroyed) {
-            return; // Ne pas jouer de son si la fusée est déjà détruite.
-        }
+        // Modifié : Jouer le son même si la fusée est détruite, car cela peut être le son de destruction.
+        // La logique de quel son jouer (collision vs destruction) pourrait être affinée.
+        // if (this.physicsController.rocketModel && this.physicsController.rocketModel.isDestroyed) {
+        //     return; // Ne pas jouer de son si la fusée est déjà détruite.
+        // }
+        console.log(`[CollisionHandler.playCollisionSound] Tentative de lecture du son pour impactVelocity: ${impactVelocity.toFixed(2)}. rocketModel.isDestroyed: ${this.physicsController.rocketModel ? this.physicsController.rocketModel.isDestroyed : 'N/A'}`);
         try {
             const collisionSound = new Audio('assets/sound/collision.mp3');
             const maxVolume = 1.0;
@@ -338,11 +366,37 @@ class CollisionHandler {
                 rocketModel.crashedOn = otherBody.label;
                 rocketModel.landedOn = otherBody.label; // Indique le contact, même si c'est un crash.
                 rocketModel.attachedTo = otherBody.label; // Similaire à landedOn pour la logique de suivi.
-                rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1); // Appliquer des dégâts fatals.
-                this.playCollisionSound(50); // Jouer un son de gros impact (valeur de vélocité arbitraire élevée).
                 
-                // Déclencher un événement global pour une explosion de particules en cas de crash.
+                // Appliquer des dégâts fatals SI la fusée n'est pas déjà détruite.
+                let wasJustDestroyedByCrash = false;
+                if (!rocketModel.isDestroyed) {
+                    console.log(`[CollisionHandler.isRocketLanded] Crash détecté. Application de dégâts fatals.`);
+                    wasJustDestroyedByCrash = rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1); 
+                    console.log(`[CollisionHandler.isRocketLanded] Après applyDamage (crash). wasJustDestroyedByCrash: ${wasJustDestroyedByCrash}, rocketModel.isDestroyed: ${rocketModel.isDestroyed}`);
+                } else {
+                    console.log(`[CollisionHandler.isRocketLanded] Crash détecté, mais la fusée était déjà détruite avant cet appel à applyDamage.`);
+                }
+                
+                this.playCollisionSound(50); // Jouer un son de gros impact (valeur de vélocité arbitraire élevée).
+
+                // Publier l'événement ROCKET.DESTROYED si la fusée vient d'être détruite par ce crash.
+                if (wasJustDestroyedByCrash) {
+                    console.log('[CollisionHandler.isRocketLanded] Fusée vient d\'être détruite par crash. Publication de ROCKET.DESTROYED via EventBus.');
+                    if (this.physicsController && this.physicsController.eventBus && window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.DESTROYED) {
+                        this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
+                            position: { x: rocketBody.position.x, y: rocketBody.position.y }, // Utiliser la position du corps physique au moment du crash
+                            velocity: { ...rocketBody.velocity }, // Utiliser la vélocité du corps physique
+                            impactVelocity: speed, 
+                            destroyedOn: otherBody.label
+                        });
+                    } else {
+                        console.warn('[CollisionHandler.isRocketLanded] eventBus ou EVENTS.ROCKET.DESTROYED non disponible, impossible de publier l\'événement.');
+                    }
+                }
+                
+                // L'ancien CustomEvent ROCKET_CRASH_EXPLOSION. Peut être redondant si EventBus fonctionne.
                 if (typeof window !== 'undefined' && window.dispatchEvent) {
+                    console.log('[CollisionHandler.isRocketLanded] Dispatching native CustomEvent ROCKET_CRASH_EXPLOSION.');
                     window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
                         detail: {
                             x: rocketBody.position.x,
