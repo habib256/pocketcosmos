@@ -30,6 +30,8 @@ class EventBus {
          * @private
          * @type {Map<string, Set<Function>>}
          * Stocke les callbacks wildcard pour les patterns (ex: 'PHYSICS.*').
+         * La clé est le pattern de l'événement (string).
+         * La valeur est un Set de fonctions callback associées à ce pattern.
          */
         this.wildcardListeners = new Map();
     }
@@ -39,6 +41,7 @@ class EventBus {
      * Supporte les patterns wildcard (ex: 'PHYSICS.*').
      *
      * @param {string} eventType - Le nom unique du type d'événement auquel s'abonner (ex: 'INPUT_KEYDOWN', 'ROCKET_CRASHED').
+     *                           Peut inclure un caractère wildcard '*' (ex: 'PHYSICS.*') pour s'abonner à plusieurs événements correspondants.
      * @param {Function} callback - La fonction à exécuter lorsque l'événement est émis. Cette fonction recevra les données passées à `emit`.
      * @returns {Function} Une fonction qui, lorsqu'elle est appelée, désabonne le callback de cet événement. Utile pour nettoyer les abonnements.
      * @example
@@ -63,21 +66,34 @@ class EventBus {
         return () => this.unsubscribe(eventType, callback);
     }
     
-    // Alias pour subscribe, compatible avec la syntaxe utilisée dans PhysicsController
+    /**
+     * Alias pour {@link EventBus#subscribe}. Préférer l'utilisation de `subscribe` pour une meilleure clarté,
+     * sauf si cet alias est requis pour la compatibilité avec d'autres modules.
+     * @param {string} eventType - Le nom du type d'événement.
+     * @param {Function} callback - La fonction callback.
+     * @returns {Function} Une fonction de désabonnement.
+     */
     on(eventType, callback) {
         return this.subscribe(eventType, callback);
     }
     
     /**
-     * Abonne un callback pour être exécuté une seule fois.
+     * Abonne un callback pour être exécuté une seule fois lors de la prochaine émission de l'événement spécifié.
+     * Le callback est automatiquement désabonné après sa première exécution.
+     *
+     * @param {string} eventType - Le nom du type d'événement auquel s'abonner.
+     * @param {Function} callback - La fonction à exécuter une seule fois. Elle recevra les données passées à `emit`.
+     * @returns {Function} Une fonction de désabonnement qui peut être appelée pour annuler l'abonnement avant
+     *                     que l'événement ne soit émis ou que le callback ne soit exécuté.
      */
     once(eventType, callback) {
         const wrapper = (data) => {
             callback(data);
-            unsubscribe();
+            unsubscribe(); // Se désabonne après l'exécution
         };
+        // Stocke la fonction de désabonnement retournée par subscribe
         const unsubscribe = this.subscribe(eventType, wrapper);
-        return unsubscribe;
+        return unsubscribe; // Retourne cette fonction de désabonnement pour permettre une annulation manuelle si besoin.
     }
     
     /**
@@ -86,7 +102,7 @@ class EventBus {
      * C'est la méthode appelée par la fonction de désabonnement retournée par `subscribe`.
      * Il est généralement préférable d'utiliser la fonction retournée par `subscribe` pour se désabonner.
      *
-     * @param {string} eventType - Le nom du type d'événement duquel se désabonner.
+     * @param {string} eventType - Le nom du type d'événement duquel se désabonner. Peut inclure un wildcard '*' si l'abonnement initial l'utilisait.
      * @param {Function} callback - La fonction callback exacte à supprimer de l'abonnement.
      */
     unsubscribe(eventType, callback) {
@@ -94,7 +110,7 @@ class EventBus {
             if (this.wildcardListeners.has(eventType)) {
                 const set = this.wildcardListeners.get(eventType);
                 set.delete(callback);
-                if (set.size === 0) this.wildcardListeners.delete(eventType);
+                if (set.size === 0) this.wildcardListeners.delete(eventType); // Nettoie la map si plus d'auditeurs pour ce pattern.
             }
         } else if (this.listeners.has(eventType)) {
             const listenersForEvent = this.listeners.get(eventType);
@@ -102,12 +118,17 @@ class EventBus {
 
             // Optionnel: si plus aucun auditeur pour ce type, supprimer l'entrée de la map pour économiser de la mémoire.
             if (listenersForEvent.size === 0) {
-                this.listeners.delete(eventType);
+                this.listeners.delete(eventType); // Nettoie la map si plus d'auditeurs pour ce type d'événement.
             }
         }
     }
     
-    // Alias pour unsubscribe, compatible avec la syntaxe utilisée dans PhysicsController
+    /**
+     * Alias pour {@link EventBus#unsubscribe}. Préférer l'utilisation de `unsubscribe` pour une meilleure clarté,
+     * sauf si cet alias est requis pour la compatibilité avec d'autres modules.
+     * @param {string} eventType - Le nom du type d'événement.
+     * @param {Function} callback - La fonction callback à désabonner.
+     */
     off(eventType, callback) {
         this.unsubscribe(eventType, callback);
     }
@@ -125,6 +146,8 @@ class EventBus {
         let notified = false;
         // Écouteurs exacts
         if (this.listeners.has(eventType)) {
+            // Itérer sur une copie du Set pour éviter les problèmes si un callback
+            // (dés)abonne un autre listener pendant l'itération.
             const toNotify = [...this.listeners.get(eventType)];
             for (const cb of toNotify) {
                 try { cb(data); notified = true; }
@@ -134,9 +157,12 @@ class EventBus {
         // Écouteurs wildcard
         for (const [pattern, cbs] of this.wildcardListeners) {
             // transformer pattern en regex
+            // Échapper les caractères spéciaux du pattern pour les utiliser dans une RegExp.
+            // Remplacer '*' par '.*' pour la correspondance wildcard de type glob.
             const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-            const regex = new RegExp(`^${escaped}$`);
+            const regex = new RegExp(`^${escaped}$`); // Crée une RegExp pour tester si l'eventType correspond au pattern.
             if (regex.test(eventType)) {
+                 // Itérer sur une copie du Set pour éviter les problèmes si un callback modifie la collection.
                 for (const cb of [...cbs]) {
                     try { cb(data); notified = true; }
                     catch(err) { console.error(`Erreur EventBus [${pattern} -> ${eventType}]:`, err); }
@@ -156,5 +182,6 @@ class EventBus {
      */
     clear() {
         this.listeners.clear();
+        this.wildcardListeners.clear(); // S'assurer de vider aussi les listeners wildcard.
     }
 } 

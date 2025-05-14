@@ -109,6 +109,15 @@ class RocketCargo {
     getCargoList() {
         return [...this.cargoItems];
     }
+
+    /**
+     * Vide entièrement la cargaison de la fusée.
+     */
+    clearCargo() {
+        this.cargoItems = [];
+        // Optionnel: log pour confirmer que l'action a eu lieu.
+        // console.log("%c[RocketCargo] Cargaison vidée.", 'color: yellow;');
+    }
 }
 
 // export default RocketCargo; // Supprimé car le script est chargé globalement 

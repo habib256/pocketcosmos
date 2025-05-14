@@ -18,7 +18,6 @@ class BodyFactory {
         this.Attractors = Attractors;
         this.ROCKET = ROCKET;
         this.PHYSICS = PHYSICS;
-        // Le commentaire redondant sur l'injection des catégories de collision a été supprimé.
     }
 
     /**

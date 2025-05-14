@@ -94,6 +94,19 @@ class RenderingController {
             })
         );
 
+        // Abonnement no-op pour éviter l'avertissement "aucun auditeur" pour system:canvasResized
+        // TODO: Vérifier qui émet cet événement et si un traitement réel est nécessaire.
+        if (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.SYSTEM.CANVAS_RESIZED, () => {
+                    // no-op pour l'instant, car handleResize est déjà appelé sur window.resize
+                    // console.log("EventBus: system:canvasResized reçu, mais géré par window.addEventListener('resize')");
+                })
+            );
+        } else {
+            console.warn("RenderingController: EVENTS.SYSTEM.CANVAS_RESIZED non disponible pour l'abonnement no-op.");
+        }
+
         // S'abonner directement aux événements de bascule du rendu
         if (window.EVENTS && window.EVENTS.RENDER) {
             window.controllerContainer.track(

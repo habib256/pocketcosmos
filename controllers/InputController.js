@@ -1,5 +1,37 @@
+/**
+ * @file Gère toutes les entrées utilisateur : clavier, souris, tactile et joystick.
+ * S'abonne aux événements du DOM et émet des événements sémantiques via l'EventBus
+ * pour découpler la gestion des entrées de la logique de jeu.
+ */
 class InputController {
-    // Définition de la constante de mappage des touches au niveau de la classe
+    /**
+     * Mappage par défaut des touches du clavier aux actions du jeu.
+     * Utilisé pour initialiser `this.keyMap` et pour la réinitialisation.
+     * @type {Object<string, string>}
+     * @property {string} ArrowUp - Action pour la flèche du haut.
+     * @property {string} KeyW - Action pour la touche W.
+     * @property {string} ArrowDown - Action pour la flèche du bas.
+     * @property {string} KeyS - Action pour la touche S.
+     * @property {string} ArrowLeft - Action pour la flèche de gauche.
+     * @property {string} KeyD - Action pour la touche D.
+     * @property {string} ArrowRight - Action pour la flèche de droite.
+     * @property {string} KeyA - Action pour la touche A.
+     * @property {string} Space - Action pour la barre d'espace.
+     * @property {string} Equal - Action pour la touche égal.
+     * @property {string} Minus - Action pour la touche moins.
+     * @property {string} KeyR - Action pour la touche R.
+     * @property {string} KeyC - Action pour la touche C.
+     * @property {string} KeyV - Action pour la touche V.
+     * @property {string} KeyG - Action pour la touche G.
+     * @property {string} KeyT - Action pour la touche T.
+     * @property {string} KeyI - Action pour la touche I.
+     * @property {string} KeyP - Action pour la touche P.
+     * @property {string} Escape - Action pour la touche Échap.
+     * @property {string} KeyM - Action pour la touche M.
+     * @property {string} KeyN - Action pour la touche N.
+     * @static
+     * @constant
+     */
     static DEFAULT_KEY_MAP = {
         // Fusée - Mouvement continu
         'ArrowUp': 'thrustForward',
@@ -32,23 +64,62 @@ class InputController {
         'KeyN': 'increaseThrustMultiplier', // Nouvelle touche pour augmenter
     };
 
+    /**
+     * Crée une instance de InputController.
+     * @param {EventBus} eventBus - L'instance de l'EventBus pour la communication entre modules.
+     */
     constructor(eventBus) {
         // Référence à l'EventBus
         this.eventBus = eventBus;
         
-        // État des actions clavier continues actives (pour éviter répétition de _START)
+        /**
+         * Ensemble des actions clavier continues actuellement actives.
+         * Utilisé pour éviter la répétition des événements _START lors d'un appui maintenu.
+         * @type {Set<string>}
+         * @private
+         */
         this.activeKeyActions = new Set();
-        // État du glisser pour la souris et le tactile
+        
+        /**
+         * Indique si un glissement avec la souris est en cours.
+         * @type {boolean}
+         * @private
+         */
         this.isMouseDragging = false;
+        
+        /**
+         * Indique si un glissement tactile est en cours.
+         * @type {boolean}
+         * @private
+         */
         this.isTouchDragging = false;
         
-        // État du joystick
+        /**
+         * Référence à l'objet Gamepad actuellement utilisé.
+         * Null si aucun gamepad n'est connecté ou actif.
+         * @type {?Gamepad}
+         * @private
+         */
         this.gamepad = null;
+        
+        /**
+         * État actuel des axes et boutons du gamepad.
+         * @type {{axes: number[], buttons: Array<{pressed: boolean, value: number}>}}
+         * @property {number[]} axes - Valeurs actuelles des axes du gamepad.
+         * @property {Array<{pressed: boolean, value: number}>} buttons - États actuels des boutons du gamepad.
+         * @private
+         */
         this.gamepadState = {
             axes: [],
             buttons: []
         };
-        // Mappage SÉMANTIQUE des boutons du joystick
+        /**
+         * Mappage sémantique des axes et boutons du joystick aux actions du jeu.
+         * @type {{axes: Object<number, string>, buttons: Object<number, string>}}
+         * @property {Object<number, string>} axes - Mappage des index d'axes aux noms d'actions.
+         * @property {Object<number, string>} buttons - Mappage des index de boutons aux noms d'actions.
+         * @private
+         */
         this.gamepadMap = {
             axes: { // Ces actions sont gérées par GameController via EVENTS.INPUT.JOYSTICK_*
                 0: 'rotate', 
@@ -74,20 +145,57 @@ class InputController {
                 // 15: 'rotateRight', // D-pad Right
             }
         };
+        /**
+         * Seuil de sensibilité pour les axes du joystick.
+         * Les valeurs d'axe inférieures (en valeur absolue) à ce seuil sont considérées comme neutres.
+         * @type {number}
+         * @private
+         */
         this.axisThreshold = 0.1; 
+        /**
+         * Stocke les valeurs des axes qui sont actuellement maintenus au-delà du seuil.
+         * @type {Object<number, number>}
+         * @private
+         */
         this.heldAxes = {}; 
         
-        // Initialiser this.keyMap avec une copie de DEFAULT_KEY_MAP
+        /**
+         * Mappage actuel des touches du clavier aux actions du jeu.
+         * Initialisé avec `DEFAULT_KEY_MAP` et peut être modifié dynamiquement.
+         * @type {Object<string, string>}
+         */
         this.keyMap = { ...InputController.DEFAULT_KEY_MAP };
         
         // Lier les gestionnaires pour pouvoir les désabonner
         this._boundKeyDown = this.handleKeyDown.bind(this);
         this._boundKeyUp = this.handleKeyUp.bind(this);
         this._boundWheel = this.handleWheel.bind(this);
-        this._mouseHandlers = {}; // Reste pour la structure, mais les handlers seront spécifiques
-        this._touchHandlers = {}; // Idem
+        
+        /**
+         * Stocke les gestionnaires d'événements de la souris pour un éventuel nettoyage.
+         * @type {Object<string, Function>}
+         * @private
+         */
+        this._mouseHandlers = {}; 
+        /**
+         * Stocke les gestionnaires d'événements tactiles pour un éventuel nettoyage.
+         * @type {Object<string, Function>}
+         * @private
+         */
+        this._touchHandlers = {}; 
+        /**
+         * Stocke les gestionnaires d'événements du gamepad pour un éventuel nettoyage.
+         * @type {Object<string, Function>}
+         * @private
+         */
         this._gamepadHandlers = {};
         
+        /**
+         * Drapeau indiquant si les événements du clavier ont déjà été initialisés.
+         * Empêche les initialisations multiples.
+         * @type {boolean}
+         * @private
+         */
         this._keyboardEventsInitialized = false; // Nouveau drapeau
         
         // Initialiser les événements du clavier, souris, tactile et joystick
@@ -97,22 +205,47 @@ class InputController {
         this.initGamepadEvents();
     }
     
-    initKeyboardEvents() {
-        if (this._keyboardEventsInitialized) { // Vérifier le drapeau
-            return;
+    /**
+     * Ajoute un écouteur d'événement à une cible et enregistre sa suppression
+     * via `window.controllerContainer.track` si disponible, pour faciliter le nettoyage.
+     * @private
+     * @param {EventTarget} target - La cible de l'événement (ex: window, document.body, un élément HTML).
+     * @param {string} type - Le type d'événement (ex: 'keydown', 'mousedown', 'touchstart').
+     * @param {Function} listener - La fonction à appeler lorsque l'événement se produit.
+     * @param {(Object|boolean)} [options={}] - Options pour l'écouteur d'événement (ex: { passive: false }).
+     */
+    _addTrackedEventListener(target, type, listener, options = {}) {
+        target.addEventListener(type, listener, options);
+        // Assure la suppression de l'écouteur lors du nettoyage du contrôleur
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(() => target.removeEventListener(type, listener, options));
+        } else {
+            console.warn('[InputController] window.controllerContainer.track non disponible. Le nettoyage des écouteurs pourrait être incomplet.');
         }
-        window.addEventListener('keydown', this._boundKeyDown);
-        window.controllerContainer.track(() => window.removeEventListener('keydown', this._boundKeyDown));
-        window.addEventListener('keyup', this._boundKeyUp);
-        window.controllerContainer.track(() => window.removeEventListener('keyup', this._boundKeyUp));
-        
-        window.addEventListener('wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
-        window.controllerContainer.track(() => window.removeEventListener('wheel', this._boundWheel));
-        
-        this._keyboardEventsInitialized = true; // Mettre le drapeau à true après l'initialisation
     }
     
-    // Méthode pour configurer les événements souris pour le glisser de la caméra
+    /**
+     * Initialise les écouteurs d'événements pour le clavier (keydown, keyup) et la molette de la souris (wheel).
+     * S'assure que l'initialisation n'a lieu qu'une seule fois grâce au drapeau `_keyboardEventsInitialized`.
+     */
+    initKeyboardEvents() {
+        if (this._keyboardEventsInitialized) { 
+            return;
+        }
+        this._addTrackedEventListener(window, 'keydown', this._boundKeyDown);
+        this._addTrackedEventListener(window, 'keyup', this._boundKeyUp);
+        this._addTrackedEventListener(window, 'wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
+        
+        this._keyboardEventsInitialized = true; 
+    }
+    
+    /**
+     * Initialise les écouteurs d'événements pour la souris (mousedown, mousemove, mouseup).
+     * Gère le glissement (drag) de la caméra et les clics sur les éléments de l'interface utilisateur (UI).
+     * @listens mousedown sur `window`
+     * @listens mousemove sur `window`
+     * @listens mouseup sur `window`
+     */
     initMouseEvents() {
         const mouseDownHandler = (e) => {
             // Permettre le drag uniquement avec le bouton gauche ou le bouton du milieu
@@ -123,8 +256,7 @@ class InputController {
             }
         };
         this._mouseHandlers.mousedown = mouseDownHandler;
-        window.addEventListener('mousedown', mouseDownHandler);
-        window.controllerContainer.track(() => window.removeEventListener('mousedown', mouseDownHandler));
+        this._addTrackedEventListener(window, 'mousedown', mouseDownHandler);
 
         const mouseMoveHandler = (e) => {
             if (this.isMouseDragging) {
@@ -133,8 +265,7 @@ class InputController {
             }
         };
         this._mouseHandlers.mousemove = mouseMoveHandler;
-        window.addEventListener('mousemove', mouseMoveHandler);
-        window.controllerContainer.track(() => window.removeEventListener('mousemove', mouseMoveHandler));
+        this._addTrackedEventListener(window, 'mousemove', mouseMoveHandler);
         
         const mouseUpHandler = (e) => {
             const wasDragging = this.isMouseDragging;
@@ -149,6 +280,7 @@ class InputController {
                 // Normalement, il est passé via GameSetupController -> GameController -> InputController.
                 // Pour l'instant, nous allons supposer qu'il est accessible via une référence globale
                 // ou qu'il sera injecté correctement. L'idéal serait une injection de dépendance.
+                // TODO: Remplacer window.uiView par une véritable injection de dépendance.
                 const uiView = window.uiView; // TEMPORAIRE: en attendant une meilleure injection
 
                 if (uiView && typeof uiView.getAssistedControlsButtonBounds === 'function') {
@@ -163,11 +295,18 @@ class InputController {
             }
         };
         this._mouseHandlers.mouseup = mouseUpHandler;
-        window.addEventListener('mouseup', mouseUpHandler); // Écouter sur window pour capturer même si la souris sort du canvas
-        window.controllerContainer.track(() => window.removeEventListener('mouseup', mouseUpHandler));
+        // Écouter sur window pour capturer même si la souris sort du canvas
+        this._addTrackedEventListener(window, 'mouseup', mouseUpHandler);
     }
     
-    // Méthode pour configurer les événements tactiles pour le glisser de la caméra
+    /**
+     * Initialise les écouteurs d'événements pour les interactions tactiles (touchstart, touchmove, touchend, touchcancel).
+     * Gère le glissement (drag) de la caméra sur les appareils tactiles.
+     * @listens touchstart sur `window`
+     * @listens touchmove sur `window`
+     * @listens touchend sur `window`
+     * @listens touchcancel sur `window`
+     */
     initTouchEvents() {
         const touchStartHandler = (event) => {
             if (event.touches.length === 1) { // Gérer le drag avec un seul doigt
@@ -178,8 +317,7 @@ class InputController {
             }
         };
         this._touchHandlers.touchstart = touchStartHandler;
-        window.addEventListener('touchstart', touchStartHandler, { passive: false });
-        window.controllerContainer.track(() => window.removeEventListener('touchstart', touchStartHandler));
+        this._addTrackedEventListener(window, 'touchstart', touchStartHandler, { passive: false });
 
         const touchMoveHandler = (event) => {
             if (this.isTouchDragging && event.touches.length === 1) {
@@ -189,8 +327,7 @@ class InputController {
             }
         };
         this._touchHandlers.touchmove = touchMoveHandler;
-        window.addEventListener('touchmove', touchMoveHandler, { passive: false });
-        window.controllerContainer.track(() => window.removeEventListener('touchmove', touchMoveHandler));
+        this._addTrackedEventListener(window, 'touchmove', touchMoveHandler, { passive: false });
 
         const touchEndHandler = (event) => {
             if (this.isTouchDragging) {
@@ -200,21 +337,24 @@ class InputController {
             }
         };
         this._touchHandlers.touchend = touchEndHandler;
-        window.addEventListener('touchend', touchEndHandler);
-        window.controllerContainer.track(() => window.removeEventListener('touchend', touchEndHandler));
-        window.addEventListener('touchcancel', touchEndHandler); // Gérer aussi touchcancel
-        window.controllerContainer.track(() => window.removeEventListener('touchcancel', touchEndHandler));
+        this._addTrackedEventListener(window, 'touchend', touchEndHandler);
+        this._addTrackedEventListener(window, 'touchcancel', touchEndHandler); // Gérer aussi touchcancel
     }
     
-    // Nouvelle méthode pour initialiser le support du joystick
+    /**
+     * Initialise la détection et la gestion des événements de manette de jeu (gamepad).
+     * S'abonne aux événements `gamepadconnected` et `gamepaddisconnected` de la fenêtre.
+     * Vérifie également les manettes déjà connectées au moment de l'initialisation.
+     * @listens gamepadconnected sur `window`
+     * @listens gamepaddisconnected sur `window`
+     */
     initGamepadEvents() {
         // Écouter les connexions futures
         const gpConnectHandler = (event) => {
             this.connectGamepad(event.gamepad);
         };
         this._gamepadHandlers.connected = gpConnectHandler;
-        window.addEventListener('gamepadconnected', gpConnectHandler);
-        window.controllerContainer.track(() => window.removeEventListener('gamepadconnected', gpConnectHandler));
+        this._addTrackedEventListener(window, 'gamepadconnected', gpConnectHandler);
 
         // Écouter les déconnexions futures
         const gpDisconnectHandler = (event) => {
@@ -223,8 +363,7 @@ class InputController {
             }
         };
         this._gamepadHandlers.disconnected = gpDisconnectHandler;
-        window.addEventListener('gamepaddisconnected', gpDisconnectHandler);
-        window.controllerContainer.track(() => window.removeEventListener('gamepaddisconnected', gpDisconnectHandler));
+        this._addTrackedEventListener(window, 'gamepaddisconnected', gpDisconnectHandler);
 
         // Vérifier immédiatement les gamepads déjà connectés
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -236,7 +375,12 @@ class InputController {
         }
     }
 
-    // Nouvelle méthode pour gérer la connexion (appelée par l'event ou la vérification initiale)
+    /**
+     * Gère la connexion d'une nouvelle manette de jeu.
+     * Stocke la référence à la manette et initialise son état.
+     * Émet un événement `EVENTS.INPUT.GAMEPAD_CONNECTED`.
+     * @param {Gamepad} gamepad - L'objet Gamepad fourni par l'API Web Gamepad.
+     */
     connectGamepad(gamepad) {
         if (this.gamepad) {
             return;
@@ -245,10 +389,21 @@ class InputController {
         this.gamepadState.axes = Array(this.gamepad.axes.length).fill(0);
         this.gamepadState.buttons = Array(this.gamepad.buttons.length).fill({ pressed: false, value: 0 });
         this.eventBus.emit(EVENTS.INPUT.GAMEPAD_CONNECTED, { id: this.gamepad.id });
+        /**
+         * Indique si le message "Aucun gamepad connecté" a déjà été loggué pour la session courante (ou depuis la dernière connexion).
+         * Utilisé pour éviter le spamming de la console.
+         * @type {boolean}
+         * @private
+         */
         this.noGamepadLogged = false;
     }
 
-    // Nouvelle méthode pour gérer la déconnexion
+    /**
+     * Gère la déconnexion d'une manette de jeu.
+     * Réinitialise l'état de la manette dans le contrôleur.
+     * Émet un événement `EVENTS.INPUT.GAMEPAD_DISCONNECTED`.
+     * @param {string} gamepadId - L'ID de la manette déconnectée, tel que fourni par l'API Gamepad.
+     */
     disconnectGamepad(gamepadId) {
         if (this.gamepad && this.gamepad.id === gamepadId) {
             const index = this.gamepad.index;
@@ -256,11 +411,18 @@ class InputController {
             this.gamepadState.axes.fill(0);
             this.gamepadState.buttons.fill({ pressed: false, value: 0 });
             this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: gamepadId });
-            this.noGamepadLogged = false;
+            this.noGamepadLogged = false; // Réinitialiser lors de la déconnexion
         }
     }
     
-    // Gérer les événements keydown
+    /**
+     * Gère les événements d'appui sur une touche du clavier (`keydown`).
+     * Identifie l'action associée à la touche et émet les événements appropriés
+     * via l'EventBus. Empêche le comportement par défaut du navigateur pour les touches de jeu.
+     * Pour les actions continues (ex: propulsion), un état est maintenu pour éviter la répétition
+     * des événements `_START`.
+     * @param {KeyboardEvent} event - L'objet événement keydown.
+     */
     handleKeyDown(event) {
         const actionName = this.keyMap[event.code] || this.keyMap[event.key];
         if (!actionName) return;
@@ -309,7 +471,13 @@ class InputController {
         }
     }
     
-    // Gérer les événements keyup
+    /**
+     * Gère les événements de relâchement d'une touche du clavier (`keyup`).
+     * Identifie l'action associée à la touche. Pour les actions continues (ex: propulsion),
+     * émet un événement `_STOP` via l'EventBus et met à jour `activeKeyActions`.
+     * Pour les actions "coup unique" (ex: pause, reset), émet l'événement correspondant directement.
+     * @param {KeyboardEvent} event - L'objet événement keyup.
+     */
     handleKeyUp(event) {
         const actionName = this.keyMap[event.code] || this.keyMap[event.key];
         if (!actionName) return;
@@ -373,7 +541,14 @@ class InputController {
         }
     }
     
-    // Mettre à jour l'état des entrées (joystick uniquement maintenant)
+    /**
+     * Met à jour l'état des entrées, principalement pour la manette de jeu (gamepad).
+     * Cette méthode doit être appelée à chaque frame de la boucle de jeu principale.
+     * Elle lit l'état actuel des axes et des boutons de la manette connectée,
+     * le compare avec l'état précédent stocké dans `this.gamepadState`,
+     * et émet des événements sémantiques via l'EventBus en conséquence.
+     * Gère les seuils pour les axes et la détection des appuis/relâchements de boutons.
+     */
     update() {
         if (!this.gamepad) {
             if (!this.noGamepadLogged) {
@@ -398,24 +573,25 @@ class InputController {
                 if (action === 'rotate') {
                     this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: axisValue });
                 } else if (action === 'zoomAxis') {
+                    // Pour le zoom via axe, on envoie une commande continue.
+                    // CameraController devra interpréter cette valeur.
                     this.eventBus.emit(EVENTS.INPUT.ZOOM_COMMAND, { value: axisValue });
                 }
-                // Conserver l'ancienne logique pour les autres types d'axes si nécessaire
-                // ou la supprimer si 'rotate' et 'zoomAxis' sont les seuls utilisés ici.
-                // Pour l'instant, on ne gère que rotate et zoomAxis pour les nouveaux événements sémantiques.
-
-                this.heldAxes[index] = axisValue; // Mettre à jour l'état maintenu
+                // Note: Aucune autre action d'axe n'est actuellement gérée pour l'émission d'événements directs ici.
+                this.heldAxes[index] = axisValue;
             } else if (Math.abs(lastAxisValue) > this.axisThreshold && Math.abs(axisValue) <= this.axisThreshold) {
-                // L'axe vient d'être relâché (était au-delà du seuil, maintenant en dessous)
+                // L'axe vient d'être relâché
                 if (action === 'rotate') {
-                    // Pour la rotation, un relâchement pourrait signifier arrêter la rotation (valeur 0)
-                    this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
+                    this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 }); // Arrêter la rotation
+                } else if (action === 'zoomAxis') {
+                    // Pour le zoom, un événement ZOOM_COMMAND avec valeur 0 peut être émis si nécessaire,
+                    // ou la logique consommatrice peut simplement arrêter le zoom en l'absence de nouvelles commandes.
+                    // Actuellement, on ne fait rien de spécial au relâchement de l'axe de zoom,
+                    // CameraController doit gérer l'absence de commande.
                 }
-                // Pour le zoom, l'événement ZOOM_COMMAND avec une valeur suffit, pas besoin d'événement de relâchement spécifique.
-                
-                delete this.heldAxes[index]; // Supprimer de l'état maintenu
+                delete this.heldAxes[index];
             }
-            this.gamepadState.axes[index] = axisValue; // Mettre à jour l'état
+            this.gamepadState.axes[index] = axisValue;
         });
 
 
@@ -437,11 +613,14 @@ class InputController {
                             // Note: 'boost' est un alias pour 'thrustForward' dans le keyMap actuel
                             // GameController/RocketController attend THRUST_FORWARD_START
                             this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_START);
-                            this.activeKeyActions.add('thrustForward'); // Simuler un état actif pour la logique dekeyup
+                            // Simule un état actif pour que la logique de "relâchement" du bouton fonctionne
+                            // de manière similaire à celle du clavier si d'autres systèmes en dépendent.
+                            // TODO: Envisager de découpler complètement la gestion d'état gamepad de activeKeyActions.
+                            this.activeKeyActions.add('thrustForward_gamepad_boost'); 
                             break;
                         case 'thrustBackward': // Bouton Y
                             this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_START);
-                            this.activeKeyActions.add('thrustBackward');
+                            this.activeKeyActions.add('thrustBackward_gamepad');
                             break;
                         case 'toggleTraces': // Bouton LB
                             this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
@@ -474,11 +653,11 @@ class InputController {
                     switch (action) {
                         case 'boost':
                             this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
-                            this.activeKeyActions.delete('thrustForward');
+                            this.activeKeyActions.delete('thrustForward_gamepad_boost');
                             break;
                         case 'thrustBackward':
                             this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
-                            this.activeKeyActions.delete('thrustBackward');
+                            this.activeKeyActions.delete('thrustBackward_gamepad');
                             break;
                         // Les autres actions sont des "toggles" ou des actions uniques, pas besoin de _STOP
                     }
@@ -489,9 +668,14 @@ class InputController {
         });
     }
     
-    // Gérer les événements de la molette souris
+    /**
+     * Gère les événements de la molette de la souris (`wheel`).
+     * Empêche le défilement par défaut de la page et émet des événements
+     * `EVENTS.CAMERA.ZOOM_IN` ou `EVENTS.CAMERA.ZOOM_OUT` en fonction de la direction du défilement.
+     * @param {WheelEvent} event - L'objet événement wheel.
+     */
     handleWheel(event) {
-        event.preventDefault(); // Empêcher le défilement de la page
+        event.preventDefault(); // Empêcher le défilement de la page et le zoom par défaut du navigateur
         if (event.deltaY < 0) { // Scroll vers le haut ou vers l'avant
             this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
         } else if (event.deltaY > 0) { // Scroll vers le bas ou vers l'arrière
@@ -499,20 +683,27 @@ class InputController {
         }
     }
     
-    // La méthode isKeyDown n'est plus pertinente car l'état est géré par activeKeyActions
-    // ou les événements START/STOP
-    // isKeyDown(keyCode) { ... } 
+    // Les méthodes isKeyDown et isActionActive ont été supprimées car leur logique
+    // est maintenant gérée par les événements _START/_STOP et l'état interne activeKeyActions
+    // ou directement par la logique de update() pour le gamepad.
     
-    // La méthode isActionActive n'est plus directement utilisable de la même manière
-    // isActionActive(action) { ... }
-    
-    // Configurer une nouvelle touche pour une action
+    /**
+     * Permet de reconfigurer dynamiquement une touche du clavier pour une action spécifique.
+     * Met à jour `this.keyMap` avec la nouvelle association.
+     * Émet un événement `EVENTS.INPUT.KEYMAP_CHANGED` pour informer les autres modules du changement.
+     * @param {string} key - Le code de la touche (attribut `event.code`, ex: 'KeyW', 'ArrowUp') ou la valeur de la touche (attribut `event.key`). Il est préférable d'utiliser `event.code` pour une indépendance de la disposition du clavier.
+     * @param {string} action - Le nom de l'action à associer à cette touche (doit correspondre aux actions gérées par `handleKeyDown`/`handleKeyUp`).
+     */
     mapKey(key, action) {
         this.keyMap[key] = action;
         this.eventBus.emit(EVENTS.INPUT.KEYMAP_CHANGED, { key, action });
     }
     
-    // Réinitialiser la configuration des touches
+    /**
+     * Réinitialise la configuration des touches du clavier à ses valeurs par défaut
+     * (définies dans `InputController.DEFAULT_KEY_MAP`).
+     * Émet un événement `EVENTS.INPUT.KEYMAP_RESET`.
+     */
     resetKeyMap() {
         this.keyMap = { ...InputController.DEFAULT_KEY_MAP };
         this.eventBus.emit(EVENTS.INPUT.KEYMAP_RESET, {});

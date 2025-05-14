@@ -1,4 +1,17 @@
+/**
+ * Gère la détection et la logique des collisions pour la fusée dans le moteur physique.
+ * S'occupe de déterminer les atterrissages, les crashs, et d'appliquer les dégâts.
+ */
 class CollisionHandler {
+    /**
+     * Crée une instance de CollisionHandler.
+     * @param {object} physicsController - Le contrôleur de physique, donnant accès au modèle de la fusée et au corps physique.
+     * @param {Matter.Engine} engine - L'instance du moteur physique Matter.js.
+     * @param {Matter.Events} Events - Le module Events de Matter.js pour s'abonner aux événements de collision.
+     * @param {Matter.Body} Body - Le module Body de Matter.js pour interagir avec les propriétés des corps physiques.
+     * @param {object} ROCKET - Les constantes de configuration de la fusée.
+     * @param {object} PHYSICS - Les constantes de configuration physique (seuils de collision, etc.).
+     */
     constructor(physicsController, engine, Events, Body, ROCKET, PHYSICS) {
         this.physicsController = physicsController; // Pour accéder à rocketModel, rocketBody, etc.
         this.engine = engine;
@@ -7,8 +20,11 @@ class CollisionHandler {
         this.ROCKET = ROCKET;
         this.PHYSICS = PHYSICS;
 
+        /** @type {boolean} - Indique si la détection des collisions est active. Initialisée à false et activée après un délai. */
         this.collisionsEnabled = false;
+        /** @type {number} - Timestamp de l'initialisation du gestionnaire de collision, utilisé pour le délai d'activation. */
         this.initTime = Date.now();
+        /** @type {Object.<string, boolean>} - Stocke le dernier état d'atterrissage connu pour chaque corps céleste (par leur label). */
         this._lastLandedState = {};
 
         // --- Ajout pour détection mission accomplie ---
@@ -45,17 +61,19 @@ class CollisionHandler {
         */
     }
 
+    /**
+     * Configure les écouteurs d'événements pour les collisions de Matter.js.
+     * Gère 'collisionStart', 'collisionActive', et 'collisionEnd'.
+     */
     setupCollisionEvents() {
-        // Variable locale pour stocker la référence au modèle de la fusée
         const rocketModel = this.physicsController.rocketModel;
 
         // Événement déclenché au début d'une collision
         this.Events.on(this.engine, 'collisionStart', (event) => {
-            // Vérifier si les collisions sont actives
+            // Vérifier si les collisions sont actives et si le délai d'initialisation est écoulé.
             if (!this.collisionsEnabled) {
-                // Vérifier si le délai d'initialisation est écoulé
                 if (Date.now() - this.initTime < this.PHYSICS.COLLISION_DELAY) {
-                    return; // Ignorer les collisions pendant le délai d'initialisation
+                    return; // Ignorer les collisions pendant le délai d'initialisation.
                 } else {
                     this.collisionsEnabled = true;
                     console.log("Collisions activées après le délai d'initialisation");
@@ -68,50 +86,53 @@ class CollisionHandler {
                 const pair = pairs[i];
                 const rocketBody = this.physicsController.rocketBody;
 
-                // Vérifier si la fusée est impliquée dans la collision
-                if (!pair.bodyA || !pair.bodyB || !rocketBody) continue; // Ignorer si un des corps ou la fusée n'existe pas
+                // S'assurer que les deux corps de la paire et le corps de la fusée existent.
+                if (!pair.bodyA || !pair.bodyB || !rocketBody) continue;
 
+                // Vérifier si la fusée est l'un des corps impliqués dans la collision.
                 if (pair.bodyA === rocketBody || pair.bodyB === rocketBody) {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
 
-                    if (!otherBody) continue; // Vérification supplémentaire
+                    if (!otherBody) continue; // Vérification supplémentaire pour l'autre corps.
 
-                    // Calculer la vitesse d'impact
+                    // Calculer la vitesse d'impact relative entre la fusée et l'autre corps.
                     const relVelX = rocketBody.velocity.x - (otherBody.isStatic ? 0 : otherBody.velocity.x);
                     const relVelY = rocketBody.velocity.y - (otherBody.isStatic ? 0 : otherBody.velocity.y);
                     const impactVelocity = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
-                    const COLLISION_THRESHOLD = 2.5; // m/s
+                    const COLLISION_THRESHOLD = 2.5; // m/s, seuil pour différencier un contact léger d'un impact notable.
 
-                    // Détecter un atterrissage en douceur (vitesse faible)
+                    // Tenter de détecter un atterrissage en utilisant la logique de `isRocketLanded`.
                     if (otherBody.label !== 'rocket' && this.isRocketLanded(rocketModel, otherBody)) {
                         rocketModel.isLanded = true;
-                        rocketModel.landedOn = otherBody.label; // Indiquer le corps sur lequel on a atterri
+                        rocketModel.landedOn = otherBody.label; // Enregistrer sur quel corps la fusée a atterri.
 
+                        // Ajuster l'angle de la fusée pour qu'elle soit perpendiculaire à la surface du corps.
                         const angleToBody = Math.atan2(
                             rocketModel.position.y - otherBody.position.y,
                             rocketModel.position.x - otherBody.position.x
                         );
                         const correctAngle = angleToBody + Math.PI/2;
                         rocketModel.angle = correctAngle;
-                        // La synchro est gérée par SynchronizationManager
-                        // this.physicsController.synchronizationManager.syncPhysicsWithModel(rocketModel); // Supprimé, géré ailleurs
+                        // La synchronisation de l'état physique (position, angle) est gérée par SynchronizationManager.
 
                         if (!this._lastLandedState[otherBody.label] && rocketModel.isLanded) {
                             console.log(`Atterrissage réussi sur ${otherBody.label}`);
                         }
                         this._lastLandedState[otherBody.label] = !!rocketModel.isLanded;
                     } else {
-                        // Collision normale
+                        // Gérer une collision normale (pas un atterrissage en douceur).
                         const impactDamage = impactVelocity * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
 
                         if (otherBody.label !== 'rocket' && impactVelocity > COLLISION_THRESHOLD) {
+                            // Collision significative, appliquer des dégâts.
                             if (!rocketModel.isDestroyed) {
-                                rocketModel.landedOn = otherBody.label;
+                                rocketModel.landedOn = otherBody.label; // Même en cas de crash, on note le contact.
                                 rocketModel.applyDamage(impactDamage);
                                 this.playCollisionSound(impactVelocity);
                                 console.log(`Collision IMPORTANTE avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Dégâts=${impactDamage.toFixed(2)}`);
                             }
                         } else if (otherBody.label !== 'rocket') {
+                            // Collision légère, pas de dégâts.
                             if (!rocketModel.isDestroyed) {
                                 console.log(`Collision avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Pas de dégâts`);
                             }
@@ -135,47 +156,35 @@ class CollisionHandler {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
 
                     if (otherBody.label !== 'rocket') {
+                        // Si la fusée n'est pas détruite, pas encore atterrie, mais que les conditions d'atterrissage sont remplies.
                         if (!rocketModel.isDestroyed && !rocketModel.isLanded && this.isRocketLanded(rocketModel, otherBody)) {
                             rocketModel.isLanded = true;
                             rocketModel.landedOn = otherBody.label;
                             console.log(`Fusée posée sur ${otherBody.label}`);
                             
-                            // Fixer explicitement la position et la vitesse à zéro
+                            // Mettre à jour le modèle de la fusée pour refléter l'atterrissage.
+                            // La vitesse et la vélocité angulaire sont mises à zéro dans le modèle.
                             rocketModel.setVelocity(0, 0);
                             rocketModel.setAngularVelocity(0);
-                            // Suppression du forçage direct des vitesses physiques ici
-                            // this.Body.setVelocity(rocketBody, { x: 0, y: 0 });
-                            // this.Body.setAngularVelocity(rocketBody, 0);
                             
-                            // Fixer l'angle perpendiculaire à la surface
+                            // Ajuster l'angle du modèle pour être perpendiculaire à la surface.
                             const angleToBody = Math.atan2(
                                 rocketModel.position.y - otherBody.position.y,
                                 rocketModel.position.x - otherBody.position.x
                             );
                             const correctAngle = angleToBody + Math.PI/2;
                             rocketModel.angle = correctAngle;
-                            // Suppression du forçage direct de l'angle physique ici
-                            // this.Body.setAngle(rocketBody, correctAngle);
                             
-                            // Calculer la position relative pour n'importe quel corps céleste
+                            // Mettre à jour la position relative de la fusée par rapport au corps sur lequel elle a atterri.
                             const cbModel = this.physicsController.celestialBodies.find(cb => cb.model.name === otherBody.label)?.model;
                             if (cbModel) {
                                 rocketModel.updateRelativePosition(cbModel);
                             }
                         }
 
-                        // Si la fusée est posée sur un corps, fixer sa position et orientation
-                        if (rocketModel.isLanded && rocketModel.landedOn === otherBody.label) {
-                            // Maintenir la vitesse à zéro pour éviter tout mouvement indésirable
-                            // La logique de stabilisation est maintenant centralisée dans SynchronizationManager
-                            // this.Body.setVelocity(rocketBody, { x: 0, y: 0 });
-                            // this.Body.setAngularVelocity(rocketBody, 0);
-
-                            // Déplacer cette logique dans SynchronizationManager pour les corps mobiles
-                            // if (otherBody.label !== 'Terre') { // Commenté/Supprimé car géré dans SyncManager
-                            //     this.physicsController.synchronizationManager.handleLandedOrAttachedRocket(rocketModel);
-                            // }
-                        }
+                        // Si la fusée est considérée comme atterrie sur ce corps,
+                        // SynchronizationManager s'occupera de maintenir sa position/orientation, surtout pour les corps mobiles.
+                        // Aucune action directe sur le corps physique ici pour éviter les conflits.
                     }
                 }
             }
@@ -192,49 +201,67 @@ class CollisionHandler {
 
                 if (pair.bodyA === rocketBody || pair.bodyB === rocketBody) {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
+                    // Si la fusée était atterrie sur cet 'otherBody' et que la collision se termine.
                     if ((otherBody.label !== 'rocket') && rocketModel.isLanded) {
                         if (this._lastLandedState[otherBody.label]) {
-                            console.log(`Décollage de ${otherBody.label} détecté`);
+                            console.log(`Décollage de ${otherBody.label} détecté (fin de contact)`);
                         }
                         this._lastLandedState[otherBody.label] = false;
-                        console.log(`CollisionEnd avec ${otherBody.label} alors que isLanded=${rocketModel.isLanded}. La confirmation du décollage est gérée par SynchronizationManager.`);
+                        // La logique de confirmation du décollage (passage de isLanded à false)
+                        // est gérée par SynchronizationManager, qui vérifie si la fusée s'éloigne activement.
+                        console.log(`CollisionEnd avec ${otherBody.label} alors que isLanded=${rocketModel.isLanded}. Confirmation du décollage via SynchronizationManager.`);
                     }
                 }
             }
         });
     }
 
+    /**
+     * Joue un son de collision, avec un volume ajusté en fonction de la vélocité de l'impact.
+     * @param {number} impactVelocity - La vélocité de l'impact.
+     */
     playCollisionSound(impactVelocity) {
         if (this.physicsController.rocketModel && this.physicsController.rocketModel.isDestroyed) {
-            return;
+            return; // Ne pas jouer de son si la fusée est déjà détruite.
         }
         try {
             const collisionSound = new Audio('assets/sound/collision.mp3');
             const maxVolume = 1.0;
             const minVolume = 0.3;
-            const volumeScale = Math.min((impactVelocity - 2.5) / 10, 1); // Normaliser entre 0 et 1
+            // Normaliser la vélocité d'impact pour le volume (ex: impacts légers moins forts).
+            const volumeScale = Math.min((impactVelocity - 2.5) / 10, 1); // Exemple de normalisation.
             collisionSound.volume = minVolume + volumeScale * (maxVolume - minVolume);
             collisionSound.play().catch(error => {
                 console.error("Erreur lors de la lecture du son de collision:", error);
             });
         } catch (error) {
-            console.error("Erreur lors de la lecture du fichier collision.mp3:", error);
+            console.error("Erreur lors de la création de l'objet Audio pour collision.mp3:", error);
         }
     }
 
-    // Note: otherBody ici peut être le corps physique ou un objet modèle simulé
-    // Logique d'atterrissage/crash basée sur vitesse, angle et rotation
+    /**
+     * Détermine si la fusée est considérée comme atterrie sur un autre corps.
+     * Cette fonction vérifie la proximité, la vitesse, l'angle d'atterrissage et la vitesse angulaire.
+     * Elle gère également la détection de crash si les conditions d'atterrissage ne sont pas respectées.
+     * @param {RocketModel} rocketModel - Le modèle de la fusée.
+     * @param {Matter.Body} otherBody - Le corps physique Matter.js avec lequel la collision est vérifiée.
+     * @returns {boolean} True si la fusée est considérée comme atterrie, false sinon (y compris en cas de crash).
+     */
     isRocketLanded(rocketModel, otherBody) {
         const rocketBody = this.physicsController.rocketBody;
+        // Vérifications initiales pour s'assurer que tous les objets nécessaires et leurs propriétés existent.
         if (!rocketBody || !otherBody || !otherBody.position || (otherBody.circleRadius === undefined && otherBody.radius === undefined) || !rocketModel) {
+            console.warn("[isRocketLanded] Vérification annulée: rocketBody, otherBody ou leurs propriétés sont indéfinis.", { rocketBody, otherBody, rocketModel });
             return false;
         }
 
+        // Si le modèle indique déjà un atterrissage sur ce corps, on considère que c'est toujours le cas.
+        // Cela évite des calculs redondants ou des changements d'état rapides.
         if (rocketModel.isLanded && rocketModel.landedOn === otherBody.label) {
             return true;
         }
 
-        // --- Calculs --- 
+        // --- Calculs géométriques et cinématiques ---
         const rocketX = rocketBody.position.x;
         const rocketY = rocketBody.position.y;
         const bodyX = otherBody.position.x;
@@ -242,63 +269,79 @@ class CollisionHandler {
         const dx = rocketX - bodyX;
         const dy = rocketY - bodyY;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const bodyRadius = otherBody.circleRadius ?? otherBody.radius;
-        if (bodyRadius === undefined) return false;
-        const rocketEffectiveRadius = this.ROCKET.HEIGHT / 2;
+        
+        const bodyRadius = otherBody.circleRadius ?? otherBody.radius; // Utilise circleRadius (Matter.js) ou radius (modèle)
+        if (bodyRadius === undefined) {
+            console.warn(`[isRocketLanded] Rayon de '${otherBody.label}' indéfini.`);
+            return false;
+        }
+        
+        const rocketEffectiveRadius = this.ROCKET.HEIGHT / 2; // Approximation du "rayon" de la fusée pour contact.
         const distanceToSurface = distance - bodyRadius - rocketEffectiveRadius;
-        const proximityThreshold = 15;
-        const isCloseToSurface = Math.abs(isNaN(distanceToSurface) ? 0 : distanceToSurface) < proximityThreshold;
+        const proximityThreshold = 15; // Pixels. Seuil de proximité pour considérer un contact potentiel.
+        const isCloseToSurface = Math.abs(isNaN(distanceToSurface) ? Infinity : distanceToSurface) < proximityThreshold;
+
 
         const velocity = rocketBody.velocity;
         const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
         const angularVelocity = Math.abs(rocketBody.angularVelocity);
 
-        // Calcul de l'angle par rapport à la surface
-        const surfaceAngle = Math.atan2(dy, dx);
-        let rocketOrientation = rocketBody.angle;
+        // Calcul de l'angle d'orientation de la fusée par rapport à la normale à la surface du corps céleste.
+        const surfaceAngle = Math.atan2(dy, dx); // Angle du vecteur allant du centre du corps vers la fusée.
+        let rocketOrientation = rocketBody.angle; // Angle actuel de la fusée.
+        // Normaliser l'orientation de la fusée entre -PI et PI.
         while (rocketOrientation <= -Math.PI) rocketOrientation += 2 * Math.PI;
         while (rocketOrientation > Math.PI) rocketOrientation -= 2 * Math.PI;
+        
+        // L'orientation correcte pour un atterrissage est perpendiculaire au rayon (tangente + PI/2).
         let correctOrientation = surfaceAngle + Math.PI / 2;
+        // Normaliser l'orientation correcte entre -PI et PI.
         while (correctOrientation <= -Math.PI) correctOrientation += 2 * Math.PI;
         while (correctOrientation > Math.PI) correctOrientation -= 2 * Math.PI;
+        
+        // Différence absolue entre l'angle de la fusée et l'angle idéal d'atterrissage.
         let angleDiff = Math.abs(rocketOrientation - correctOrientation);
-        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff; // Assurer que la différence est le plus petit angle.
         const angleDiffDeg = angleDiff * (180 / Math.PI);
 
-        // Conversion des seuils d'angle en radians pour comparaison
+        // Conversion des seuils d'angle (définis en degrés dans les constantes) en radians pour comparaison.
         const landingAngleThresholdRad = this.PHYSICS.LANDING_MAX_ANGLE_DEG * (Math.PI / 180);
         const crashAngleThresholdRad = this.PHYSICS.CRASH_ANGLE_DEG * (Math.PI / 180);
 
-        // --- Log de débogage --- 
+        // --- Log de débogage conditionnel --- 
         if (isCloseToSurface && !rocketModel.isDestroyed) {
+            // Ce log s'active uniquement si la fusée est proche de la surface et non détruite,
+            // pour aider à diagnostiquer les problèmes d'atterrissage/crash.
             console.log(`isRocketLanded Check (${otherBody.label}): ` +
-                        `Close=${isCloseToSurface}, Speed=${speed.toFixed(2)}, ` +
-                        `Angle=${angleDiffDeg.toFixed(1)}°, AngVel=${angularVelocity.toFixed(3)}`);
+                        `Close=${isCloseToSurface}, DistToSurf=${distanceToSurface.toFixed(2)}, Speed=${speed.toFixed(2)}, ` +
+                        `AngleDiff=${angleDiffDeg.toFixed(1)}°, AngVel=${angularVelocity.toFixed(3)}`);
         }
 
-        // --- Logique de décision --- 
+        // --- Logique de décision : CRASH ou ATTERRISSAGE --- 
+        // Un crash ne peut se produire que si les collisions sont activées (après le délai initial).
         const canCrash = this.collisionsEnabled;
 
-        // 1. Vérifier les conditions de CRASH (si proche et collisions activées)
+        // 1. Vérifier les conditions de CRASH (si proche de la surface et collisions activées)
         if (isCloseToSurface && canCrash && !rocketModel.isDestroyed) {
             let crashReason = null;
             if (speed >= this.PHYSICS.CRASH_SPEED_THRESHOLD) {
-                crashReason = `Vitesse trop élevée (>= ${this.PHYSICS.CRASH_SPEED_THRESHOLD})`;
+                crashReason = `Vitesse trop élevée (actuelle: ${speed.toFixed(2)} m/s, max: ${this.PHYSICS.CRASH_SPEED_THRESHOLD} m/s)`;
             } else if (angleDiff > crashAngleThresholdRad) {
-                crashReason = `Angle trop élevé (> ${this.PHYSICS.CRASH_ANGLE_DEG}°)`;
+                crashReason = `Angle d'atterrissage incorrect (actuel: ${angleDiffDeg.toFixed(1)}°, max: ${this.PHYSICS.CRASH_ANGLE_DEG}°)`;
             } else if (angularVelocity > this.PHYSICS.CRASH_ANGULAR_VELOCITY) {
-                crashReason = `Rotation trop rapide (> ${this.PHYSICS.CRASH_ANGULAR_VELOCITY} rad/s)`;
+                crashReason = `Vitesse angulaire trop élevée (actuelle: ${angularVelocity.toFixed(3)} rad/s, max: ${this.PHYSICS.CRASH_ANGULAR_VELOCITY} rad/s)`;
             }
 
             if (crashReason) {
                 console.error(`CRASH DÉTECTÉ sur ${otherBody.label}! Cause: ${crashReason}`);
                 console.log(`   Détails - Vitesse: ${speed.toFixed(2)}, Angle: ${angleDiffDeg.toFixed(1)}°, Rotation: ${angularVelocity.toFixed(3)}`);
                 rocketModel.crashedOn = otherBody.label;
-                rocketModel.landedOn = otherBody.label;
-                rocketModel.attachedTo = otherBody.label;
-                rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1);
-                this.playCollisionSound(50); // Son de gros impact
-                // Déclencher l'explosion de particules
+                rocketModel.landedOn = otherBody.label; // Indique le contact, même si c'est un crash.
+                rocketModel.attachedTo = otherBody.label; // Similaire à landedOn pour la logique de suivi.
+                rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1); // Appliquer des dégâts fatals.
+                this.playCollisionSound(50); // Jouer un son de gros impact (valeur de vélocité arbitraire élevée).
+                
+                // Déclencher un événement global pour une explosion de particules en cas de crash.
                 if (typeof window !== 'undefined' && window.dispatchEvent) {
                     window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
                         detail: {
@@ -307,37 +350,39 @@ class CollisionHandler {
                         }
                     }));
                 }
-                // --- Enfoncer la fusée dans la planète de 40 pixels ---
-                if (otherBody.position && (otherBody.circleRadius || otherBody.radius)) {
-                    const bodyRadius = otherBody.circleRadius ?? otherBody.radius;
-                    const dx = rocketBody.position.x - otherBody.position.x;
-                    const dy = rocketBody.position.y - otherBody.position.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-                    const newDist = bodyRadius + (this.ROCKET.HEIGHT / 2) - 40; // 40 px plus près du centre
-                    rocketModel.position.x = otherBody.position.x + dx / dist * newDist;
-                    rocketModel.position.y = otherBody.position.y + dy / dist * newDist;
-                    // Synchroniser le corps physique si besoin
+                // Simuler l'enfoncement de la fusée dans le sol pour un effet visuel de crash.
+                if (otherBody.position && bodyRadius !== undefined) {
+                    const CRASH_SINK_DEPTH = 40; // Profondeur d'enfoncement en pixels.
+                    const directionX = dx / distance || 0; // Vecteur direction normalisé.
+                    const directionY = dy / distance || 0;
+                    // Nouvelle position : sur la surface moins la moitié de la hauteur de la fusée, plus la profondeur d'enfoncement.
+                    const newDist = bodyRadius + (this.ROCKET.HEIGHT / 2) - CRASH_SINK_DEPTH;
+                    
+                    rocketModel.position.x = otherBody.position.x + directionX * newDist;
+                    rocketModel.position.y = otherBody.position.y + directionY * newDist;
+                    
+                    // Synchroniser la position du corps physique avec le modèle.
                     if (this.Body && rocketBody) {
                         this.Body.setPosition(rocketBody, { x: rocketModel.position.x, y: rocketModel.position.y });
                     }
                 }
-                return false; // CRASH
+                return false; // CRASH a eu lieu, donc pas un atterrissage réussi.
             }
         }
 
-        // 2. Vérifier les conditions d'ATTERRISSAGE STABLE (si proche)
+        // 2. Vérifier les conditions d'ATTERRISSAGE STABLE (si proche de la surface)
         if (isCloseToSurface) {
             const isStableSpeed = speed < this.PHYSICS.LANDING_MAX_SPEED;
             const isStableAngle = angleDiff <= landingAngleThresholdRad;
             const isStableAngularVelocity = angularVelocity <= this.PHYSICS.LANDING_MAX_ANGULAR_VELOCITY;
 
             if (isStableSpeed && isStableAngle && isStableAngularVelocity) {
-                 // console.log(`Conditions d'atterrissage stables remplies`);
-                return true; // ATTERRISSAGE
+                // Toutes les conditions pour un atterrissage en douceur sont remplies.
+                return true; // ATTERRISSAGE réussi.
             }
         }
 
-        // 3. Sinon (pas proche, ou proche mais ni crash ni stable)
-        return false; // PAS POSÉ
+        // 3. Si ni proche, ni crashé, ni atterri de manière stable : la fusée n'est pas considérée comme posée.
+        return false;
     }
 } 

@@ -6,56 +6,64 @@ class Mission {
 }
 
 /**
- * Classe MissionManager - Gestion des missions du jeu
+ * @typedef {object} MissionObjet
+ * @property {string} id - Identifiant unique de la mission.
+ * @property {string} from - Lieu de départ de la mission.
+ * @property {string} to - Lieu de destination de la mission.
+ * @property {Array<{type: string, quantity: number}>} requiredCargo - Liste des cargaisons requises pour la mission.
+ * @property {number} reward - Récompense pour l'accomplissement de la mission.
+ * @property {string} status - Statut actuel de la mission ("pending", "completed", "failed").
+ */
+
+/**
+ * Classe MissionManager - Gestion des missions du jeu.
+ * Orchestre la création, le suivi, la complétion et l'échec des missions.
  * @class
  */
 class MissionManager {
     /**
-     * Crée une instance de MissionManager
+     * Crée une instance de MissionManager.
      * @constructor
-     * @param {EventBus} eventBus - L'instance de l'EventBus pour la communication
+     * @param {EventBus} eventBus - L'instance de l'EventBus pour la communication inter-modules.
      */
     constructor(eventBus) {
         /**
+         * Instance de l'EventBus pour la communication.
          * @type {EventBus}
-         * Instance de l'EventBus
          */
         this.eventBus = eventBus;
 
         /**
-         * @type {Array<Mission>}
-         * Liste des missions actives
+         * Liste des missions actives et en attente.
+         * @type {Array<MissionObjet>}
          */
         this.missions = [];
 
-        // S'abonner aux événements de succès et d'échec de mission
         this.subscribeToEvents();
     }
 
     /**
-     * S'abonne aux événements pertinents de l'EventBus.
+     * S'abonne aux événements pertinents de l'EventBus, notamment pour gérer l'échec des missions.
      */
     subscribeToEvents() {
         if (!this.eventBus) {
             console.error("[MissionManager] EventBus non fourni au constructeur.");
             return;
         }
-        // this.eventBus.subscribe('MISSION_SUCCESS', (data) => this.completeMission(data)); // SUPPRIMÉ
         this.eventBus.subscribe(EVENTS.MISSION.FAILED, data => this.failMission(data));
     }
 
     /**
-     * Crée une nouvelle mission
-     * @param {string} from - Planète de départ
-     * @param {string} to - Planète de destination
-     * @param {Array<{type: string, quantity: number}>} requiredCargo - Liste des cargaisons requises
-     * @param {number} reward - Récompense en crédits
-     * @returns {object} - La mission créée
+     * Crée une nouvelle mission et l'ajoute à la liste des missions.
+     * @param {string} from - Planète ou lieu de départ de la mission.
+     * @param {string} to - Planète ou lieu de destination de la mission.
+     * @param {Array<{type: string, quantity: number}>} requiredCargo - Tableau d'objets décrivant les types et quantités de cargaison requis.
+     * @param {number} reward - Récompense numérique (par exemple, crédits) offerte pour la complétion de la mission.
+     * @returns {MissionObjet|null} L'objet mission créé, ou null si la validation de `requiredCargo` échoue.
      */
     createMission(from, to, requiredCargo, reward) {
-        // Validation simple de requiredCargo
-        if (!Array.isArray(requiredCargo) || requiredCargo.length === 0 || requiredCargo.some(item => !item.type || !item.quantity)) {
-            console.error("[MissionManager] Tentative de création de mission avec requiredCargo invalide.", requiredCargo);
+        if (!Array.isArray(requiredCargo) || requiredCargo.length === 0 || requiredCargo.some(item => !item.type || typeof item.quantity !== 'number' || item.quantity <= 0)) {
+            console.error("[MissionManager] Tentative de création de mission avec requiredCargo invalide (doit être un tableau non vide avec type et quantité positive).", requiredCargo);
             return null;
         }
         
@@ -63,76 +71,68 @@ class MissionManager {
             id: `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             from,
             to,
-            requiredCargo, // Utiliser le tableau directement
+            requiredCargo,
             reward,
-            status: "pending" // Suppression de deliveredQuantity
+            status: "pending"
         };
         this.missions.push(mission);
-        const cargoString = requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
+        // const cargoString = requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', '); // Variable non utilisée
         return mission;
     }
 
     /**
-     * Vérifie si une mission est complétée. 
-     * La complétion nécessite que TOUS les items requis soient présents à destination.
-     * La livraison est désormais tout ou rien.
-     * @param {RocketCargo} rocketCargo - Cargo de la fusée
-     * @param {string} currentLocation - Position actuelle de la fusée
-     * @returns {Array<object>} - Liste des missions complétées
+     * Vérifie si des missions en attente peuvent être complétées en fonction du cargo de la fusée et de sa localisation actuelle.
+     * La complétion d'une mission est "tout ou rien" : tous les items requis doivent être présents.
+     * Si une mission est complétée, les cargaisons correspondantes sont retirées de la fusée.
+     * @param {RocketCargo} rocketCargo - L'instance du gestionnaire de cargo de la fusée.
+     * @param {string} currentLocation - Le nom de la localisation actuelle de la fusée (planète, station, etc.).
+     * @returns {Array<MissionObjet>} Une liste des missions qui ont été complétées lors de cet appel. Peut être vide.
      */
     checkMissionCompletion(rocketCargo, currentLocation) {
         const completedMissions = [];
-        // const missionsToUpdate = []; // Plus nécessaire sans livraison partielle
 
         for (const mission of this.missions) {
             if (mission.status !== "pending") continue;
 
-            // Vérifier si la destination est atteinte
             if (mission.to === currentLocation) {
                 let canComplete = true;
                 const cargoList = rocketCargo.getCargoList();
 
-                // Vérifier si TOUS les items requis sont présents en quantité suffisante
                 for (const requiredItem of mission.requiredCargo) {
                     const cargoItem = cargoList.find(item => item.type === requiredItem.type);
                     if (!cargoItem || cargoItem.quantity < requiredItem.quantity) {
                         canComplete = false;
-                        break; // Inutile de vérifier les autres items si un manque
+                        break; 
                     }
                 }
                 
-                // Si tous les items sont présents
                 if (canComplete) {
-                    // Retirer TOUS les cargos livrés de la fusée
                     mission.requiredCargo.forEach(requiredItem => {
-                         // La méthode removeCargo gère déjà les erreurs si l'item n'existe pas ou quantité insuffisante, mais on a déjà vérifié
                          rocketCargo.removeCargo(requiredItem.type, requiredItem.quantity); 
                     });
-
-                    const cargoString = mission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
+                    // const cargoString = mission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', '); // Variable non utilisée
                     
-                    // Marquer la mission comme complétée
                     mission.status = "completed";
                     completedMissions.push(mission);
                 } 
             }
-            // Suppression de la logique de rechargement (liée à deliveredQuantity et mission Fuel unique)
         }
 
         return completedMissions;
     }
 
     /**
-     * Retourne la liste des missions actives
-     * @returns {Array<object>}
+     * Retourne une liste de toutes les missions actuellement en attente ("pending").
+     * @returns {Array<MissionObjet>} Liste des missions actives.
      */
     getActiveMissions() {
         return this.missions.filter(mission => mission.status === "pending");
     }
 
     /**
-     * Retourne les détails de la première mission active (en attente).
-     * @returns {object|null} La première mission active, ou null si aucune.
+     * Retourne les détails de la première mission active (statut "pending") dans la liste.
+     * Utile pour afficher des informations sur la mission en cours.
+     * @returns {MissionObjet|null} La première mission active trouvée, ou null si aucune mission n'est en attente.
      */
     getCurrentMissionDetails() {
         const activeMissions = this.getActiveMissions();
@@ -140,83 +140,87 @@ class MissionManager {
     }
 
     /**
-     * Réinitialise les missions à leur état initial.
+     * Réinitialise la liste des missions à un état prédéfini.
+     * Vide les missions existantes et en crée de nouvelles (par exemple, pour démarrer une nouvelle partie).
      */
     resetMissions() {
-        this.missions = []; // Vider les missions actuelles
-        // Mission 1: Terre -> Lune, 10 Fuel
+        this.missions = []; 
+        // Exemples de missions initiales :
         this.createMission("Terre", "Lune", [{ type: "Fuel", quantity: 10 }], 100); 
-        // Mission 2: Lune -> Terre, 10 Wrench (Clés à molette)
         this.createMission("Lune", "Terre", [{ type: "Wrench", quantity: 10 }], 150);
-        // Mission 3: Terre -> Mars, 5 Fuel ET 5 Wrench
         this.createMission("Terre", "Mars", [{ type: "Fuel", quantity: 5 }, { type: "Wrench", quantity: 5 }], 300);
-        // Mission 4: Mars -> Terre, 10 Humains
         this.createMission("Mars", "Terre", [{ type: "🧑‍🚀", quantity: 10 }], 500); 
     }
 
     /**
-     * Gère l'échec d'une mission.
-     * @param {object} data - Données de l'événement contenant la mission.
+     * Gère l'échec d'une mission, généralement suite à un événement reçu via l'EventBus.
+     * Met à jour le statut de la mission à "failed".
+     * @param {{mission: MissionObjet}} data - Données de l'événement contenant l'objet mission concerné.
+     *                                     L'objet `data` doit avoir une propriété `mission` qui est une `MissionObjet`.
      */
     failMission(data) {
+        if (!data || !data.mission || !data.mission.id) {
+            console.error("[MissionManager] Tentative d'échec de mission avec des données invalides.", data);
+            return;
+        }
         const mission = this.missions.find(m => m.id === data.mission.id && m.status === 'pending');
         if (mission) {
             mission.status = "failed";
-            console.log(`❌ Mission échouée : ${mission.from} → ${mission.to}. Fusée détruite ou problème en route.`);
-            // TODO: Remettre la cargaison à zéro (nécessite une référence à RocketCargo)
+            console.log(`❌ Mission échouée : ${mission.from} → ${mission.to} (ID: ${mission.id}). Raison probable : fusée détruite ou problème en route.`);
+            // TODO: Remettre la cargaison à zéro si la mission échoue (nécessite une référence claire ou un événement pour RocketCargo).
             
-            // Optionnel: Publier un événement pour l'UI ou autre logique
-            this.eventBus.emit(EVENTS.MISSION.FAILED, { mission });
+            // Optionnel: Publier un événement pour notifier d'autres systèmes (UI, etc.) que la mission a spécifiquement échoué ici.
+            // Note : L'événement EVENTS.MISSION.FAILED est déjà émis par la source de l'échec (ex: CollisionHandler),
+            // cette ré-émission pourrait être redondante ou servir à une logique spécifique post-échec ici.
+            // Pour l'instant, on considère que l'abonnement initial à EVENTS.MISSION.FAILED suffit.
+            // this.eventBus.emit(EVENTS.MISSION.FAILED_PROCESSED, { mission }); // Exemple de nouvel événement si nécessaire
         }
     }
 
     /**
-     * Charge le cargo nécessaire pour la première mission active partant de la localisation donnée.
-     * @param {string} location - Le nom de la planète/lune où se trouve la fusée.
-     * @param {RocketModel} rocketModel - Le modèle de la fusée pour accéder à son cargo.
+     * Charge le cargo nécessaire dans la fusée pour la première mission active partant de la localisation spécifiée.
+     * Si une mission correspondante est trouvée, le cargo actuel de la fusée est d'abord vidé,
+     * puis les items requis pour la mission sont ajoutés.
+     * @param {string} location - Le nom de la planète/lune où se trouve la fusée et d'où la mission doit partir.
+     * @param {RocketModel} rocketModel - Le modèle de la fusée, utilisé pour accéder et modifier son cargo.
+     *                                  Doit posséder une propriété `cargo` de type `RocketCargo`.
      */
     loadCargoForCurrentLocationMission(location, rocketModel) {
-        if (!rocketModel) return;
+        if (!rocketModel || !rocketModel.cargo) {
+            // console.warn("[MissionManager] rocketModel ou rocketModel.cargo non fourni pour loadCargoForCurrentLocationMission."); // Commentaire interne utile au debug
+            return;
+        }
 
         const activeMissions = this.getActiveMissions();
         const nextMission = activeMissions.find(m => m.from === location);
 
+        // Vider le cargo actuel de la fusée avant tout, qu'une mission soit trouvée ou non pour ce lieu.
+        rocketModel.cargo.clearCargo(); // Supposant que RocketCargo a une méthode clearCargo() ou on réassigne cargoItems
+
         if (nextMission) {
-            // Assurez-vous que rocketModel.cargo est initialisé.
-            // Normalement, RocketModel devrait initialiser son propre cargo.
-            // Si ce n'est pas le cas, il faudrait le faire ici ou s'assurer qu'il l'est ailleurs.
-            if (!rocketModel.cargo) {
-                rocketModel.cargo = new RocketCargo(); 
-            }
-            // Vider le cargo actuel avant de charger celui de la nouvelle mission
-            rocketModel.cargo.cargoItems = [];
-
-            let allLoaded = true;
-
+            // Tenter de charger chaque item requis pour la mission.
+            // La méthode addCargo de RocketCargo devrait retourner un booléen indiquant le succès.
             nextMission.requiredCargo.forEach(item => {
                 const loaded = rocketModel.cargo.addCargo(item.type, item.quantity);
                 if (!loaded) {
-                    allLoaded = false;
-                    // console.warn(`[MissionManager] Échec du chargement de ${item.quantity} x ${item.type} pour la mission ${nextMission.id}.`); 
+                    // Gérer l'échec de chargement d'un item si nécessaire (par ex. log, ou annuler le chargement partiel)
+                    // Pour l'instant, on continue de charger les autres items.
+                    console.warn(`[MissionManager] Échec du chargement de ${item.quantity} x ${item.type} pour la mission ${nextMission.id}. Cargo plein ou item inconnu?`); 
                 }
             });
-
-            // if (allLoaded) { // Log optionnel
-            //     const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
-            //     console.log(`%c[MissionManager] Cargo chargé pour la mission ${nextMission.id}: ${cargoString}`, 'color: lightblue;');
-            // }
+            // Log optionnel si tout s'est bien passé (ou partiellement)
+            // const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
+            // console.log(`%c[MissionManager] Cargaison pour mission ${nextMission.id} (${cargoString}) traitée. Vérifiez le cargo de la fusée.`, 'color: lightblue;');
         } else {
-            // console.log(`%c[MissionManager] Aucune mission active au départ de ${location} trouvée.`, 'color: gray;');
-            if (rocketModel.cargo) {
-                 rocketModel.cargo.cargoItems = []; // Vider le cargo s'il n'y a pas de mission
-            }
+            // Aucune mission active trouvée partant de cette localisation. Le cargo a déjà été vidé.
+            // console.log(`%c[MissionManager] Aucune mission active au départ de ${location} trouvée. Cargo de la fusée vidé.`, 'color: gray;');
         }
     }
 }
 
-// Supprimer l'instanciation globale et l'initialisation ici
+// L'instanciation globale et l'initialisation (resetMissions) sont gérées ailleurs (ex: GameSetupController ou main.js)
 // const missionManager = new MissionManager(); 
 // missionManager.resetMissions();
 
-// Supprimer l'exportation par défaut si elle existe
+// Pas d'exportation par défaut ici, la classe MissionManager sera instanciée où nécessaire.
 // export default missionManager; 

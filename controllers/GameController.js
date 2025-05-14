@@ -98,8 +98,6 @@ class GameController {
             }
         });
 
-        this.pauseKeyDown = false;
-
         this._lastRocketDestroyed = false;
     }
     
@@ -427,7 +425,7 @@ class GameController {
             // Ceci ne devrait plus arriver car GameSetupController initialise les modèles
             console.error("GameController.resetRocket: rocketModel n'est pas initialisé avant reset.");
             const gameSetupController = new GameSetupController(this.eventBus, this.missionManager, {});
-            const components = gameSetupController.initializeGameComponents(this.cameraModel); // Tenter une réinitialisation
+            const components = gameSetupController.initializeGameComponents(this.cameraModel);
             this.rocketModel = components.rocketModel;
             this.universeModel = components.universeModel; // S'assurer que universeModel est aussi prêt
             if (!this.rocketModel) return; // Si toujours pas de rocketModel, abandonner
@@ -567,11 +565,10 @@ class GameController {
      * S'appuie sur `window.controllerContainer.destroy()` pour le nettoyage global des abonnements.
      */
     cleanup() {
-        // Code pour se désabonner des événements et nettoyer les ressources
-        // Par exemple, si EventBus a une méthode pour se désabonner de tous les événements
-        // this.eventBus.unsubscribeAll(this); // Exemple conceptuel
+        // La désinscription des événements gérés par controllerContainer.track()
+        // est gérée globalement par window.controllerContainer.destroy().
 
-        // Appeler cleanup sur les contrôleurs qui en ont un
+        // Appeler cleanup sur les contrôleurs internes qui pourraient en avoir besoin.
         if (this.physicsController && typeof this.physicsController.cleanup === 'function') {
             this.physicsController.cleanup();
         }
@@ -633,7 +630,9 @@ class GameController {
      */
     handleRocketStateUpdated(data) {
         if (data.isDestroyed && !this._lastRocketDestroyed) {
-            // console.log("Fusée détruite - Appuyez sur R pour réinitialiser"); // Optionnel
+            // Une action pourrait être déclenchée ici si la fusée est détruite,
+            // comme afficher un message ou démarrer un timer de réinitialisation.
+            // Pour l'instant, seul l'état _lastRocketDestroyed est mis à jour.
         }
         this._lastRocketDestroyed = !!data.isDestroyed;
     }
@@ -671,29 +670,39 @@ class GameController {
      * @private
      */
     handleRocketLanded(data) {
-        if (!this.rocketModel || !this.rocketModel.isLanded) { 
+        if (!this.rocketModel || !this.rocketModel.isLanded || !data || typeof data.landedOn !== 'string') { 
+            console.warn("[GameController.handleRocketLanded] Conditions non remplies pour traiter l'atterrissage.", {
+                rocketModelExists: !!this.rocketModel,
+                isLanded: this.rocketModel ? this.rocketModel.isLanded : 'N/A',
+                dataExists: !!data,
+                landedOn: data ? data.landedOn : 'N/A'
+            });
             return; 
         }
         
-        if (!this.rocketModel) return;
+        // La vérification `!this.rocketModel` est déjà couverte par la condition ci-dessus.
 
         if (this.missionManager && this.rocketModel.cargo) {
+            // Vérifie si des missions sont complétées avec la cargaison actuelle et le lieu d'atterrissage.
             const completedMissions = this.missionManager.checkMissionCompletion(this.rocketModel.cargo, data.landedOn);
             
             if (completedMissions.length > 0) {
                 this.missionJustSucceededFlag = true; 
                 completedMissions.forEach(mission => {
                     this.totalCreditsEarned += mission.reward;
+                    // Émet un événement pour mettre à jour l'UI des crédits.
                     this.eventBus.emit(EVENTS.UI.CREDITS_UPDATED, { reward: mission.reward }); 
+                    // Émet un événement pour signaler la complétion d'une mission.
                     this.eventBus.emit(EVENTS.MISSION.COMPLETED, { mission: mission });
                 });
             }
             
-            if (this.rocketModel) { 
-               this.missionManager.loadCargoForCurrentLocationMission(data.landedOn, this.rocketModel);
-            }
+            // Charge la cargaison pour la prochaine mission disponible à cet emplacement.
+            // Ceci se fait que des missions aient été complétées ou non, pour préparer la suite.
+            this.missionManager.loadCargoForCurrentLocationMission(data.landedOn, this.rocketModel);
         }
     }
 
-    // handleCanvasResized(data) - Déplacé vers CameraController.js. Bloc de code commenté supprimé.
+    // La méthode handleCanvasResized(data) a été déplacée vers CameraController.js
+    // et le code commenté correspondant a été supprimé.
 }

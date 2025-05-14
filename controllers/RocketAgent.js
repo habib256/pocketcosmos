@@ -5,6 +5,13 @@ class RocketAgent {
         // Référence à l'EventBus pour communiquer avec les autres composants
         this.eventBus = eventBus;
         
+        // Dépendances qui seront injectées ou configurées plus tard
+        this.rocketModel = null;
+        this.universeModel = null;
+        this.physicsController = null;
+        this.missionManager = null;
+        this.rocketController = null;
+        
         // État de l'agent
         this.isActive = false;
         this.isTraining = false;
@@ -555,5 +562,36 @@ class RocketAgent {
     // Ajouter la méthode update appelée par GameController pour éviter l'erreur
     update(deltaTime) {
         // Rien à faire ici car updateRocketData gère déjà les décisions de l'agent
+    }
+
+    /**
+     * Injecte ou met à jour les dépendances essentielles pour l'agent.
+     * Cette méthode est appelée par GameSetupController si l'agent est fourni
+     * de l'extérieur ou pour s'assurer que toutes les dépendances sont à jour.
+     * @param {Object} dependencies - Un objet contenant les dépendances.
+     * @param {RocketModel} dependencies.rocketModel - Le modèle de la fusée.
+     * @param {UniverseModel} dependencies.universeModel - Le modèle de l'univers.
+     * @param {PhysicsController} dependencies.physicsController - Le contrôleur physique.
+     * @param {MissionManager} dependencies.missionManager - Le gestionnaire de missions.
+     * @param {RocketController} dependencies.rocketController - Le contrôleur de la fusée.
+     */
+    injectDependencies({ rocketModel, universeModel, physicsController, missionManager, rocketController }) {
+        this.rocketModel = rocketModel || this.rocketModel;
+        this.universeModel = universeModel || this.universeModel;
+        this.physicsController = physicsController || this.physicsController;
+        this.missionManager = missionManager || this.missionManager;
+        this.rocketController = rocketController || this.rocketController;
+        
+        console.log("RocketAgent: Dépendances injectées/mises à jour.", {
+            rocketModel: !!this.rocketModel,
+            universeModel: !!this.universeModel,
+            physicsController: !!this.physicsController,
+            missionManager: !!this.missionManager,
+            rocketController: !!this.rocketController
+        });
+
+        // TODO: Envisager d'appeler ici une méthode d'initialisation si l'agent
+        // doit effectuer des actions spécifiques une fois les dépendances reçues.
+        // Par exemple: this.onDependenciesReady();
     }
 }
