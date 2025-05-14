@@ -54,17 +54,34 @@ class UIView {
         this.lastAssistedButtonBounds = null;
 
         // S'abonner aux changements d'état des contrôles assistés
+        console.log('[UIView constructor] Tentative d\'abonnement...');
+        console.log('[UIView constructor] this.eventBus:', this.eventBus);
+        console.log('[UIView constructor] typeof EVENTS:', typeof EVENTS);
+        if (typeof EVENTS !== 'undefined') {
+            console.log('[UIView constructor] EVENTS.UI:', EVENTS.UI);
+            if (EVENTS.UI) {
+                console.log('[UIView constructor] EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED:', EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED);
+            }
+        }
+
         if (this.eventBus && EVENTS && EVENTS.UI && EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) {
+            console.log('[UIView constructor] Conditions remplies pour l\'abonnement.');
             window.controllerContainer.track(
                 this.eventBus.subscribe(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, (data) => {
                     if (typeof data.isActive === 'boolean') {
                         this.assistedControlsActive = data.isActive;
-                        // console.log(`[UIView] Event ASSISTED_CONTROLS_STATE_CHANGED: assistedControlsActive mis à jour à: ${this.assistedControlsActive}`);
+                        console.log(`[UIView] Event ASSISTED_CONTROLS_STATE_CHANGED: assistedControlsActive mis à jour à: ${this.assistedControlsActive}`);
                     }
                 })
             );
         } else {
-            console.warn("[UIView] EventBus ou EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED non disponible pour l'abonnement.");
+            let problemDescription;
+            if (!this.eventBus) {
+                problemDescription = "l'instance de EventBus (this.eventBus) est manquante ou non définie.";
+            } else { // Implique que eventBus est présent, donc le chemin EVENTS doit être le problème
+                problemDescription = "le type d'événement requis (EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) est introuvable ou invalide. Vérifiez les logs de débogage précédents pour le détail du chemin EVENTS.";
+            }
+            console.warn(`[UIView] Impossible de s'abonner à l'événement pour l'état des contrôles assistés (ASSISTED_CONTROLS_STATE_CHANGED). Raison: ${problemDescription}`);
         }
     }
 

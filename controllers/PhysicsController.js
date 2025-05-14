@@ -244,6 +244,7 @@ class PhysicsController {
 
     // Méthodes déléguées aux modules spécifiques
     toggleAssistedControls() {
+        console.log('[PhysicsController] toggleAssistedControls appelé. rocketBody:', this.rocketBody);
         return this.thrusterPhysics.toggleAssistedControls();
     }
 

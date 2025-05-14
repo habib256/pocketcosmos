@@ -104,6 +104,7 @@ Le projet suit une architecture MVC étendue :
 - **RenderingController.js** : Rendu global, gestion du toggle des vecteurs.
 
 ## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
+- ** IL N'Y A PAS DE PROBLEME AVEC MATTER.JS et son plugin **
 - **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html`. L'ordre d'inclusion est crucial. Il ne doit pas y avoir d'import ES6
 - **Calculs physiques** : !! L'accélération F/m est calculée dans `PhysicsController` (méthode `calculateGravityAccelerationAt`) avant l'appel à `Engine.update()` de Matter.js. Le plugin `matter-attractors` gère ensuite l'application de la gravité. Matter.js reste responsable des collisions et du mouvement. Pour les planètes et les lunes, les collisions sont gérées par Matter.js tandis que `SynchronizationManager.js` traite les états ou la fusée est détruite ou posée.
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus sert pour découpler le système MVC afin de l'interfacer avec le système IA. Surtout pas d'imports ES6 on utilise window.EVENTS dans tous les contrôleurs et ailleurs pour accéder à l'EventBus.

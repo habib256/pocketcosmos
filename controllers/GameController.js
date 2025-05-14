@@ -118,7 +118,10 @@ class GameController {
         // Événements sémantiques pour le jeu et l'UI
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.TOGGLE_PAUSE, () => this.handleTogglePause()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.RESUME_IF_PAUSED, () => this.handleResumeIfPaused()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS, () => this.handleToggleAssistedControlsFromUI()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS, () => {
+            console.log('[GameController] Événement EVENTS.UI.TOGGLE_ASSISTED_CONTROLS reçu !');
+            this.handleToggleAssistedControlsFromUI();
+        }));
 
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.PHYSICS.TOGGLE_FORCES, () => this.handleToggleForces()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.INCREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(2.0)));
@@ -640,11 +643,13 @@ class GameController {
      * Met à jour la vue UI en conséquence.
      */
     toggleAssistedControls() {
-        if (this.physicsController && this.uiView) {
+        console.log('[GameController] toggleAssistedControls appelé.');
+        if (this.physicsController) {
+            console.log('[GameController] physicsController existe. rocketBody:', this.physicsController.rocketBody);
             const assistedEnabled = this.physicsController.toggleAssistedControls();
-            // this.uiView.assistedControlsActive = assistedEnabled; // Ancienne méthode directe
-            // Nouvelle méthode : émettre un événement
             this.eventBus.emit(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, { isActive: assistedEnabled });
+        } else {
+            console.warn('[GameController] Tentative de basculer les contrôles assistés, mais physicsController est null.');
         }
     }
 

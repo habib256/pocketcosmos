@@ -137,24 +137,29 @@ class InputController {
         window.controllerContainer.track(() => window.removeEventListener('mousemove', mouseMoveHandler));
         
         const mouseUpHandler = (e) => {
+            const wasDragging = this.isMouseDragging;
             if (this.isMouseDragging) {
                 this.isMouseDragging = false;
                 this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
             }
-            // La logique de clic sur des boutons UI spécifiques (comme "assisted controls")
-            // devrait être gérée par GameController ou UIView écoutant un événement de clic générique
-            // ou InputController pourrait vérifier les coordonnées ici si c'était sa responsabilité.
-            // Pour l'instant, on se concentre sur le drag.
-            // Si un clic (mousedown + mouseup sans drag) doit déclencher une action UI :
-            if (e.button === 0) { // Clic gauche
-                 // Vérifier si c'est un clic sur un bouton UI connu
-                 // exemple: if (this.uiView && this.uiView.isClickOnAssistedControlsButton(e.clientX, e.clientY)) {
-                 // this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
-                 // }
-                 // Pour l'instant, GameController s'abonne déjà à TOGGLE_ASSISTED_CONTROLS,
-                 // il faudrait un autre module (comme UIView) pour émettre cet événement.
-                 // Ou, si InputController est responsable de tous les inputs, il pourrait le faire.
-                 // Laissons cela pour une étape ultérieure si nécessaire. Le drag est la priorité.
+
+            // Gérer les clics sur les boutons UI si ce n'était pas un drag
+            if (!wasDragging && e.button === 0) { // Clic gauche et pas un drag
+                // Assurez-vous que this.uiView est disponible et correctement initialisé.
+                // Normalement, il est passé via GameSetupController -> GameController -> InputController.
+                // Pour l'instant, nous allons supposer qu'il est accessible via une référence globale
+                // ou qu'il sera injecté correctement. L'idéal serait une injection de dépendance.
+                const uiView = window.uiView; // TEMPORAIRE: en attendant une meilleure injection
+
+                if (uiView && typeof uiView.getAssistedControlsButtonBounds === 'function') {
+                    const bounds = uiView.getAssistedControlsButtonBounds();
+                    if (bounds && 
+                        e.clientX >= bounds.x && e.clientX <= bounds.x + bounds.width &&
+                        e.clientY >= bounds.y && e.clientY <= bounds.y + bounds.height) {
+                        console.log('[InputController] Clic détecté sur le bouton des contrôles assistés.'); // AJOUT D'UN LOG
+                        this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
+                    }
+                }
             }
         };
         this._mouseHandlers.mouseup = mouseUpHandler;
