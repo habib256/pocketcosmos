@@ -12,9 +12,9 @@ class VectorsView {
      */
     constructor() {
         /** @private @type {number} Nombre de cellules horizontales pour la grille de gravité. */
-        this.gridX = 50;
+        this.gridX = 80;
         /** @private @type {number} Nombre de cellules verticales pour la grille de gravité. */
-        this.gridY = 50;
+        this.gridY = 80;
         /** @private @type {Array<Array<{ax: number, ay: number, wx: number, wy: number, potential: number}>> | null} Grille contenant le champ de gravité (accélération ax, ay) et le potentiel scalaire (potential) calculés aux coordonnées monde (wx, wy) de chaque point de la grille. Recalculée à chaque frame si l'affichage du champ est actif. */
         this.gravityFieldGrid = null;
     }
@@ -363,7 +363,7 @@ class VectorsView {
 
                 // Dessiner la pointe de flèche
                 const angle = Math.atan2(ey - sy, ex - sx);
-                const headlen = 8; // Taille fixe de la pointe
+                const headlen = 4; // Taille fixe de la pointe
                 ctx.beginPath();
                 ctx.moveTo(ex, ey);
                 ctx.lineTo(ex - headlen * Math.cos(angle - Math.PI/6), ey - headlen * Math.sin(angle - Math.PI/6));

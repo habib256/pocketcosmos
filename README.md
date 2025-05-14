@@ -48,8 +48,11 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 
 - **↑ ou W** : Propulsion avant (principale)
 - **↓ ou S** : Propulsion arrière (rétro)
-- **← ou A** : Rotation gauche (propulseur latéral)
-- **→ ou D** : Rotation droite (propulseur latéral)
+- **← (Flèche Gauche)** : Rotation vers la **droite**
+- **→ (Flèche Droite)** : Rotation vers la **gauche**
+- **A** : Rotation vers la **gauche** (propulseur latéral)
+- **D** : Rotation vers la **droite** (propulseur latéral)
+- **Barre Espace** : Propulsion avant (Boost)
 - **R** : Réinitialiser la fusée 🔄
 - **C** : Centrer la caméra sur la fusée 🎯
 - **+ / -** (ou Molette Souris) : Zoom avant / arrière 🔍
@@ -57,6 +60,9 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **V** : Afficher/masquer les vecteurs de force (pour debug)
 - **G** : Afficher/masquer le champ de gravité (flèches puis lignes équipotentielles)
 - **I** : Activer/désactiver le contrôle par l'IA 🤖
+- **P** ou **Echap** : Pause / Reprendre la simulation
+- **M** : Diminuer la puissance globale des propulseurs
+- **N** : Augmenter la puissance globale des propulseurs
 
 ## 🔧 Technologies
 
