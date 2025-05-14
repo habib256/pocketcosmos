@@ -38,51 +38,14 @@ class UIView {
             info: '#00BFFF', // Bleu clair pour infos (ex: départ mission)
             gold: 'gold',    // Pour crédits, destination mission
             barBackground: 'rgba(255, 255, 255, 0.3)',
-            buttonAssistOn: 'rgba(0, 150, 0, 0.7)',
-            buttonAssistOff: 'rgba(50, 50, 150, 0.7)',
             buttonBorder: 'white',
             frameBorder: 'rgba(255, 255, 255, 0.8)',
         };
 
         // État interne de l'UI (certains pourraient être gérés via EventBus à terme)
         this.showMoonInfo = true;
-        this.assistedControlsActive = true; // L'état réel doit être synchronisé avec le reste du jeu
         this.missionSuccessFadeTime = 0; // Timestamp de la dernière réussite de mission pour l'effet de fade
         this.missionSuccessDuration = 2500; // Durée de l'affichage "Mission Réussie" (ms)
-
-        // Stocker les dernières coordonnées connues du bouton
-        this.lastAssistedButtonBounds = null;
-
-        // S'abonner aux changements d'état des contrôles assistés
-        console.log('[UIView constructor] Tentative d\'abonnement...');
-        console.log('[UIView constructor] this.eventBus:', this.eventBus);
-        console.log('[UIView constructor] typeof EVENTS:', typeof EVENTS);
-        if (typeof EVENTS !== 'undefined') {
-            console.log('[UIView constructor] EVENTS.UI:', EVENTS.UI);
-            if (EVENTS.UI) {
-                console.log('[UIView constructor] EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED:', EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED);
-            }
-        }
-
-        if (this.eventBus && EVENTS && EVENTS.UI && EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) {
-            console.log('[UIView constructor] Conditions remplies pour l\'abonnement.');
-            window.controllerContainer.track(
-                this.eventBus.subscribe(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, (data) => {
-                    if (typeof data.isActive === 'boolean') {
-                        this.assistedControlsActive = data.isActive;
-                        console.log(`[UIView] Event ASSISTED_CONTROLS_STATE_CHANGED: assistedControlsActive mis à jour à: ${this.assistedControlsActive}`);
-                    }
-                })
-            );
-        } else {
-            let problemDescription;
-            if (!this.eventBus) {
-                problemDescription = "l'instance de EventBus (this.eventBus) est manquante ou non définie.";
-            } else { // Implique que eventBus est présent, donc le chemin EVENTS doit être le problème
-                problemDescription = "le type d'événement requis (EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) est introuvable ou invalide. Vérifiez les logs de débogage précédents pour le détail du chemin EVENTS.";
-            }
-            console.warn(`[UIView] Impossible de s'abonner à l'événement pour l'état des contrôles assistés (ASSISTED_CONTROLS_STATE_CHANGED). Raison: ${problemDescription}`);
-        }
     }
 
     // --- Méthodes de Rendu Publiques ---
@@ -134,10 +97,6 @@ class UIView {
             if (universeModel && rocketModel) {
                 this._renderMoonInfo(ctx, canvas, rocketModel, universeModel);
             }
-
-            // Afficher le bouton des contrôles assistés
-            // Les coordonnées retournées sont informatives, la gestion du clic est externe.
-            this._renderAssistedControlsButton(ctx, canvas);
 
             // Afficher les missions, le cargo et les crédits
             this._renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
@@ -347,40 +306,6 @@ class UIView {
             }
         }
         ctx.restore();
-    }
-
-    /**
-     * @private Dessine le bouton des contrôles assistés.
-     * Retourne les limites du bouton à titre informatif. La gestion du clic est externe.
-     */
-    _renderAssistedControlsButton(ctx, canvas) {
-        const buttonWidth = 180;
-        const buttonHeight = 30;
-        const buttonX = 10;
-        const buttonY = canvas.height - buttonHeight - 10; // Position en bas à gauche
-
-        // Fond du bouton
-        ctx.fillStyle = this.assistedControlsActive ? this.colors.buttonAssistOn : this.colors.buttonAssistOff;
-        ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-
-        // Contour
-        ctx.strokeStyle = this.colors.buttonBorder;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
-
-        // Texte
-        ctx.font = `14px ${this.fontFamily}`;
-        ctx.fillStyle = this.colors.white;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const text = `Assistance: ${this.assistedControlsActive ? "ON" : "OFF"}`; // Retrait de [A]
-        ctx.fillText(text, buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
-
-        // Stocker les limites calculées
-        this.lastAssistedButtonBounds = { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight };
-
-        // Retourner les limites (pour information ou débogage, pas pour gestion clic ici)
-        return this.lastAssistedButtonBounds;
     }
 
     /** @private Affiche la boîte contenant les crédits, missions et cargo. */
@@ -671,38 +596,19 @@ class UIView {
     }
 
     /**
-     * Bascule l'état des contrôles assistés (pour l'affichage uniquement).
-     * L'activation/désactivation réelle doit être gérée par le contrôleur approprié.
-     */
-    toggleAssistedControls() {
-        this.assistedControlsActive = !this.assistedControlsActive;
-        console.log("Affichage contrôles assistés:", this.assistedControlsActive ? "ON" : "OFF");
-        // Rappel: Ceci ne change que l'affichage du bouton. La logique métier est ailleurs.
-        // Le contrôleur principal devrait émettre un événement pour informer l'UI du changement d'état réel.
-    }
-
-    /**
      * Met à jour l'état d'affichage des contrôles assistés.
      * Devrait être appelée par un contrôleur via EventBus lorsque l'état change réellement.
      * @param {boolean} isActive - Le nouvel état des contrôles assistés.
      */
-    setAssistedControlsActive(isActive) {
-        // console.log(`[UIView] setAssistedControlsActive appelé avec: ${isActive}, ancien état: ${this.assistedControlsActive}`);
-        // Cette méthode est maintenant contournée au profit d'un système d'événements.
-        // Elle est conservée au cas où elle serait utilisée par d'autres parties du code
-        // ou pour des tests directs, mais GameController ne l'appelle plus.
-        console.warn("[UIView.setAssistedControlsActive] Cette méthode est dépréciée en faveur de l'événement EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED.");
-        if (this.assistedControlsActive !== isActive) {
-            this.assistedControlsActive = isActive;
-            // Il n'y a PAS d'appel explicite pour redessiner l'UI ici.
-        }
-    }
-
-    /**
-     * Retourne les dernières coordonnées connues du bouton "Contrôles assistés".
-     * @returns {{x: number, y: number, width: number, height: number} | null} Les limites ou null si non encore rendu.
-     */
-    getAssistedControlsButtonBounds() {
-        return this.lastAssistedButtonBounds;
-    }
+    // setAssistedControlsActive(isActive) {
+    //     // console.log(`[UIView] setAssistedControlsActive appelé avec: ${isActive}, ancien état: ${this.assistedControlsActive}`);
+    //     // Cette méthode est maintenant contournée au profit d'un système d'événements.
+    //     // Elle est conservée au cas où elle serait utilisée par d'autres parties du code
+    //     // ou pour des tests directs, mais GameController ne l'appelle plus.
+    //     console.warn("[UIView.setAssistedControlsActive] Cette méthode est dépréciée en faveur de l'événement EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED.");
+    //     if (this.assistedControlsActive !== isActive) {
+    //         this.assistedControlsActive = isActive;
+    //         // Il n'y a PAS d'appel explicite pour redessiner l'UI ici.
+    //     }
+    // }
 } 
