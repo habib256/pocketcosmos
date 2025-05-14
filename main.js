@@ -216,7 +216,7 @@ function showInstructions() {
         font-size: 0.95em; /* Taille de police légèrement augmentée */
         z-index: 9999;
         min-width: 250px; /* Largeur minimale */
-        max-width: 350px; /* Largeur maximale */
+        max-width: 500px; /* Largeur maximale augmentée pour rééquilibrage */
         border: 1px solid #555; /* Bordure subtile */
         display: flex; /* Utilisation de flexbox pour l'agencement */
         flex-direction: column;
@@ -226,25 +226,29 @@ function showInstructions() {
     
     // Contenu HTML du panneau (structure améliorée).
     instructions.innerHTML = `
-        <img src="favicon.png" alt="Icône Fusée" style="width:80px; height:80px; display:block;" />
-        <h3 style="font-weight:bold; font-size:1.1em; margin:5px 0;">Contrôles</h3>
-        <table style="border-collapse:collapse; width: 100%; font-size:0.9em; text-align: left;">
-            <tbody>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; width: 40%; text-align: center;"><b>↑ / W</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Principale</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>↓ / S</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Arrière</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>← / A</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Gauche</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>→ / D</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Droite</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>R</b></td><td style="border:1px solid #666; padding: 3px 6px;">Réinitialiser la Simulation</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>T</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher la Trajectoire</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>V</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher les Vecteurs</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>G</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher Champ Gravité/Équipotentielles</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>+ / -</b></td><td style="border:1px solid #666; padding: 3px 6px;">Zoom Avant / Arrière (Molette aussi)</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>P / Échap</b></td><td style="border:1px solid #666; padding: 3px 6px;">Mettre en Pause / Reprendre</td></tr>
-                <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Vue fusée / Vue libre</td></tr>            
-                </tbody>
-        </table>
-        <p style="font-size:0.85em; color:#bbb; margin-top: 5px; text-align:center;">Souris et Manette de jeu également supportées.</p>
-        <p style="font-size:0.88em; color:#9cf; margin-top:0; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
+        <div style="display: flex; align-items: flex-start; gap: 15px; width: 100%;">
+            <img src="favicon.png" alt="Icône Fusée" style="width:160px; height:160px; flex-shrink: 0; margin-top: 5px;" />
+            <div style="flex-grow: 1;">
+                <h3 style="font-weight:bold; font-size:1.1em; margin:0 0 5px 0; text-align: left;">Contrôles</h3>
+                <table style="border-collapse:collapse; width: 100%; font-size:0.85em; text-align: left;">
+                    <tbody>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; width: 40%; text-align: center;"><b>↑ / W</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Principale</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>↓ / S</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Arrière</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>← / A</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Gauche</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>→ / D</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Droite</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>R</b></td><td style="border:1px solid #666; padding: 3px 6px;">Réinitialiser la Simulation</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>T</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher la Trajectoire</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>V</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher les Vecteurs</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>G</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher Champ Gravité/Équipotentielles</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>+ / -</b></td><td style="border:1px solid #666; padding: 3px 6px;">Zoom Avant / Arrière (Molette aussi)</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>P / Échap</b></td><td style="border:1px solid #666; padding: 3px 6px;">Mettre en Pause / Reprendre</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Vue fusée / Vue libre</td></tr>            
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p style="font-size:0.8em; color:#bbb; margin-top: 10px; text-align:center;">Souris et Manette de jeu également supportées.</p>
+        <p style="font-size:0.82em; color:#9cf; margin-top:5px; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
     `;
     
     // Créer le bouton de fermeture.
