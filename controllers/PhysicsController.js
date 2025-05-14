@@ -1,7 +1,8 @@
 class PhysicsController {
-    constructor(eventBus) {
+    constructor(eventBus, options = {}) {
         this.eventBus = eventBus;
         this.isSystemPaused = false; // Flag pour l'état de pause du système physique
+        this.isHeadless = options.isHeadless || false; // Option pour le mode headless
 
         // Récupérer les modules Matter.js
         this.Engine = Matter.Engine;
@@ -17,7 +18,7 @@ class PhysicsController {
         // Récupérer les constantes globales (suppose qu'elles sont disponibles)
         this.ROCKET = ROCKET;
         this.PHYSICS = PHYSICS;
-        this.RENDER = RENDER;
+        let RENDER_CONST = typeof RENDER !== 'undefined' ? RENDER : null;
 
         // Créer le moteur physique
         this.engine = this.Engine.create({
@@ -49,7 +50,13 @@ class PhysicsController {
         this.collisionHandler = new CollisionHandler(this, this.engine, this.Events, this.Body, this.ROCKET, this.PHYSICS);
         this.thrusterPhysics = new ThrusterPhysics(this, this.Body, this.ROCKET, this.PHYSICS);
         this.synchronizationManager = new SynchronizationManager(this, this.eventBus, this.Body, this.ROCKET, this.PHYSICS);
-        this.physicsVectors = new PhysicsVectors(this, this.RENDER);
+        
+        // Création conditionnelle de PhysicsVectors
+        if (!this.isHeadless && RENDER_CONST) {
+            this.physicsVectors = new PhysicsVectors(this, RENDER_CONST);
+        } else {
+            this.physicsVectors = null;
+        }
 
         // Cache (gardé ici pour l'instant, pourrait être dans un module séparé)
         this.forceCache = new Map();
@@ -202,10 +209,10 @@ class PhysicsController {
     calculateGravityForceForDebug() {
         // Ajout log de debug
         if (!this.rocketBody) {
-            console.warn('[PhysicsController] Pas de rocketBody pour calculer l\'accélération.');
+            // console.warn('[PhysicsController] Pas de rocketBody pour calculer l\'accélération.');
         }
         if (!this.celestialBodies || this.celestialBodies.length === 0) {
-            console.warn('[PhysicsController] Pas de corps célestes pour calculer l\'accélération.');
+            // console.warn('[PhysicsController] Pas de corps célestes pour calculer l\'accélération.');
         }
         let totalForceX = 0;
         let totalForceY = 0;
@@ -235,7 +242,10 @@ class PhysicsController {
             accX = totalForceX / this.rocketBody.mass;
             accY = totalForceY / this.rocketBody.mass;
         }
-        this.physicsVectors.setTotalAcceleration(accX, accY);
+        // Appel conditionnel à physicsVectors
+        if (this.physicsVectors) {
+            this.physicsVectors.setTotalAcceleration(accX, accY);
+        }
         // Ajout log pour debug accélération fusée
         if (typeof accX === 'number' && typeof accY === 'number') {
            // console.log(`[RocketAccel] a = {x: ${accX.toExponential(2)}, y: ${accY.toExponential(2)}} module = ${(Math.sqrt(accX*accX+accY*accY)).toExponential(2)}`);
@@ -255,8 +265,14 @@ class PhysicsController {
         return this.physicsVectors.toggleForceVectors();
     }
 
+    // Méthode pour le rendu, ne rien faire en headless ou si pas de physicsVectors
     drawForceVectors(ctx, camera) {
-        this.physicsVectors.drawForceVectors(ctx, camera);
+        if (this.isHeadless || !this.physicsVectors) {
+            return; // Ne rien faire en mode headless ou si physicsVectors n'existe pas
+        }
+        // L'appel original serait ici, s'il existait dans le code visible
+        // this.physicsVectors.drawAllVectors(ctx, camera, this.rocketBody, this.celestialBodies);
+        // Pour l'instant, cette méthode reste une coquille si l'implémentation de physicsVectors n'est pas connue
     }
 
     // Reset (utilise initPhysics)

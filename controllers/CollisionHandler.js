@@ -28,37 +28,40 @@ class CollisionHandler {
         this._lastLandedState = {};
 
         // --- Ajout pour détection mission accomplie ---
-        /* // Commenté pour éviter les conflits avec l'affichage géré par UIView
-        if (this.physicsController.eventBus) {
-            this.physicsController.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
-                // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
-                const gameController = window.gameController;
-                if (gameController && gameController.particleController && gameController.canvas) {
-                    gameController.particleController.createMissionSuccessCelebration(
-                        gameController.canvas.width,
-                        gameController.canvas.height
-                    );
-                }
-                // Déclencher l'affichage du texte dans l'UI
-                window._missionSuccessTextTime = Date.now();
-                // Déclencher l'effet particules à la position de la fusée
-                const rocketModel = this.physicsController.rocketModel;
-                if (typeof window !== 'undefined' && window.dispatchEvent && rocketModel) {
-                    window.dispatchEvent(new CustomEvent('MISSION_SUCCESS_PARTICLES', {
-                        detail: {
-                            x: rocketModel.position.x,
-                            y: rocketModel.position.y,
+        if (this.physicsController.eventBus && window.EVENTS && window.EVENTS.MISSION && window.EVENTS.MISSION.COMPLETED) {
+            window.controllerContainer.track( // Assurer le suivi pour le nettoyage
+                this.physicsController.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
+                    // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
+                    const gameController = window.gameController; // Accès global, pourrait être amélioré
+                    if (gameController && gameController.particleController && gameController.particleController.createMissionSuccessCelebration && gameController.canvas) {
+                        gameController.particleController.createMissionSuccessCelebration(
+                            gameController.canvas.width,
+                            gameController.canvas.height
+                        );
+                    }
+                    // Déclencher l'affichage du texte dans l'UI
+                    // TODO: Idéalement, UIView s'abonnerait à cet événement ou à un événement UI spécifique.
+                    if (typeof window !== 'undefined') {
+                       window._missionSuccessTextTime = Date.now(); 
+                    }
+                    
+                    // Déclencher l'effet particules à la position de la fusée via l'EventBus interne
+                    // si d'autres systèmes doivent réagir à la position spécifique.
+                    const rocketModel = this.physicsController.rocketModel;
+                    if (rocketModel && this.physicsController.eventBus && window.EVENTS && window.EVENTS.EFFECTS && window.EVENTS.EFFECTS.SPAWN_PARTICLES_AT_ROCKET) {
+                        this.physicsController.eventBus.emit(window.EVENTS.EFFECTS.SPAWN_PARTICLES_AT_ROCKET, {
+                            type: 'mission_success',
+                            position: { ...rocketModel.position },
                             message: "Mission réussie"
-                        }
-                    }));
-                }
-                // Optionnel : log pour debug
-                console.log('[CollisionHandler] Mission accomplie détectée, célébration Mission Réussie déclenchée');
-            });
+                        });
+                    }
+                    
+                    console.log('[CollisionHandler] Mission accomplie détectée, célébration Mission Réussie déclenchée');
+                })
+            );
         } else {
-            console.warn('[CollisionHandler] eventBus non trouvé sur physicsController, impossible de s\'abonner à MISSION_COMPLETED');
+            console.warn('[CollisionHandler] eventBus ou EVENTS.MISSION.COMPLETED non trouvé, impossible de s\'abonner.');
         }
-        */
     }
 
     /**
@@ -139,8 +142,8 @@ class CollisionHandler {
                                 if (wasJustDestroyedByNonFatal) { 
                                     console.log('[CollisionHandler] Condition wasJustDestroyedByNonFatal est VRAIE (collision devenue fatale ici).');
                                     if (this.physicsController && this.physicsController.eventBus) {
-                                        console.log('[CollisionHandler] Publishing ROCKET.DESTROYED event (collision devenue fatale).');
-                                        this.physicsController.eventBus.publish(window.EVENTS.ROCKET.DESTROYED, {
+                                        console.log('[CollisionHandler] Emitting ROCKET.DESTROYED event (collision devenue fatale).');
+                                        this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
                                             position: { ...rocketModel.position },
                                             velocity: { ...rocketModel.velocity },
                                             impactVelocity: impactVelocity,
