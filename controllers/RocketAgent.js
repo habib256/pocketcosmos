@@ -108,11 +108,11 @@ class RocketAgent {
     
     // S'abonner aux événements pertinents
     subscribeToEvents() {
-        this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data));
-        this.eventBus.subscribe(window.EVENTS.AI.TOGGLE, () => this.toggleActive());
-        this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining());
-        this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash());
-        this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess());
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
     }
     
     // Activer/désactiver l'agent

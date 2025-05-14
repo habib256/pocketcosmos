@@ -25,6 +25,7 @@ class GameController {
         this.particleController = null;
         this.renderingController = null;
         this.rocketAgent = null;
+        this.rocketController = null; // Ajout du RocketController
         
         // État du jeu
         this.isRunning = false;
@@ -105,175 +106,124 @@ class GameController {
     
     // S'abonner aux événements de l'EventBus
     subscribeToEvents() {
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYDOWN, (data) => this.handleKeyDown(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYUP, (data) => this.handleKeyUp(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.KEYPRESS, (data) => this.handleKeyPress(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEDOWN, (data) => this.handleMouseDown(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEMOVE, (data) => this.handleMouseMove(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.MOUSEUP, (data) => this.handleMouseUp(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.WHEEL, (data) => this.handleWheel(data)));
-        
-        // Événement pour les vecteurs (une seule méthode)
+        // Événements sémantiques pour les actions de la fusée - GÉRÉS PAR RocketController
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_START, () => this.handleThrustForwardStart()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_STOP, () => this.handleThrustForwardStop()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_START, () => this.handleThrustBackwardStart()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_STOP, () => this.handleThrustBackwardStop()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_START, () => this.handleRotateLeftStart()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
+        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this.handleResetRocket())); // anciennement via 'resetRocket' keypress
+
+        // NOUVEL ÉVÉNEMENT pour mettre à jour l'état global lorsque RocketController modifie la fusée
+        const ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged'; // Doit correspondre à celui dans RocketController
+        window.controllerContainer.track(this.eventBus.subscribe(ROCKET_INTERNAL_STATE_CHANGED_EVENT, () => this.emitUpdatedStates()));
+
+        // Événements sémantiques pour la caméra
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.ZOOM_IN, () => this.handleZoomIn()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.ZOOM_OUT, () => this.handleZoomOut()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.CENTER_ON_ROCKET, () => this.handleCenterCamera())); // anciennement via 'centerCamera' keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.START_DRAG, (data) => this.handleCameraStartDrag(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.DRAG, (data) => this.handleCameraDrag(data)));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.STOP_DRAG, () => this.handleCameraStopDrag()));
+
+
+        // Événements sémantiques pour le jeu et l'UI
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.TOGGLE_PAUSE, () => this.handleTogglePause())); // anciennement via 'pauseGame' keyup/keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.RESUME_IF_PAUSED, () => this.handleResumeIfPaused())); // Pour reprendre avec flèches ou keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS, () => this.handleToggleAssistedControlsFromUI())); // anciennement via click sur bouton UI
+
+        // Événements pour les vecteurs et autres affichages (restent similaires car déjà assez sémantiques)
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors()));
-        // Ajout : événement pour le champ de gravité
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField()));
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_TRACES, () => this.toggleTraceVisibility())); // anciennement via 'toggleTraces' keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.PHYSICS.TOGGLE_FORCES, () => this.handleToggleForces())); // anciennement via 'toggleForces' keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.INCREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(2.0))); // anciennement via keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.DECREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(0.5))); // anciennement via keypress
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.AI.TOGGLE_CONTROL, () => this.toggleAIControl())); // anciennement via 'toggleAI' keypress
         
         // Événement pour les mises à jour d'état de la fusée
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data)));
         // Événement lorsque la fusée atterrit
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data)));
 
-        // --- Abonnements Joystick ---
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_DOWN, (data) => this.handleJoystickButtonDown(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_BUTTON_UP, (data) => this.handleJoystickButtonUp(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data)));
+        // --- Abonnements Joystick (devront aussi être mappés à des événements sémantiques par InputController) ---
+        // Exemple: EVENTS.INPUT.JOYSTICK_AXIS_ROTATE, EVENTS.INPUT.JOYSTICK_BUTTON_THRUST_MAIN_PRESS, etc.
+        // Pour l'instant, on garde les anciens gestionnaires, mais ils seront appelés par ces nouveaux événements sémantiques du joystick
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data))); // CORRIGÉ
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));         // CORRIGÉ
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data))); // CORRIGÉ
+
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
         // --- Fin Abonnements Joystick ---
     }
     
-    // Gérer les événements d'entrée
-    handleKeyDown(data) {
-        // Si en pause, n'importe quelle flèche doit reprendre le jeu (hors P/Escape)
-        if (this.isPaused && (data.action === 'thrustForward' || data.action === 'thrustBackward' || data.action === 'rotateLeft' || data.action === 'rotateRight')) {
-            this.isPaused = false;
-            console.log("Jeu repris par flèche");
-            return;
-        }
-        
-        switch (data.action) {
-            case 'thrustForward':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
-                this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);
-                break;
-            case 'thrustBackward':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
-                this.particleSystemModel.setEmitterActive('rear', true, this.rocketModel);
-                break;
-            case 'rotateLeft':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('left', ROCKET.THRUSTER_POWER.LEFT);
-                this.particleSystemModel.setEmitterActive('left', true, this.rocketModel);
-                break;
-            case 'rotateRight':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('right', ROCKET.THRUSTER_POWER.RIGHT);
-                this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
-                break;
-            case 'zoomIn':
-                this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
-                break;
-            case 'zoomOut':
-                this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
-                break;
-        }
-        
-        // Émettre l'état mis à jour
+    // Gérer les événements d'entrée sémantiques
+    // LES GESTIONNAIRES SUIVANTS SONT DÉPLACÉS VERS RocketController.js
+    // handleThrustForwardStart() { ... }
+    // handleThrustForwardStop() { ... }
+    // handleThrustBackwardStart() { ... }
+    // handleThrustBackwardStop() { ... }
+    // handleRotateLeftStart() { ... }
+    // handleRotateLeftStop() { ... }
+    // handleRotateRightStart() { ... }
+    // handleRotateRightStop() { ... }
+
+    handleZoomIn() {
+        if (this.isPaused) return;
+        this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
+        this.emitUpdatedStates();
+    }
+
+    handleZoomOut() {
+        if (this.isPaused) return;
+        this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
         this.emitUpdatedStates();
     }
     
-    handleKeyUp(data) {
-        // Toggle pause sur relâchement de P ou Escape
-        if (data.action === 'pauseGame') {
-            this.isPaused = !this.isPaused;
-            console.log(this.isPaused ? "Jeu mis en pause (toggle par P/Escape)" : "Jeu repris (toggle par P/Escape)");
-            return;
-        }
-        switch (data.action) {
-            case 'thrustForward':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('main', 0);
-                this.particleSystemModel.setEmitterActive('main', false, this.rocketModel);
-                
-                // Forcer l'arrêt du son du propulseur principal
-                if (this.physicsController && this.physicsController.mainThrusterSoundPlaying) {
-                    if (this.physicsController.mainThrusterSound) {
-                        this.physicsController.mainThrusterSound.pause();
-                        this.physicsController.mainThrusterSound.currentTime = 0;
-                        this.physicsController.mainThrusterSoundPlaying = false;
-                    }
-                }
-                break;
-            case 'thrustBackward':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('rear', 0);
-                this.particleSystemModel.setEmitterActive('rear', false, this.rocketModel);
-                break;
-            case 'rotateLeft':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('left', 0);
-                this.particleSystemModel.setEmitterActive('left', false, this.rocketModel);
-                break;
-            case 'rotateRight':
-                if (!this.rocketModel) return;
-                this.rocketModel.setThrusterPower('right', 0);
-                this.particleSystemModel.setEmitterActive('right', false, this.rocketModel);
-                break;
-        }
-        
-        // Émettre l'état mis à jour
-        this.emitUpdatedStates();
+    handleTogglePause() {
+        this.isPaused = !this.isPaused;
+        console.log(this.isPaused ? "Jeu mis en pause (événement sémantique)" : "Jeu repris (événement sémantique)");
+        // Pas besoin d'emitUpdatedStates ici, la boucle de jeu gère le rendu en pause
     }
-    
-    handleKeyPress(data) {
-        // Ne plus gérer la pause ici pour P/Escape
+
+    handleResumeIfPaused() {
         if (this.isPaused) {
             this.isPaused = false;
-            console.log("Jeu repris par keypress");
-            return;
-        }
-
-        switch (data.action) {
-            case 'pauseGame':
-                // Toujours sortir de la pause si on est en pause
-                if (this.isPaused) {
-                    this.isPaused = false;
-                    console.log("Jeu repris par touche P");
-                } else {
-                    this.togglePause();
-                }
-                break;
-            case 'resetRocket':
-                this.resetRocket();
-                break;
-            case 'centerCamera':
-                if (this.cameraModel && this.rocketModel) {
-                    this.cameraModel.setTarget(this.rocketModel, 'rocket');
-                }
-                break;
-            case 'toggleForces':
-                if (this.physicsController) {
-                    const showForces = this.physicsController.toggleForceVectors();
-                    console.log(`Affichage des forces: ${showForces ? 'activé' : 'désactivé'}`);
-                }
-                break;
-            case 'toggleVectors':
-                this.toggleVectors();
-                break;
-            case 'toggleTraces':
-                this.toggleTraceVisibility();
-                break;
-            case 'increaseThrustMultiplier':
-                this.adjustThrustMultiplier(2.0); // Doubler
-                break;
-            case 'decreaseThrustMultiplier':
-                this.adjustThrustMultiplier(0.5); // Réduire de moitié
-                break;
-            case 'toggleAI':
-                this.toggleAIControl();
-                break;
+            console.log("Jeu repris (par événement RESUME_IF_PAUSED)");
         }
     }
     
-    handleMouseDown(data) {
+    handleResetRocket() {
+        this.resetRocket();
+        // emitUpdatedStates est appelé dans resetRocket ou par la suite
+    }
+
+    handleCenterCamera() {
+        if (this.isPaused) return;
+        if (this.cameraModel && this.rocketModel) {
+            this.cameraModel.setTarget(this.rocketModel, 'rocket');
+        }
+        // emitUpdatedStates n'est pas critique ici, la caméra se mettra à jour
+    }
+
+    handleToggleForces() {
+        if (this.isPaused) return;
+        if (this.physicsController) {
+            const showForces = this.physicsController.toggleForceVectors();
+            console.log(`Affichage des forces: ${showForces ? 'activé' : 'désactivé'} (événement sémantique)`);
+        }
+    }
+
+    // GESTION SOURIS (via événements sémantiques)
+    handleCameraStartDrag(data) {
         if (this.isPaused) return;
         
         this.isDragging = true;
-        this.dragStartX = data.x;
+        this.dragStartX = data.x; // data contiendra { x, y }
         this.dragStartY = data.y;
         
         if (this.cameraModel) {
@@ -282,10 +232,10 @@ class GameController {
         }
     }
     
-    handleMouseMove(data) {
+    handleCameraDrag(data) {
         if (!this.isDragging || this.isPaused) return;
         
-        const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
+        const dx = (data.x - this.dragStartX) / this.cameraModel.zoom; // data contiendra { x, y }
         const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
         
         if (this.cameraModel) {
@@ -294,40 +244,19 @@ class GameController {
                 this.dragStartCameraY - dy
             );
         }
+        // emitUpdatedStates n'est pas critique ici, la caméra se mettra à jour
     }
     
-    handleMouseUp(data) {
+    handleCameraStopDrag() { // data n'est plus nécessaire ici si on ne traite que l'arrêt
         this.isDragging = false;
-        
-        // Vérifier si le clic est sur le bouton des contrôles assistés
-        // en utilisant la méthode de UIView pour obtenir les coordonnées.
-        if (this.uiView) {
-            const bounds = this.uiView.getAssistedControlsButtonBounds();
-            if (bounds && 
-                data.x >= bounds.x && 
-                data.x <= bounds.x + bounds.width && 
-                data.y >= bounds.y && 
-                data.y <= bounds.y + bounds.height) 
-            {
-                 // console.log("Assisted controls button clicked!"); // Log de débogage
-                 this.toggleAssistedControls(); // Appeler la méthode pour basculer l'état
-            }
-        }
+        // La logique de clic sur le bouton des contrôles assistés doit être gérée par un événement UI spécifique
+        // car handleMouseUp ne sera plus appelé directement avec les coordonnées du clic.
+        // L'InputController devra détecter un clic sur ce bouton et émettre EVENTS.UI.TOGGLE_ASSISTED_CONTROLS
     }
-    
-    handleWheel(data) {
-        if (this.isPaused) return;
-        
-        if (this.cameraModel) {
-            const zoomFactor = 1 + RENDER.ZOOM_SPEED;
-            if (data.delta > 0) {
-                // Zoom out (molette vers le bas)
-                this.cameraModel.setZoom(this.cameraModel.zoom / zoomFactor);
-            } else {
-                // Zoom in (molette vers le haut)
-                this.cameraModel.setZoom(this.cameraModel.zoom * zoomFactor);
-            }
-        }
+
+    handleToggleAssistedControlsFromUI() { // Nouveau gestionnaire pour l'événement UI
+         // console.log("Assisted controls button clicked (via event)!");
+         this.toggleAssistedControls(); // Appeler la méthode pour basculer l'état
     }
     
     // Émettre un seul événement pour l'état complet de la simulation
@@ -539,6 +468,14 @@ class GameController {
         
         // Configurer les contrôleurs
         this.setupControllers();
+
+        // Configurer RocketController APRÈS que rocketModel, particleSystemModel et physicsController soient initialisés
+        if (this.rocketModel && this.particleSystemModel && this.physicsController) {
+            this.rocketController = new RocketController(this.eventBus, this.rocketModel, this.particleSystemModel, this.physicsController);
+            this.rocketController.subscribeToEvents();
+        } else {
+            console.error("Erreur: Impossible d'initialiser RocketController - dépendances manquantes.");
+        }
         
         // Configurer la caméra
         this.setupCamera();
@@ -1342,73 +1279,6 @@ class GameController {
              // Pas besoin de gérer 'zoomAxis' ici, s'arrête naturellement
         }
     }
-
-    handleJoystickButtonDown(data) {
-        if (!this.rocketModel || this.isPaused) return;
-
-        switch (data.action) {
-            case 'boost': 
-            case 'thrustMain': 
-                 this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
-                 this.particleSystemModel.setEmitterActive('main', true);
-                break;
-            case 'thrustBackward': 
-                this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
-                this.particleSystemModel.setEmitterActive('rear', true);
-                break;
-            case 'zoomInButton':
-                console.log('%c[GC Joystick Zoom] Bouton 7 -> Zoom In', 'color: cyan');
-                this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
-                break;
-            case 'zoomOutButton':
-                console.log('%c[GC Joystick Zoom] Bouton 6 -> Zoom Out', 'color: cyan');
-                this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
-                break;
-            case 'resetRocket': 
-                 console.log('%c[GC Joystick Action] Bouton 10 -> Reset Rocket', 'color: red');
-                 this.resetRocket();
-                 break;
-             case 'centerCamera': 
-                 if (this.cameraModel && this.rocketModel) {
-                     this.cameraModel.setTarget(this.rocketModel, 'rocket');
-                 }
-                 break;
-             case 'pauseGame': 
-                 this.togglePause();
-                 break;
-             // AJOUT : Gestion du bouton pour les vecteurs
-             case 'toggleVectors':
-                 console.log('%c[GC Joystick Action] Bouton 12 -> Toggle Vectors', 'color: orange');
-                 this.toggleVectors(); // Appel de la méthode existante
-                 break;
-        }
-        this.emitUpdatedStates();
-    }
-
-    handleJoystickButtonUp(data) {
-        if (!this.rocketModel) return; 
-
-        switch (data.action) {
-            case 'boost':
-            case 'thrustMain':
-                 // Correction: Vérifier la source d'input pour éviter conflit si axe ET bouton contrôlent 'main'
-                 // Si seul le bouton contrôle 'main', on coupe toujours.
-                 // Si un axe analogique (ex: gachette) contrôle aussi 'main', il faudrait une logique plus fine.
-                 // Pour l'instant, on suppose que seul le bouton contrôle.
-                 this.rocketModel.setThrusterPower('main', 0);
-                 this.particleSystemModel.setEmitterActive('main', false);
-                // Gérer l'arrêt du son si nécessaire (similaire à handleKeyUp)
-                break;
-             // AJOUT : Gérer le relâchement du bouton pour le propulseur arrière
-             case 'thrustBackward':
-                 this.rocketModel.setThrusterPower('rear', 0);
-                 this.particleSystemModel.setEmitterActive('rear', false);
-                 break;
-        }
-        this.emitUpdatedStates();
-    }
-
-    // --- Fin Gestionnaires Joystick ---
 
     toggleGravityField() {
         if (this.renderingController && typeof this.renderingController.toggleGravityField === 'function') {
