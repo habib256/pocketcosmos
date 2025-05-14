@@ -1,6 +1,23 @@
 // import missionManager from './MissionManager.js'; // Supprimer cette ligne
 
+/**
+ * @file GameController.js
+ * Gère la logique principale du jeu, la boucle de jeu, les états,
+ * et la coordination entre les différents modèles, vues et contrôleurs.
+ */
+
+/**
+ * @class GameController
+ * @classdesc Contrôleur principal du jeu. Orchestre le déroulement du jeu,
+ * gère les mises à jour des modèles, la boucle de jeu, les entrées utilisateur
+ * via les événements, et la communication entre les différents composants.
+ */
 class GameController {
+    /**
+     * Crée une instance de GameController.
+     * @param {EventBus} eventBus - L'instance de l'EventBus pour la communication entre composants.
+     * @param {MissionManager} missionManager - Le gestionnaire de missions.
+     */
     constructor(eventBus, missionManager) {
         // EventBus
         this.eventBus = eventBus;
@@ -10,6 +27,7 @@ class GameController {
         this.rocketModel = null;
         this.universeModel = null;
         this.particleSystemModel = null;
+        /** @type {CameraModel} */
         this.cameraModel = new CameraModel(this); // MODIFIÉ: Passer this (GameController)
         
         // Vues - Seront initialisées par GameSetupController
@@ -29,6 +47,7 @@ class GameController {
         this.physicsController = null;
         this.particleController = null;
         this.rocketController = null;
+        /** @type {CameraController} */
         this.cameraController = new CameraController(this.eventBus, this.cameraModel, this); // Ajout du CameraController
         
         // État du jeu
@@ -81,33 +100,13 @@ class GameController {
 
         this.pauseKeyDown = false;
 
-        if (typeof window !== 'undefined' && window.addEventListener) {
-            window.addEventListener('ROCKET_CRASH_EXPLOSION', (e) => {
-                if (this.particleController && e.detail) {
-                    // Explosion massive : beaucoup de particules, couleurs vives, grande taille
-                    this.particleController.createExplosion(
-                        e.detail.x,
-                        e.detail.y,
-                        120, // nombre de particules
-                        8,   // vitesse
-                        10,  // taille
-                        2.5, // durée de vie (secondes)
-                        '#FFDD00', // couleur début (jaune vif)
-                        '#FF3300'  // couleur fin (rouge/orange)
-                    );
-                }
-            });
-
-            // --- Effet Mission Réussie (particules texte) ---
-            window.addEventListener('MISSION_SUCCESS_PARTICLES', (e) => {
-                // Effet désactivé
-            });
-        }
-
         this._lastRocketDestroyed = false;
     }
     
-    // S'abonner aux événements de l'EventBus
+    /**
+     * S'abonne aux événements pertinents de l'EventBus.
+     * @private
+     */
     subscribeToEvents() {
         // Événements sémantiques pour les actions de la fusée - GÉRÉS PAR RocketController
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this.handleResetRocket()));
@@ -121,10 +120,6 @@ class GameController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.GAME.RESUME_IF_PAUSED, () => this.handleResumeIfPaused()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS, () => this.handleToggleAssistedControlsFromUI()));
 
-        // Événements pour les vecteurs et autres affichages
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_TRACES, () => this.toggleTraceVisibility()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.PHYSICS.TOGGLE_FORCES, () => this.handleToggleForces()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.INCREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(2.0)));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.DECREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(0.5)));
@@ -134,15 +129,6 @@ class GameController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data)));
         // Événement lorsque la fusée atterrit
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data)));
-
-        // --- Abonnements Joystick (Supprimés et remplacés par des commandes sémantiques) ---
-        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_CHANGED, (data) => this.handleJoystickAxisChanged(data)));
-        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_HELD, (data) => this.handleJoystickAxisHeld(data)));
-        // window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.JOYSTICK_AXIS_RELEASED, (data) => this.handleJoystickAxisReleased(data)));
-
-        // +++ Nouveaux Abonnements aux commandes sémantiques d'InputController +++
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ZOOM_COMMAND, (data) => this.handleZoomCommand(data)));
 
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_CONNECTED, () => { /* On pourrait afficher un message */ }));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.GAMEPAD_DISCONNECTED, () => { /* On pourrait afficher un message */ }));
@@ -156,17 +142,24 @@ class GameController {
               : null;
 
         if (canvasResizedEventName) {
-            window.controllerContainer.track(
-                this.eventBus.subscribe(canvasResizedEventName, (data) => this.handleCanvasResized(data))
-            );
+            // Déplacé vers CameraController
+            // window.controllerContainer.track(
+            //     this.eventBus.subscribe(canvasResizedEventName, (data) => this.handleCanvasResized(data))
+            // );
         } else {
-            console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. GameController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
+            // CameraController affichera cet avertissement s'il ne trouve pas l'événement.
+            // console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. GameController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
         }
     }
     
     // Gérer les événements d'entrée sémantiques
     // LES GESTIONNAIRES POUR THRUST/ROTATE SONT DANS RocketController.js
 
+    /**
+     * Gère le basculement de l'état de pause du jeu.
+     * Émet les événements GAME_PAUSED ou GAME_RESUMED en conséquence.
+     * @private
+     */
     handleTogglePause() {
         this.isPaused = !this.isPaused;
         if (this.isPaused) {
@@ -176,6 +169,11 @@ class GameController {
         }
     }
 
+    /**
+     * Reprend le jeu s'il était en pause.
+     * Émet l'événement GAME_RESUMED si le jeu reprend.
+     * @private
+     */
     handleResumeIfPaused() {
         if (this.isPaused) {
             this.isPaused = false;
@@ -183,25 +181,43 @@ class GameController {
         }
     }
     
+    /**
+     * Gère la demande de réinitialisation de la fusée.
+     * @private
+     */
     handleResetRocket() {
         this.resetRocket();
     }
 
+    /**
+     * Gère le basculement de l'affichage des vecteurs de force.
+     * @private
+     */
     handleToggleForces() {
         if (this.physicsController) {
             this.physicsController.toggleForceVectors();
         }
     }
 
+    /**
+     * Gère la demande de basculement des contrôles assistés depuis l'UI.
+     * @private
+     */
     handleToggleAssistedControlsFromUI() {
          this.toggleAssistedControls();
     }
     
-    // Émettre un seul événement pour l'état complet de la simulation
+    /**
+     * Collecte et émet l'état complet de la simulation via l'événement SIMULATION.UPDATED.
+     * Cet état inclut les informations sur la fusée, l'univers, les particules, la caméra,
+     * les missions actives, les crédits et un flag indiquant si une mission vient d'être réussie.
+     */
     emitUpdatedStates() {
         // Assurez-vous que PhysicsVectors est accessible ici
         // Soit via import PhysicsVectors from './PhysicsVectors.js'; (si module ES6)
         // Soit si PhysicsVectors est global (ex: window.PhysicsVectors)
+        // Ou si GameController a une instance, par exemple this.physicsVectorsInstance
+        // Pour l'instant, on suppose que PhysicsVectors est une classe globale avec des méthodes statiques.
 
         const gravityVector = PhysicsVectors.calculateGravityVector(this.rocketModel, this.universeModel, PHYSICS.G);
         const thrustVectors = PhysicsVectors.calculateThrustVectors(this.rocketModel, PHYSICS); // PHYSICS contient MAIN_THRUST, REAR_THRUST
@@ -258,6 +274,11 @@ class GameController {
         }
     }
     
+    /**
+     * Initialise les composants du jeu en utilisant GameSetupController.
+     * Configure les modèles, vues et contrôleurs internes.
+     * Réinitialise la fusée et démarre la boucle de jeu.
+     */
     init() {
         const gameSetupController = new GameSetupController(
             this.eventBus,
@@ -307,6 +328,13 @@ class GameController {
         console.log("GameController initialisé (via GameSetupController) et boucle démarrée.");
     }
     
+    /**
+     * Permet de définir les contrôleurs externes dont GameController dépend.
+     * @param {object} controllers - Un objet contenant les instances des contrôleurs.
+     * @param {InputController} [controllers.inputController] - Le contrôleur des entrées utilisateur.
+     * @param {RenderingController} [controllers.renderingController] - Le contrôleur du rendu graphique.
+     * @param {RocketAgent} [controllers.rocketAgent] - L'agent IA pour la fusée (optionnel).
+     */
     setControllers(controllers) {
         if (controllers.inputController) {
             this.inputController = controllers.inputController;
@@ -319,6 +347,10 @@ class GameController {
         }
     }
     
+    /**
+     * Démarre la boucle de jeu si elle n'est pas déjà en cours.
+     * Si le jeu est en pause au démarrage, un événement GAME_PAUSED est émis.
+     */
     start() {
         if (!this.isRunning) {
             this.isRunning = true;
@@ -333,6 +365,13 @@ class GameController {
         }
     }
     
+    /**
+     * La boucle principale du jeu. Appelée à chaque frame via requestAnimationFrame.
+     * Calcule le deltaTime, met à jour l'état du jeu (si non en pause),
+     * et déclenche le rendu.
+     * @param {DOMHighResTimeStamp} timestamp - Le timestamp actuel fourni par requestAnimationFrame.
+     * @private
+     */
     gameLoop(timestamp) {
         if (!this.isRunning) return;
 
@@ -367,6 +406,12 @@ class GameController {
         requestAnimationFrame((ts) => this.gameLoop(ts));
     }
     
+    /**
+     * Réinitialise l'état de la fusée et les éléments associés du jeu.
+     * Repositionne la fusée sur Terre, réinitialise sa vitesse, son angle,
+     * son carburant, sa cargaison, les crédits, les particules, la physique,
+     * la trace de rendu, les missions et la caméra.
+     */
     resetRocket() {
         let startLocation = 'Terre';
         
@@ -425,9 +470,11 @@ class GameController {
         this.elapsedTime = 0;
         this.isPaused = false; // Le jeu reprend après un reset
 
-        if (this.traceView) {
-            this.clearAllTraces();
-            this.traceView.update(this.rocketModel.position);
+        if (this.renderingController && this.rocketModel && this.rocketModel.position) {
+            this.renderingController.resetTrace(this.rocketModel.position);
+        } else if (this.renderingController) {
+            // Si rocketModel ou sa position n'est pas encore défini, on efface quand même la trace.
+            this.renderingController.resetTrace(null);
         }
 
         if (this.missionManager) {
@@ -460,6 +507,12 @@ class GameController {
         this.emitUpdatedStates();
     }
     
+    /**
+     * Met à jour l'état de tous les composants actifs du jeu.
+     * Appelée à chaque frame par la boucle de jeu si le jeu n'est pas en pause.
+     * @param {number} deltaTime - Le temps écoulé (en secondes) depuis la dernière frame.
+     * @private
+     */
     update(deltaTime) {
         if (this.inputController) {
             this.inputController.update();
@@ -494,20 +547,22 @@ class GameController {
         }
 
         // Mise à jour de la caméra (suivi, etc.)
-        // Si CameraModel a une méthode update, elle devrait être appelée ici ou dans RenderingController.
         // Pour l'instant, les mises à jour de position/zoom sont événementielles.
         // Si un suivi continu est nécessaire (ex: smooth follow), CameraModel ou CameraController aurait une méthode update.
 
         // Aucune logique de caméra spécifique à mettre à jour ici pour le moment,
         // car les changements de caméra sont pilotés par des événements dans CameraController.
 
-        this.updateTrace();
-
         if (this.missionManager && this.rocketModel && !this.rocketModel.isDestroyed) {
             this.missionManager.checkMissionCompletion(this.rocketModel, this.universeModel);
         }
     }
     
+    /**
+     * Nettoie les ressources et se désabonne des événements lorsque le jeu se termine
+     * ou que le contrôleur est détruit.
+     * S'appuie sur `window.controllerContainer.destroy()` pour le nettoyage global des abonnements.
+     */
     cleanup() {
         // Code pour se désabonner des événements et nettoyer les ressources
         // Par exemple, si EventBus a une méthode pour se désabonner de tous les événements
@@ -535,38 +590,44 @@ class GameController {
         // console.log("GameController cleanup executed.");
     }
 
+    /**
+     * Bascule l'affichage des positions des propulseurs sur la vue de la fusée.
+     * (Méthode potentiellement utilisée pour le débogage ou des options d'affichage).
+     */
     toggleThrusterPositions() {
         if (this.rocketView) {
             this.rocketView.setShowThrusterPositions(!this.rocketView.showThrusterPositions);
         }
     }
 
+    /**
+     * Ajuste le multiplicateur global de poussée des propulseurs.
+     * @param {number} factor - Le facteur par lequel multiplier la poussée actuelle (ex: 2.0 pour doubler, 0.5 pour diviser par deux).
+     */
     adjustThrustMultiplier(factor) {
-        const currentMultiplier = PHYSICS.THRUST_MULTIPLIER;
-        const newMultiplier = currentMultiplier * factor;
-        
-        const minMultiplier = 0.1;
-        const maxMultiplier = 1000;
-        
-        PHYSICS.THRUST_MULTIPLIER = Math.max(minMultiplier, Math.min(maxMultiplier, newMultiplier));
-        
-        if (this.physicsController) {
-            this.physicsController._lastThrustCalculation = 0;
+        if (this.physicsController && typeof this.physicsController.adjustGlobalThrustMultiplier === 'function') {
+            this.physicsController.adjustGlobalThrustMultiplier(factor);
+        } else {
+            console.warn("[GameController] physicsController.adjustGlobalThrustMultiplier n'est pas disponible.");
+            // Fallback à l'ancienne logique si la méthode n'existe pas (pourrait être retiré plus tard)
+            const currentMultiplier = PHYSICS.THRUST_MULTIPLIER;
+            const newMultiplier = currentMultiplier * factor;
+            const minMultiplier = 0.1;
+            const maxMultiplier = 1000;
+            PHYSICS.THRUST_MULTIPLIER = Math.max(minMultiplier, Math.min(maxMultiplier, newMultiplier));
+            if (this.physicsController && this.physicsController.thrusterPhysics && this.physicsController.thrusterPhysics.hasOwnProperty('_lastThrustCalculation')) {
+                 this.physicsController.thrusterPhysics._lastThrustCalculation = 0;
+            }
         }
     }
 
-    toggleTraceVisibility() {
-        if (this.renderingController) {
-            this.renderingController.toggleTraceVisibility();
-        }
-    }
 
-    toggleVectors() {
-        if (this.renderingController) {
-            this.renderingController.toggleVectors();
-        }
-    }
-
+    /**
+     * Gère les mises à jour de l'état de la fusée, notamment sa destruction.
+     * @param {object} data - Les données d'état de la fusée.
+     * @param {boolean} data.isDestroyed - Indique si la fusée est détruite.
+     * @private
+     */
     handleRocketStateUpdated(data) {
         if (data.isDestroyed && !this._lastRocketDestroyed) {
             // console.log("Fusée détruite - Appuyez sur R pour réinitialiser"); // Optionnel
@@ -574,41 +635,36 @@ class GameController {
         this._lastRocketDestroyed = !!data.isDestroyed;
     }
 
-    updateTrace() {
-        if (!this.rocketModel || !this.traceView) return;
-        
-        const isAttachedToMoon = (this.rocketModel.isDestroyed && (this.rocketModel.attachedTo === 'Lune' || this.rocketModel.landedOn === 'Lune')) || 
-                                  (this.rocketModel.landedOn === 'Lune');
-        
-        let moonPosition = null;
-        if (isAttachedToMoon) {
-            const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
-            if (moon) {
-                moonPosition = moon.position;
-            }
-        }
-        
-        this.traceView.update(this.rocketModel.position, isAttachedToMoon, moonPosition);
-    }
-
+    /**
+     * Bascule l'état des contrôles assistés (par exemple, assistance à la stabilisation).
+     * Met à jour la vue UI en conséquence.
+     */
     toggleAssistedControls() {
         if (this.physicsController && this.uiView) {
             const assistedEnabled = this.physicsController.toggleAssistedControls();
-            this.uiView.assistedControlsActive = assistedEnabled;
+            // this.uiView.assistedControlsActive = assistedEnabled; // Ancienne méthode directe
+            // Nouvelle méthode : émettre un événement
+            this.eventBus.emit(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, { isActive: assistedEnabled });
         }
     }
 
-    clearAllTraces() {
-        if (this.traceView) {
-            this.traceView.clear(true);
-        }
-    }
-
+    /**
+     * Bascule le contrôle de la fusée par l'IA.
+     * Émet un événement pour que RocketAgent puisse prendre ou rendre le contrôle.
+     */
     toggleAIControl() {
         if (!this.rocketAgent) return;
         this.eventBus.emit(EVENTS.AI.TOGGLE, {});
     }
 
+    /**
+     * Gère l'événement d'atterrissage de la fusée.
+     * Vérifie la complétion des missions, met à jour les crédits,
+     * et charge une nouvelle cargaison pour la localisation actuelle.
+     * @param {object} data - Données de l'événement d'atterrissage.
+     * @param {string} data.landedOn - Le nom du corps céleste sur lequel la fusée a atterri.
+     * @private
+     */
     handleRocketLanded(data) {
         if (!this.rocketModel || !this.rocketModel.isLanded) { 
             return; 
@@ -634,86 +690,5 @@ class GameController {
         }
     }
 
-    // --- Gestionnaires d'événements Joystick (Supprimés) ---
-
-    // handleJoystickAxisChanged(data) { ... }
-    // handleJoystickAxisHeld(data) { ... }
-    // handleJoystickAxisReleased(data) { ... }
-
-    // +++ Nouveaux Gestionnaires pour commandes sémantiques +++
-    handleRotateCommand(data) {
-        if (!this.rocketModel || this.isPaused) return;
-
-        const rotateValue = data.value;
-        // La logique de rotation de la fusée est typiquement dans RocketController.
-        // GameController pourrait ici relayer une commande plus abstraite à RocketController
-        // ou directement interagir avec rocketModel si c'est sa responsabilité.
-        // Pour l'instant, on garde la logique ici comme dans l'ancien handleJoystickAxisChanged.
-
-        // On suppose que ROCKET.THRUSTER_POWER.RIGHT et ROCKET.THRUSTER_POWER.LEFT sont accessibles
-        // et que particleSystemModel est aussi accessible.
-        // Il serait préférable que RocketController gère cela en réponse à un événement plus générique.
-
-        if (rotateValue < 0) { // rotation vers la droite (physiquement, propulseur droit)
-            const power = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.RIGHT || ROCKET.DEFAULT_ROTATION_THRUST); // Valeur par défaut si non défini
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: power });
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
-            if (this.particleSystemModel) {
-                this.particleSystemModel.setEmitterActive('right', power > 0.1);
-                this.particleSystemModel.setEmitterActive('left', false);
-            }
-        } else if (rotateValue > 0) { // rotation vers la gauche (physiquement, propulseur gauche)
-            const power = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.LEFT || ROCKET.DEFAULT_ROTATION_THRUST);
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: power });
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
-            if (this.particleSystemModel) {
-                this.particleSystemModel.setEmitterActive('left', power > 0.1);
-                this.particleSystemModel.setEmitterActive('right', false);
-            }
-        } else { // rotateValue === 0 ou proche de zéro (relâchement)
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
-            this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
-            if (this.particleSystemModel) {
-                this.particleSystemModel.setEmitterActive('left', false);
-                this.particleSystemModel.setEmitterActive('right', false);
-            }
-        }
-        // Note: L'émission de EVENTS.ROCKET.SET_THRUSTER_POWER est une meilleure approche
-        // si RocketController écoute ces événements pour changer l'état de rocketModel.
-        // Si ce n'est pas le cas, il faudrait modifier rocketModel directement ici :
-        // this.rocketModel.setThrusterPower('right', powerRight);
-        // this.rocketModel.setThrusterPower('left', powerLeft);
-    }
-    
-    handleZoomCommand(data) {
-         if (!this.cameraModel || this.isPaused) return;
-         
-         const zoomValue = data.value; // Valeur brute de l'axe du joystick
-         const zoomSpeedFactor = Math.abs(zoomValue) * (RENDER.ZOOM_SPEED || 0.01) * 1.5; 
-
-         // Si zoomValue < 0 (généralement joystick vers le HAUT), on veut ZOOMER (facteur > 1)
-         // Si zoomValue > 0 (généralement joystick vers le BAS), on veut DÉZOOMER (facteur < 1)
-         if (zoomValue < 0) { 
-              this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 + zoomSpeedFactor });
-         } else if (zoomValue > 0) { 
-             this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: 1 / (1 + zoomSpeedFactor) });
-         }
-         // Pas d'action si zoomValue est 0 (ou dans la zone morte, déjà géré par InputController)
-    }
-
-    toggleGravityField() {
-        if (this.renderingController && typeof this.renderingController.toggleGravityField === 'function') {
-            this.renderingController.toggleGravityField();
-        }
-    }
-
-    handleCanvasResized(data) {
-        if (this.cameraModel && data) {
-            this.cameraModel.width = data.width;
-            this.cameraModel.height = data.height;
-            this.cameraModel.offsetX = data.width / 2;
-            this.cameraModel.offsetY = data.height / 2;
-            // console.log(`[GameController] CameraModel dimensions updated: ${data.width}x${data.height}`); // Log optionnel
-        }
-    }
-} 
+    // handleCanvasResized(data) - Déplacé vers CameraController.js. Bloc de code commenté supprimé.
+}

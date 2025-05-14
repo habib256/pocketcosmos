@@ -35,6 +35,9 @@ class ParticleController {
                  console.warn("ParticleController: EventBus non fourni, la gestion de la pause sera inactive.");
             }
         }
+
+        // S'abonner aux événements globaux pour les effets de particules
+        this.subscribeToGlobalEvents();
     }
     
     // Initialiser le pool de particules
@@ -205,7 +208,8 @@ class ParticleController {
     // Mettre à jour les positions des émetteurs en fonction de la position de la fusée
     updateEmitterPositions(rocketModel) {
         if (!rocketModel || !this.particleSystemModel || !this.particleSystemModel.emitters) {
-            console.error('Erreur: Modèles non initialisés correctement');
+            // Modifié pour ne pas être une erreur fatale si particleSystemModel est manquant au début
+            // console.error('Erreur: Modèles non initialisés correctement pour updateEmitterPositions');
             return;
         }
         
@@ -350,6 +354,35 @@ class ParticleController {
                 this.particleSystemModel.celebrationParticles = [];
             }
             this.particleSystemModel.celebrationParticles.push(particle);
+        }
+    }
+
+    // Nouvelle méthode pour s'abonner aux événements globaux
+    subscribeToGlobalEvents() {
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('ROCKET_CRASH_EXPLOSION', (e) => {
+                if (e.detail) {
+                    // Explosion massive : beaucoup de particules, couleurs vives, grande taille
+                    this.createExplosion(
+                        e.detail.x,
+                        e.detail.y,
+                        120, // nombre de particules
+                        8,   // vitesse
+                        10,  // taille
+                        2.5, // durée de vie (secondes)
+                        '#FFDD00', // couleur début (jaune vif)
+                        '#FF3300'  // couleur fin (rouge/orange)
+                    );
+                }
+            });
+
+            // --- Effet Mission Réussie (particules texte) ---
+            // Actuellement désactivé dans GameController, donc on le garde désactivé ici aussi
+            // ou on le connecte à une méthode appropriée si l'effet doit être réactivé.
+            window.addEventListener('MISSION_SUCCESS_PARTICLES', (e) => {
+                // Effet désactivé. Si réactivé, appeler une méthode comme this.createMissionSuccessParticles(e.detail.x, e.detail.y, e.detail.message);
+                // console.log("[ParticleController] MISSION_SUCCESS_PARTICLES event received, but effect is currently disabled.");
+            });
         }
     }
 

@@ -93,6 +93,21 @@ class RenderingController {
                 // no-op
             })
         );
+
+        // S'abonner directement aux événements de bascule du rendu
+        if (window.EVENTS && window.EVENTS.RENDER) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_VECTORS, () => this.toggleVectors())
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_GRAVITY_FIELD, () => this.toggleGravityField())
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.RENDER.TOGGLE_TRACES, () => this.toggleTraceVisibility())
+            );
+        } else {
+            console.warn("RenderingController: EVENTS.RENDER non disponible, les bascules de rendu pourraient ne pas fonctionner via EventBus.");
+        }
     }
     
     // Initialiser les vues
@@ -155,6 +170,19 @@ class RenderingController {
         // Utiliser this.ctx et this.canvas internes
         const ctx = this.ctx;
         const canvas = this.canvas;
+
+        // Mettre à jour la trace avec la dernière position connue de la fusée avant le rendu
+        // this.updateTrace(); // L'appel est déplacé ici
+        // Correction: rocketState est mis à jour par l'événement SIMULATION.UPDATED.
+        // Si GameController.update appelle emitUpdatedStates APRÈS this.updateTrace, alors rocketState ne serait pas à jour ici.
+        // Assurons-nous que updateTrace est appelé avec les données les plus fraîches ou que l'ordre est correct.
+        // Pour l'instant, on part du principe que this.rocketState est à jour au moment où render() est appelé.
+        // GameController.gameLoop -> update() -> emitUpdatedStates() -> RenderingController.render()
+        // Donc this.rocketState (mis à jour par SIMULATION.UPDATED) devrait être frais.
+
+        if (!this.isSystemPaused) { // Seulement si le jeu n'est pas en pause
+            this.updateTrace(); // Mettre à jour les données de la trace
+        }
 
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -311,39 +339,12 @@ class RenderingController {
         // S'assurer que la position est valide
         if (this.rocketState.position.x === undefined || this.rocketState.position.y === undefined ||
             isNaN(this.rocketState.position.x) || isNaN(this.rocketState.position.y)) {
-            console.warn("Position de la fusée invalide pour la trace:", this.rocketState.position);
+            // console.warn("[RenderingController] Position de la fusée invalide pour la trace:", this.rocketState.position);
             return;
         }
         
-        // Supprimer toute la logique de vérification et d'appel relative à la lune
-        /*
-        // Vérifier si la fusée est détruite et attachée à la lune
-        const isAttachedToMoon = (this.rocketState.isDestroyed && 
-                                 (this.rocketState.attachedTo === 'Lune' || this.rocketState.landedOn === 'Lune')) ||
-                                 (!this.rocketState.isDestroyed && this.rocketState.landedOn === 'Lune');
-        
-        // Si la fusée est attachée à la lune, on a besoin de la position de la lune
-        let moonPosition = null;
-        if (isAttachedToMoon && this.universeState && this.universeState.celestialBodies) {
-            // Trouver la lune dans l'univers
-            const moon = this.universeState.celestialBodies.find(body => body.name === 'Lune');
-            if (moon && moon.position) {
-                moonPosition = moon.position;
-                
-                // Vérifier que la position de la lune est valide
-                if (moonPosition.x === undefined || moonPosition.y === undefined ||
-                    isNaN(moonPosition.x) || isNaN(moonPosition.y)) {
-                    console.warn("Position de la lune invalide pour la trace:", moonPosition);
-                    moonPosition = null;
-                } else {
-                    // Mettre à jour les traces existantes pour qu'elles suivent la lune
-                    // this.traceView.updateTracesForMoon(moonPosition); // Appel supprimé
-                }
-            }
-        }
-        */
-        
-        // Ajouter le point de trace (coordonnées absolues uniquement)
+        // La logique complexe avec la lune n'est plus nécessaire car TraceView.update ne la prend plus en charge.
+        // Ajouter simplement le point de trace (coordonnées absolues uniquement)
         this.traceView.update(this.rocketState.position);
     }
     
@@ -406,5 +407,22 @@ class RenderingController {
         // Retourner des valeurs par défaut ou gérer l'erreur si le canvas n'est pas prêt
         console.warn("getCanvasDimensions appelé avant que le canvas ne soit initialisé.");
         return { width: 0, height: 0 }; 
+    }
+
+    // Nouvelle méthode pour réinitialiser la trace
+    resetTrace(initialRocketPosition) {
+        if (this.traceView) {
+            this.traceView.clear(true); // Efface complètement tous les points de la trace
+            if (initialRocketPosition && 
+                initialRocketPosition.x !== undefined && initialRocketPosition.y !== undefined &&
+                !isNaN(initialRocketPosition.x) && !isNaN(initialRocketPosition.y)) {
+                // Ajoute le premier point de la nouvelle trace si la position est valide
+                this.traceView.update(initialRocketPosition);
+            } else if (initialRocketPosition) {
+                // Log si la position initiale fournie n'est pas valide
+                console.warn("[RenderingController.resetTrace] Position initiale de la fusée non valide, trace non initialisée avec un point:", initialRocketPosition);
+            } 
+            // Si initialRocketPosition n'est pas fourni, la trace est juste effacée.
+        }
     }
 } 

@@ -248,6 +248,9 @@ class PhysicsController {
     }
 
     toggleForceVectors() {
+        // Si VectorsView est utilisé et gère son propre état, cette méthode pourrait être déplacée
+        // ou modifiée pour appeler une méthode sur VectorsView.
+        // Pour l'instant, on garde la logique ici car c'est simple.
         return this.physicsVectors.toggleForceVectors();
     }
 
@@ -341,5 +344,30 @@ class PhysicsController {
                 radius: cb.model.radius
             };
         });
+    }
+
+    // Nouvelle méthode pour ajuster le multiplicateur de poussée global
+    adjustGlobalThrustMultiplier(factor) {
+        const currentMultiplier = PHYSICS.THRUST_MULTIPLIER;
+        let newMultiplier = currentMultiplier * factor;
+        
+        // Assurer que this.PHYSICS est la référence globale ou que la modification est propagée
+        const minMultiplier = 0.1;
+        const maxMultiplier = 1000;
+        
+        PHYSICS.THRUST_MULTIPLIER = Math.max(minMultiplier, Math.min(maxMultiplier, newMultiplier));
+        console.log(`[PhysicsController] THRUST_MULTIPLIER ajusté à: ${PHYSICS.THRUST_MULTIPLIER}`);
+
+        // Réinitialiser le cache ou l'état pertinent dans ThrusterPhysics si nécessaire
+        if (this.thrusterPhysics && typeof this.thrusterPhysics.resetThrustCalculationCache === 'function') {
+            // Si ThrusterPhysics a une méthode explicite pour cela
+            this.thrusterPhysics.resetThrustCalculationCache();
+        } else if (this.thrusterPhysics && this.thrusterPhysics.hasOwnProperty('_lastThrustCalculation')) {
+            // Si ThrusterPhysics a une propriété _lastThrustCalculation (comme supposé depuis GameController)
+            this.thrusterPhysics._lastThrustCalculation = 0;
+            // console.log("[PhysicsController] _lastThrustCalculation dans thrusterPhysics réinitialisé.");
+        } else {
+            // console.warn("[PhysicsController] Impossible de réinitialiser le cache de calcul de poussée dans ThrusterPhysics.");
+        }
     }
 } 

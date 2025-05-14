@@ -118,17 +118,6 @@ class CameraModel {
         this.x += deltaX;
         this.y += deltaY;
 
-        // Log temporaire pour les premières frames
-        if (this.gameController && this.gameController.elapsedTime < 3) { // Supposant que gameController a elapsedTime
-            console.log("[CameraModel.followRocket] Update:", {
-                currentTime: this.gameController.elapsedTime,
-                camX: this.x, camY: this.y,
-                targetX: targetX, targetY: targetY,
-                deltaX: deltaX, deltaY: deltaY,
-                smoothing: this.smoothing,
-                deltaTime: deltaTime
-            });
-        }
     }
 
     // La méthode followEarth a été supprimée car elle n'était pas implémentée.

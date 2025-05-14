@@ -41,6 +41,9 @@ class RocketController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data)));
+
+        // Nouvel abonnement pour la commande de rotation générique (par exemple, depuis un joystick)
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
     }
 
     handleThrustForwardStart() {
@@ -155,5 +158,47 @@ class RocketController {
             }
             this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
         }
+    }
+
+    // +++ NOUVEAU GESTIONNAIRE pour EVENTS.INPUT.ROTATE_COMMAND +++
+    handleRotateCommand(data) {
+        if (!this.rocketModel || !this.eventBus /* Ajoutez ici la vérification de gameController.isPaused si nécessaire */) return;
+
+        const rotateValue = data.value; // Valeur de rotation, négative pour droite, positive pour gauche
+
+        // Note: Accéder à gameController.isPaused nécessiterait de passer gameController au constructeur
+        // ou de gérer la pause via un événement auquel RocketController s'abonne.
+        // Pour l'instant, on suppose que si le jeu est en pause, InputController n'émet pas ces événements,
+        // ou que GameController gère la pause globalement pour les mises à jour.
+        // Si GameController.isPaused est nécessaire, il faudrait l'ajouter.
+
+        let powerLeft = 0;
+        let powerRight = 0;
+
+        if (rotateValue < 0) { // Rotation vers la droite (propulseur droit pour tourner à droite, ou propulseur gauche si c'est un couple)
+            // La logique originale dans GameController activait le propulseur droit.
+            // ROCKET.THRUSTER_POWER.RIGHT est la puissance max du propulseur droit.
+            // Math.abs(rotateValue) est un multiplicateur (0 à 1).
+            powerRight = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.RIGHT || ROCKET.DEFAULT_ROTATION_THRUST);
+        } else if (rotateValue > 0) { // Rotation vers la gauche (propulseur gauche)
+            powerLeft = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.LEFT || ROCKET.DEFAULT_ROTATION_THRUST);
+        }
+
+        // Appliquer les puissances et gérer les particules
+        // On peut utiliser directement setThrusterPower et la logique de gestion des particules de handleSetThrusterPower
+        // ou émettre des événements SET_THRUSTER_POWER.
+        // Émettre des événements est plus cohérent avec le pattern actuel.
+
+        this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: powerLeft });
+        this.eventBus.emit(EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: powerRight });
+
+        // La méthode handleSetThrusterPower s'occupe déjà d'activer/désactiver les particules
+        // et d'émettre ROCKET_INTERNAL_STATE_CHANGED_EVENT.
+        // Si les particules pour 'left' et 'right' ne sont pas gérées par handleSetThrusterPower pour power = 0,
+        // il faudrait ajouter cette logique ici ou dans handleSetThrusterPower.
+        // D'après le code de handleSetThrusterPower, il gère bien l'activation/désactivation pour 'left' et 'right'.
+        // Exemple : this.particleSystemModel.setEmitterActive('left', powerLeft > 0.01, this.rocketModel);
+        //          this.particleSystemModel.setEmitterActive('right', powerRight > 0.01, this.rocketModel);
+        // Mais cela est déjà fait dans handleSetThrusterPower. Si on appelle SET_THRUSTER_POWER, il le fera.
     }
 } 

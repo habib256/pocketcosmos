@@ -23,6 +23,24 @@ class CameraController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.START_DRAG, (data) => this.handleCameraStartDrag(data)));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.DRAG, (data) => this.handleCameraDrag(data)));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.CAMERA.STOP_DRAG, () => this.handleCameraStopDrag()));
+
+        // Nouvel abonnement pour la commande de zoom générique (par exemple, depuis un joystick)
+        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ZOOM_COMMAND, (data) => this.handleZoomCommand(data)));
+
+        // S'abonner à l'événement de redimensionnement du canvas
+        const canvasResizedEventName = (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED)
+            ? window.EVENTS.SYSTEM.CANVAS_RESIZED
+            : (window.EVENTS && window.EVENTS.RENDER && window.EVENTS.RENDER.CANVAS_RESIZED)
+              ? window.EVENTS.RENDER.CANVAS_RESIZED
+              : null;
+
+        if (canvasResizedEventName) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(canvasResizedEventName, (data) => this.handleCanvasResized(data))
+            );
+        } else {
+            console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. CameraController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
+        }
     }
 
     // Gestion du zoom
@@ -78,6 +96,33 @@ class CameraController {
         // GameController.emitUpdatedStates(); // Peut-être nécessaire si le zoom affecte des éléments de UI
     }
 
+    // +++ NOUVEAU GESTIONNAIRE pour EVENTS.INPUT.ZOOM_COMMAND +++
+    handleZoomCommand(data) {
+        if (!this.cameraModel || this.gameController.isPaused) return; // Accès à isPaused via gameController
+        
+        const zoomValue = data.value; // Valeur brute de l'axe du joystick
+        const zoomSpeed = (RENDER.ZOOM_SPEED || 0.01); // Vitesse de zoom de base
+        let factor = 1.0;
+
+        // Comportement désiré :
+        // Joystick vers le HAUT (zoomValue < 0) doit ZOOMER (facteur > 1).
+        // Joystick vers le BAS (zoomValue > 0) doit DÉZOOMER (facteur < 1).
+        // La méthode cameraModel.setZoom(this.cameraModel.zoom * factor) fonctionne ainsi :
+        // - facteur > 1 : Zoom IN (objets plus grands, zone vue plus petite)
+        // - facteur < 1 : Zoom OUT (objets plus petits, zone vue plus grande)
+
+        if (zoomValue < 0) { // Joystick vers le HAUT ou équivalent -> ZOOMER
+            factor = 1 + Math.abs(zoomValue) * zoomSpeed * 1.5; // facteur > 1
+        } else if (zoomValue > 0) { // Joystick vers le BAS ou équivalent -> DÉZOOMER
+            factor = 1 / (1 + Math.abs(zoomValue) * zoomSpeed * 1.5); // facteur < 1
+        } else {
+            return; // Pas de changement si la valeur est nulle (zone morte gérée en amont)
+        }
+        
+        this.cameraModel.setZoom(this.cameraModel.zoom * factor);
+        // L'appel à emitUpdatedStates sera géré par GameController si nécessaire après propagation de l'état de CameraModel
+    }
+
     // Centrer la caméra sur la fusée
     handleCenterCamera() {
         if (this.gameController.isPaused) return;
@@ -129,6 +174,17 @@ class CameraController {
     handleCameraStopDrag() {
         if (this.isDragging) { // Vérifier si on était en train de draguer, même si le jeu est en pause
             this.isDragging = false;
+        }
+    }
+
+    // +++ NOUVEAU GESTIONNAIRE pour le redimensionnement du canvas +++
+    handleCanvasResized(data) {
+        if (this.cameraModel && data) {
+            this.cameraModel.width = data.width;
+            this.cameraModel.height = data.height;
+            this.cameraModel.offsetX = data.width / 2;
+            this.cameraModel.offsetY = data.height / 2;
+            // console.log(`[CameraController] CameraModel dimensions updated: ${data.width}x${data.height}`);
         }
     }
 

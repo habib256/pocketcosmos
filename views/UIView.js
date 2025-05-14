@@ -52,6 +52,20 @@ class UIView {
 
         // Stocker les dernières coordonnées connues du bouton
         this.lastAssistedButtonBounds = null;
+
+        // S'abonner aux changements d'état des contrôles assistés
+        if (this.eventBus && EVENTS && EVENTS.UI && EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, (data) => {
+                    if (typeof data.isActive === 'boolean') {
+                        this.assistedControlsActive = data.isActive;
+                        // console.log(`[UIView] Event ASSISTED_CONTROLS_STATE_CHANGED: assistedControlsActive mis à jour à: ${this.assistedControlsActive}`);
+                    }
+                })
+            );
+        } else {
+            console.warn("[UIView] EventBus ou EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED non disponible pour l'abonnement.");
+        }
     }
 
     // --- Méthodes de Rendu Publiques ---
@@ -656,7 +670,15 @@ class UIView {
      * @param {boolean} isActive - Le nouvel état des contrôles assistés.
      */
     setAssistedControlsActive(isActive) {
-        this.assistedControlsActive = isActive;
+        // console.log(`[UIView] setAssistedControlsActive appelé avec: ${isActive}, ancien état: ${this.assistedControlsActive}`);
+        // Cette méthode est maintenant contournée au profit d'un système d'événements.
+        // Elle est conservée au cas où elle serait utilisée par d'autres parties du code
+        // ou pour des tests directs, mais GameController ne l'appelle plus.
+        console.warn("[UIView.setAssistedControlsActive] Cette méthode est dépréciée en faveur de l'événement EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED.");
+        if (this.assistedControlsActive !== isActive) {
+            this.assistedControlsActive = isActive;
+            // Il n'y a PAS d'appel explicite pour redessiner l'UI ici.
+        }
     }
 
     /**
