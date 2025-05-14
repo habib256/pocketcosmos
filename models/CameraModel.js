@@ -65,6 +65,8 @@ class CameraModel {
      * @param {'rocket'|'free'} [mode='rocket'] - Le mode de caméra.
      */
     setTarget(target, mode = 'rocket') {
+        // console.log(`[CameraModel.setTarget] Appel avec target:`, target, `mode: ${mode}`); // Commenté
+        // console.trace('[CameraModel.setTarget] Trace:'); // Commenté
         this.target = target;
         this.mode = mode;
     }
@@ -75,7 +77,13 @@ class CameraModel {
      * @param {number} deltaTime - Le temps écoulé depuis la dernière frame (en secondes).
      */
     update(deltaTime) {
-        if (!this.target) return; // Ne fait rien si aucune cible n'est définie
+        // Log pour suivre l'état de la caméra à chaque update
+        // console.log(`[CameraModel.update] Mode: ${this.mode}, Target:`, this.target ? this.target.name || this.target : null, `Position: {x: ${this.x}, y: ${this.y}}`);
+        
+        if (!this.target && this.mode !== 'free') { // Si pas de cible et pas en mode libre, loguer un avertissement
+            // console.warn("[CameraModel.update] Mode de suivi actif mais aucune cible définie.", { mode: this.mode, target: this.target });
+            return;
+        }
 
         switch (this.mode) {
             case 'rocket':

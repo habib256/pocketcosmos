@@ -225,6 +225,10 @@ class GameSetupController {
         // const canvasSize = renderingController.getCanvasDimensions(); // RenderingController pourrait ne pas avoir le canvas lui-même
         if (canvas && typeof canvas.width === 'number' && typeof canvas.height === 'number') { // Utiliser directement les dimensions du canvas
             cameraModelInstance.setTarget(rocketModelInstance, 'rocket');
+            // Forcer la position initiale de la caméra pour correspondre à la fusée immédiatement
+            if (rocketModelInstance && rocketModelInstance.position) {
+                cameraModelInstance.setPosition(rocketModelInstance.position.x, rocketModelInstance.position.y);
+            }
             cameraModelInstance.offsetX = canvas.width / 2;
             cameraModelInstance.offsetY = canvas.height / 2;
             cameraModelInstance.width = canvas.width;

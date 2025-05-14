@@ -180,7 +180,6 @@ class CameraController {
     /**
      * Gère le début du glissement de la caméra.
      * Enregistre la position de départ du glissement et la position actuelle de la caméra.
-     * Passe la caméra en mode 'free' (sans cible).
      * Ne fait rien si le jeu est en pause.
      * @param {object} data - Les données de l'événement de début de glissement.
      * @param {number} data.x - La coordonnée X du pointeur au début du glissement.
@@ -196,7 +195,9 @@ class CameraController {
         if (this.cameraModel) {
             this.dragStartCameraX = this.cameraModel.x;
             this.dragStartCameraY = this.cameraModel.y;
-            this.cameraModel.setTarget(null, 'free'); // Libérer la caméra de toute cible
+            // Ne pas appeler setTarget(null, 'free') ici immédiatement.
+            // Le mode sera changé dans handleCameraDrag si un mouvement significatif est détecté
+            // alors que la caméra suivait la fusée.
         }
     }
     
@@ -211,17 +212,35 @@ class CameraController {
      */
     handleCameraDrag(data) {
         if (!this.isDragging || this.gameController.isPaused) return;
-        
-        // Calcule le delta de déplacement en coordonnées du monde (en divisant par le zoom)
-        const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
-        const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
-        
+
         if (this.cameraModel) {
-            // Applique le déplacement inversé à la position de départ de la caméra
-            this.cameraModel.setPosition(
-                this.dragStartCameraX - dx,
-                this.dragStartCameraY - dy
-            );
+            // Si un drag est détecté ET que la caméra est toujours en mode 'rocket' 
+            // (signifiant qu'un mousedown a eu lieu mais n'a pas immédiatement changé le mode),
+            // alors on vérifie si le mouvement est significatif avant de passer en mode 'free'.
+            if (this.cameraModel.mode === 'rocket' && this.cameraModel.target === this.gameController.rocketModel) {
+                const dragThreshold = 2; // Seuil en pixels pour considérer un drag comme intentionnel
+                const movedX = Math.abs(data.x - this.dragStartX);
+                const movedY = Math.abs(data.y - this.dragStartY);
+
+                if (movedX > dragThreshold || movedY > dragThreshold) {
+                    // console.log("[CameraController.handleCameraDrag] Passage en mode 'free' car drag significatif détecté pendant le suivi de la fusée."); // Commenté
+                    this.cameraModel.setTarget(null, 'free');
+                    // dragStartCameraX/Y sont déjà corrects car ils ont été enregistrés au mousedown.
+                } else {
+                    return; // Pas de drag significatif, on ne change pas de mode et on ne déplace pas la caméra.
+                }
+            }
+
+            // Si la caméra est (ou vient de passer en) mode 'free', appliquer le déplacement.
+            if (this.cameraModel.mode === 'free') {
+                const dx = (data.x - this.dragStartX) / this.cameraModel.zoom;
+                const dy = (data.y - this.dragStartY) / this.cameraModel.zoom;
+                
+                this.cameraModel.setPosition(
+                    this.dragStartCameraX - dx,
+                    this.dragStartCameraY - dy
+                );
+            }
         }
     }
     

@@ -144,13 +144,12 @@ class EventBus {
      */
     emit(eventType, data) {
         // AJOUT POUR DEBUGGER L'ÉVÉNEMENT UNDEFINED
-        if (eventType === undefined) {
-            console.error("EventBus.emit a été appelé avec un eventType UNDEFINED. Données associées:", data);
-            console.trace(); // Ceci affichera la pile d'appels pour identifier l'origine
-            // Optionnel: décommenter pour arrêter l'exécution et permettre l'inspection dans les outils de développement
-            // debugger; 
-            // throw new Error("EventBus: eventType is undefined. Voir la console pour la trace."); 
-        }
+        // if (eventType === undefined) { // Commenté ou supprimé
+        //     console.error("EventBus.emit a été appelé avec un eventType UNDEFINED. Données associées:", data);
+        //     console.trace(); 
+        //     // debugger; 
+        //     // throw new Error("EventBus: eventType is undefined. Voir la console pour la trace."); 
+        // }
         // FIN DE L'AJOUT DEBUG
 
         let notified = false;
