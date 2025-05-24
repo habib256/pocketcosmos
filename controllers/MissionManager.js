@@ -226,6 +226,57 @@ class MissionManager {
             // console.log(`%c[MissionManager] Aucune mission active au départ de ${location} trouvée. Cargo de la fusée vidé.`, 'color: gray;');
         }
     }
+
+    /**
+     * Met à jour le gestionnaire de missions à chaque pas de temps.
+     * Cette méthode est appelée par HeadlessRocketEnvironment et GameController
+     * pour traiter la logique des missions en temps réel.
+     * @param {number} deltaTime - Le temps écoulé depuis la dernière mise à jour en secondes
+     * @param {RocketModel} rocketModel - Le modèle de la fusée
+     * @param {UniverseModel} universeModel - Le modèle de l'univers
+     */
+    update(deltaTime, rocketModel, universeModel) {
+        // Pour l'instant, cette méthode peut être vide ou contenir une logique minimale
+        // Elle pourra être étendue plus tard pour:
+        // - Vérifier automatiquement la complétion des missions
+        // - Gérer les timeouts de missions
+        // - Mettre à jour les objectifs dynamiques
+        
+        if (!rocketModel || !universeModel) {
+            return;
+        }
+
+        // Exemple de logique future: vérifier automatiquement la complétion des missions
+        // si la fusée est atterrie quelque part
+        if (rocketModel.isLanded && rocketModel.landedOn && rocketModel.cargo) {
+            // Vérifier la complétion des missions pour la localisation actuelle
+            const completedMissions = this.checkMissionCompletion(rocketModel.cargo, rocketModel.landedOn);
+            if (completedMissions.length > 0) {
+                // Les missions ont été automatiquement marquées comme complétées dans checkMissionCompletion
+                console.log(`[MissionManager] ${completedMissions.length} mission(s) complétée(s) sur ${rocketModel.landedOn}`);
+            }
+        }
+    }
+
+    /**
+     * Retourne le statut de la mission courante pour les systèmes externes.
+     * @returns {object} Un objet contenant les informations de statut des missions
+     */
+    getCurrentMissionStatus() {
+        const activeMissions = this.getActiveMissions();
+        const completedMissions = this.missions.filter(mission => mission.status === "completed");
+        const failedMissions = this.missions.filter(mission => mission.status === "failed");
+        
+        return {
+            total: this.missions.length,
+            active: activeMissions.length,
+            completed: completedMissions.length,
+            failed: failedMissions.length,
+            currentMission: activeMissions.length > 0 ? activeMissions[0] : null,
+            hasCompletedMission: completedMissions.length > 0,
+            hasFailedMission: failedMissions.length > 0
+        };
+    }
 }
 
 // L'instanciation globale et l'initialisation (resetMissions) sont gérées ailleurs (ex: GameSetupController ou main.js)
