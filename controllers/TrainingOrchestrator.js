@@ -87,12 +87,18 @@ class TrainingOrchestrator {
         }
         
         try {
-            // Fusionner la configuration utilisateur avec la configuration par défaut
-            this.config = { ...this.config, ...userConfig };
-            
-            console.log('[TrainingOrchestrator] Démarrage de l\'entraînement...', this.config);
-            this.metrics.trainingStartTime = Date.now();
-            this.isTraining = true;
+                    // Fusionner la configuration utilisateur avec la configuration par défaut
+        this.config = { ...this.config, ...userConfig };
+        
+        // Mettre à jour l'objectif actuel si fourni
+        if (this.config.objectives && this.config.objectives.length > 0) {
+            this.trainingState.currentObjective = this.config.objectives[0];
+        }
+        
+        console.log('[TrainingOrchestrator] Démarrage de l\'entraînement...', this.config);
+        console.log('[TrainingOrchestrator] Objectif d\'entraînement:', this.trainingState.currentObjective);
+        this.metrics.trainingStartTime = Date.now();
+        this.isTraining = true;
             
             // Initialiser les environnements
             await this.initializeEnvironments();
@@ -122,7 +128,7 @@ class TrainingOrchestrator {
     async initializeEnvironments() {
         console.log('[TrainingOrchestrator] Initialisation des environnements...');
         
-        // Configuration pour l'environnement d'entraînement (rapide)
+        // Configuration pour l'environnement d'entraînement (avec Terre et Lune)
         const trainingConfig = {
             maxStepsPerEpisode: this.config.maxStepsPerEpisode,
             rocketInitialState: {
@@ -132,13 +138,21 @@ class TrainingOrchestrator {
                 health: 100
             },
             universeConfig: {
-                // Configuration simplifiée pour l'entraînement
+                // Configuration avec Terre et Lune pour l'entraînement
                 celestialBodies: [
                     {
                         name: 'Terre',
                         mass: 5.972e24,
                         radius: 6371000,
-                        position: { x: 0, y: 6471000 }
+                        position: { x: 0, y: 6471000 },
+                        color: '#1E88E5'
+                    },
+                    {
+                        name: 'Lune',
+                        mass: 7.342e22,
+                        radius: 1737000,
+                        position: { x: 384400000, y: 6471000 },
+                        color: '#CCCCCC'
                     }
                 ]
             },
@@ -169,8 +183,37 @@ class TrainingOrchestrator {
             }
         };
         
+        // Créer les environnements avec l'EventBus partagé
         this.trainingEnv = new HeadlessRocketEnvironment(trainingConfig);
+        this.trainingEnv.eventBus = this.eventBus; // Utiliser l'EventBus partagé
+        
+        // Réinitialiser les abonnements aux événements avec le nouvel EventBus
+        this.trainingEnv.rocketController.eventBus = this.eventBus;
+        this.trainingEnv.physicsController.eventBus = this.eventBus;
+        this.trainingEnv.missionManager.eventBus = this.eventBus;
+        
+        // S'assurer que les constantes EVENTS sont disponibles globalement
+        if (typeof window.EVENTS === 'undefined') {
+            window.EVENTS = this.trainingEnv.EVENT_TYPES;
+        }
+        
+        // Re-souscrire aux événements avec le bon EventBus
+        if (typeof this.trainingEnv.rocketController.subscribeToEvents === 'function') {
+            this.trainingEnv.rocketController.subscribeToEvents();
+        }
+        
         this.evaluationEnv = new HeadlessRocketEnvironment(evaluationConfig);
+        this.evaluationEnv.eventBus = this.eventBus; // Utiliser l'EventBus partagé
+        
+        // Réinitialiser les abonnements aux événements avec le nouvel EventBus
+        this.evaluationEnv.rocketController.eventBus = this.eventBus;
+        this.evaluationEnv.physicsController.eventBus = this.eventBus;
+        this.evaluationEnv.missionManager.eventBus = this.eventBus;
+        
+        // Re-souscrire aux événements avec le bon EventBus
+        if (typeof this.evaluationEnv.rocketController.subscribeToEvents === 'function') {
+            this.evaluationEnv.rocketController.subscribeToEvents();
+        }
         
         console.log('[TrainingOrchestrator] Environnements initialisés');
     }
@@ -297,11 +340,15 @@ class TrainingOrchestrator {
             
             // Stocker l'expérience pour l'apprentissage
             if (this.rocketAI.isTraining) {
+                // Convertir les états au format attendu par RocketAI
+                const aiState = this.buildAIState(state);
+                const nextAIState = this.buildAIState(result.observation);
+                
                 this.rocketAI.replayBuffer.push({
-                    state: state,
+                    state: aiState,
                     action: this.getActionIndex(action),
                     reward: result.reward,
-                    nextState: result.observation,
+                    nextState: nextAIState,
                     done: result.done
                 });
             }
@@ -345,9 +392,15 @@ class TrainingOrchestrator {
      * Construit l'état au format attendu par RocketAI
      */
     buildAIState(environmentState) {
+        // Vérifier que environmentState existe
+        if (!environmentState || typeof environmentState !== 'object') {
+            console.warn('[TrainingOrchestrator] État d\'environnement invalide, utilisation d\'un état par défaut');
+            return Array(10).fill(0);
+        }
+        
         // Adapter l'état de l'environnement au format RocketAI
         // (position, vitesse, angle, etc. normalisés)
-        return [
+        const rawState = [
             (environmentState.rocketX || 0) / 100000,  // Position X normalisée
             (environmentState.rocketY || 0) / 100000,  // Position Y normalisée
             (environmentState.rocketVX || 0) / 100,    // Vitesse X normalisée
@@ -361,6 +414,18 @@ class TrainingOrchestrator {
             // Angle vers le corps céleste (approximatif)
             Math.atan2(environmentState.rocketY || 0, environmentState.rocketX || 0) / (2 * Math.PI)
         ];
+        
+        // Vérifier et nettoyer l'état pour s'assurer que tous les éléments sont des nombres finis
+        const cleanState = rawState.map((val, index) => {
+            if (typeof val !== 'number' || !isFinite(val)) {
+                console.warn(`[TrainingOrchestrator] Valeur d'état invalide à l'index ${index}: ${val}, remplacement par 0`);
+                return 0;
+            }
+            // Borner les valeurs entre -10 et 10 pour éviter les valeurs extrêmes
+            return Math.max(-10, Math.min(10, val));
+        });
+        
+        return cleanState;
     }
     
     /**

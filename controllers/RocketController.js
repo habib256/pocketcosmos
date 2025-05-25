@@ -31,19 +31,53 @@ class RocketController {
     }
 
     subscribeToEvents() {
+        // Nettoyer les anciens abonnements si ils existent
+        if (this.eventSubscriptions) {
+            this.eventSubscriptions.forEach(unsubscribe => {
+                if (typeof unsubscribe === 'function') {
+                    unsubscribe();
+                }
+            });
+        }
+        this.eventSubscriptions = [];
+        
         // S'abonner aux événements sémantiques pour les actions de la fusée
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_START, () => this.handleThrustForwardStart()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_STOP, () => this.handleThrustForwardStop()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_START, () => this.handleThrustBackwardStart()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_STOP, () => this.handleThrustBackwardStop()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_START, () => this.handleRotateLeftStart()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data)));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_START, () => this.handleThrustForwardStart()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_STOP, () => this.handleThrustForwardStop()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_START, () => this.handleThrustBackwardStart()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_STOP, () => this.handleThrustBackwardStop()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_START, () => this.handleRotateLeftStart()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data)));
 
         // Nouvel abonnement pour la commande de rotation générique (par exemple, depuis un joystick)
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
+        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
+        
+        // Utiliser controllerContainer si disponible (mode jeu normal)
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            this.eventSubscriptions.forEach(subscription => {
+                window.controllerContainer.track(subscription);
+            });
+        }
+        
+        console.log(`[RocketController] Abonné à ${this.eventSubscriptions.length} événements`);
+    }
+    
+    /**
+     * Nettoie les abonnements aux événements
+     */
+    unsubscribeFromEvents() {
+        if (this.eventSubscriptions) {
+            this.eventSubscriptions.forEach(unsubscribe => {
+                if (typeof unsubscribe === 'function') {
+                    unsubscribe();
+                }
+            });
+            this.eventSubscriptions = [];
+            console.log('[RocketController] Abonnements aux événements nettoyés');
+        }
     }
 
     handleThrustForwardStart() {

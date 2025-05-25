@@ -62,6 +62,18 @@ class RocketAI {
         this.episodeSteps = 0;
         this.totalSteps = 0;
         
+        // Flag pour éviter les appels concurrents à train()
+        this.isTrainingInProgress = false;
+        
+        // Métriques de concurrence pour monitoring
+        this.concurrencyMetrics = {
+            totalTrainingCalls: 0,
+            blockedCalls: 0,
+            successfulTrainings: 0,
+            averageTrainingDuration: 0,
+            lastTrainingTime: 0
+        };
+        
         // S'abonner aux événements nécessaires
         this.subscribeToEvents();
     }
@@ -119,6 +131,7 @@ class RocketAI {
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
+        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
         window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
     }
     
@@ -204,7 +217,9 @@ class RocketAI {
             
             // Entraîner le modèle périodiquement
             if (this.totalSteps % 10 === 0 && this.replayBuffer.length >= this.config.batchSize) {
-                this.train();
+                this.train().catch(error => {
+                    console.error('[RocketAI] Erreur lors de l\'entraînement périodique:', error);
+                });
             }
             
             // Mettre à jour le modèle cible périodiquement
@@ -407,7 +422,9 @@ class RocketAI {
             
             // Entraîner immédiatement
             if (this.replayBuffer.length >= this.config.batchSize) {
-                this.train();
+                this.train().catch(error => {
+                    console.error('[RocketAI] Erreur lors de l\'entraînement après crash:', error);
+                });
             }
         }
         
@@ -439,7 +456,9 @@ class RocketAI {
             
             // Entraîner immédiatement
             if (this.replayBuffer.length >= this.config.batchSize) {
-                this.train();
+                this.train().catch(error => {
+                    console.error('[RocketAI] Erreur lors de l\'entraînement après succès:', error);
+                });
             }
         }
         
@@ -455,8 +474,20 @@ class RocketAI {
     }
     
     // Entraîner le modèle avec un batch du replay buffer
-    train() {
+    async train() {
+        const startTime = Date.now();
+        this.concurrencyMetrics.totalTrainingCalls++;
+        
         if (this.replayBuffer.length < this.config.batchSize) return;
+        
+        // Éviter les appels concurrents
+        if (this.isTrainingInProgress) {
+            this.concurrencyMetrics.blockedCalls++;
+            console.warn(`[RocketAI] Entraînement déjà en cours, abandon de cet appel (${this.concurrencyMetrics.blockedCalls}/${this.concurrencyMetrics.totalTrainingCalls} bloqués)`);
+            return;
+        }
+        
+        this.isTrainingInProgress = true;
         
         // Sélectionner un batch aléatoire du replay buffer
         const batch = [];
@@ -471,8 +502,51 @@ class RocketAI {
         });
         
         // Extraire les états, actions, récompenses, etc. du batch
-        const states = batch.map(exp => exp.state);
-        const nextStates = batch.map(exp => exp.nextState);
+        // Vérifier et normaliser les états pour s'assurer qu'ils ont tous 10 dimensions
+        const states = batch.map(exp => {
+            if (!Array.isArray(exp.state) || exp.state.length !== 10) {
+                console.warn('[RocketAI] État invalide dans le replay buffer, utilisation d\'un état par défaut');
+                return Array(10).fill(0);
+            }
+            // Vérifier que tous les éléments sont des nombres finis
+            const validState = exp.state.map(val => {
+                if (typeof val !== 'number' || !isFinite(val)) {
+                    return 0;
+                }
+                return val;
+            });
+            return validState;
+        });
+        
+        const nextStates = batch.map(exp => {
+            if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
+                console.warn('[RocketAI] État suivant invalide dans le replay buffer, utilisation d\'un état par défaut');
+                return Array(10).fill(0);
+            }
+            // Vérifier que tous les éléments sont des nombres finis
+            const validNextState = exp.nextState.map(val => {
+                if (typeof val !== 'number' || !isFinite(val)) {
+                    return 0;
+                }
+                return val;
+            });
+            return validNextState;
+        });
+        
+        // Vérifier que nous avons exactement le bon nombre d'états
+        if (states.length !== this.config.batchSize || nextStates.length !== this.config.batchSize) {
+            console.warn(`[RocketAI] Taille de batch incorrecte: states=${states.length}, nextStates=${nextStates.length}, attendu=${this.config.batchSize}`);
+            return; // Abandonner cet entraînement
+        }
+        
+        // Vérifier que chaque état a exactement 10 dimensions
+        const totalStateValues = states.reduce((sum, state) => sum + state.length, 0);
+        const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
+        
+        if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
+            console.warn(`[RocketAI] Dimensions incorrectes: totalStateValues=${totalStateValues}, totalNextStateValues=${totalNextStateValues}, attendu=${this.config.batchSize * 10}`);
+            return; // Abandonner cet entraînement
+        }
         
         // Prédire les valeurs Q pour les états actuels et futurs
         const qValues = tf.tidy(() => this.model.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
@@ -503,16 +577,31 @@ class RocketAI {
         const xs = tf.tensor2d(states, [this.config.batchSize, 10]);
         const ys = tf.tensor2d(qValuesData, [this.config.batchSize, this.actions.length]);
         
-        this.model.fit(xs, ys, {
-            epochs: 1,
-            verbose: 0
-        }).then(() => {
+        try {
+            await this.model.fit(xs, ys, {
+                epochs: 1,
+                verbose: 0
+            });
+            
+            // Mettre à jour les métriques de succès
+            this.concurrencyMetrics.successfulTrainings++;
+            const trainingDuration = Date.now() - startTime;
+            this.concurrencyMetrics.lastTrainingTime = trainingDuration;
+            this.concurrencyMetrics.averageTrainingDuration = 
+                (this.concurrencyMetrics.averageTrainingDuration * (this.concurrencyMetrics.successfulTrainings - 1) + trainingDuration) / 
+                this.concurrencyMetrics.successfulTrainings;
+            
+            //console.log(`Entraînement terminé: étape ${this.totalSteps}, epsilon ${this.config.epsilon.toFixed(3)}, durée: ${trainingDuration}ms`);
+        } catch (error) {
+            console.error('[RocketAI] Erreur lors de l\'entraînement:', error);
+        } finally {
             // Libérer la mémoire tensor
             xs.dispose();
             ys.dispose();
             
-            console.log(`Entraînement terminé: étape ${this.totalSteps}, epsilon ${this.config.epsilon.toFixed(3)}`);
-        });
+            // Libérer le flag de concurrence
+            this.isTrainingInProgress = false;
+        }
     }
     
     // Sauvegarder le modèle si nécessaire
@@ -550,6 +639,28 @@ class RocketAI {
             console.warn('Aucun modèle trouvé à charger:', error);
             return false;
         }
+    }
+    
+    // Obtenir les métriques de concurrence
+    getConcurrencyMetrics() {
+        return {
+            ...this.concurrencyMetrics,
+            blockingRate: this.concurrencyMetrics.totalTrainingCalls > 0 ? 
+                (this.concurrencyMetrics.blockedCalls / this.concurrencyMetrics.totalTrainingCalls * 100).toFixed(2) + '%' : '0%',
+            successRate: this.concurrencyMetrics.totalTrainingCalls > 0 ? 
+                (this.concurrencyMetrics.successfulTrainings / this.concurrencyMetrics.totalTrainingCalls * 100).toFixed(2) + '%' : '0%'
+        };
+    }
+    
+    // Réinitialiser les métriques de concurrence
+    resetConcurrencyMetrics() {
+        this.concurrencyMetrics = {
+            totalTrainingCalls: 0,
+            blockedCalls: 0,
+            successfulTrainings: 0,
+            averageTrainingDuration: 0,
+            lastTrainingTime: 0
+        };
     }
     
     // Définir un nouvel objectif

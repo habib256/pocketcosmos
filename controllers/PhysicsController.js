@@ -339,7 +339,7 @@ class PhysicsController {
             return { x: 0, y: 0 };
         }
         if (!universeModel.celestialBodies || universeModel.celestialBodies.length === 0) {
-            console.warn('[DEBUG][PhysicsController] calculateGravityAccelerationAt: pas de corps célestes', universeModel.celestialBodies);
+            // Silencieux pendant l'initialisation - normal que les corps célestes ne soient pas encore créés
             return { x: 0, y: 0 };
         }
         for (const body of universeModel.celestialBodies) {

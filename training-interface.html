@@ -64,7 +64,7 @@
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 15px;
         }
-        .metric {
+        .metric, .metric-card {
             background: rgba(0, 0, 0, 0.3);
             padding: 15px;
             border-radius: 8px;
@@ -135,6 +135,32 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+        .visualization-panel {
+            grid-column: 1 / -1; /* Prendre toute la largeur */
+            height: 650px;
+            position: relative;
+        }
+        .visualization-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 8px;
+            background: #000;
+            display: block;
+            box-sizing: border-box;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .visualization-controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .visualization-controls button {
+            padding: 6px 12px;
+            font-size: 12px;
+            white-space: nowrap;
+            min-width: 80px;
+        }
     </style>
     <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
@@ -175,6 +201,7 @@
     <script src="controllers/RocketAI.js"></script>
     <script src="controllers/HeadlessRocketEnvironment.js"></script>
     <script src="controllers/TrainingOrchestrator.js"></script>
+    <script src="controllers/TrainingVisualizer.js"></script>
 </head>
 <body>
     <div class="container">
@@ -218,7 +245,6 @@
                     <select id="trainingMode">
                         <option value="headless">Sans rendu (rapide)</option>
                         <option value="visual">Avec visualisation</option>
-                        <option value="hybrid">Hybride</option>
                     </select>
                 </div>
             </div>
@@ -236,28 +262,28 @@
         <div class="panel">
             <h2>📊 Métriques en Temps Réel</h2>
             <div class="metrics-grid">
-                <div class="metric">
+                <div class="metric-card">
                     <div class="metric-value" id="currentEpisode">0</div>
                     <div class="metric-label">Épisode Actuel</div>
                 </div>
-                <div class="metric">
+                <div class="metric-card">
                     <div class="metric-value" id="totalSteps">0</div>
                     <div class="metric-label">Étapes Totales</div>
                 </div>
-                <div class="metric">
-                    <div class="metric-value" id="avgReward">0.00</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="averageReward">0.00</div>
                     <div class="metric-label">Récompense Moy.</div>
                 </div>
-                <div class="metric">
-                    <div class="metric-value" id="successRate">0%</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="successRate">0.0%</div>
                     <div class="metric-label">Taux de Succès</div>
                 </div>
-                <div class="metric">
-                    <div class="metric-value" id="currentEpsilon">1.00</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="explorationRate">1.000</div>
                     <div class="metric-label">Exploration (ε)</div>
                 </div>
-                <div class="metric">
-                    <div class="metric-value" id="loss">0.00</div>
+                <div class="metric-card">
+                    <div class="metric-value" id="trainingLoss">0.0000</div>
                     <div class="metric-label">Perte d'Entraînement</div>
                 </div>
             </div>
@@ -268,6 +294,22 @@
                     <div class="progress-fill" id="trainingProgress"></div>
                 </div>
                 <div id="progressText">Prêt pour l'entraînement</div>
+            </div>
+        </div>
+
+        <!-- Panneau de visualisation -->
+        <div class="panel visualization-panel" id="visualizationPanel" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="margin: 0;">🎯 Visualisation de l'Entraînement</h2>
+                <div class="visualization-controls">
+                    <button id="toggleVisualization">👁️ Activer</button>
+                    <button id="clearTrajectory">🧹 Effacer</button>
+                    <button id="zoomOut">🔍- Zoom</button>
+                    <button id="zoomIn">🔍+ Zoom</button>
+                </div>
+            </div>
+            <div style="display: flex; justify-content: center; align-items: center; height: calc(100% - 50px);">
+                <canvas id="visualizationCanvas" class="visualization-canvas"></canvas>
             </div>
         </div>
 
@@ -284,6 +326,36 @@
         </div>
 
         <div class="panel">
+            <h2>📊 Métriques de Concurrence TensorFlow.js</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="totalTrainingCalls">0</div>
+                    <div class="metric-label">Appels Totaux</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="blockedCalls">0</div>
+                    <div class="metric-label">Appels Bloqués</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="successfulTrainings">0</div>
+                    <div class="metric-label">Entraînements Réussis</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="blockingRate">0.0%</div>
+                    <div class="metric-label">Taux de Blocage</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="averageTrainingDuration">0</div>
+                    <div class="metric-label">Durée Moy. (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="lastTrainingTime">0</div>
+                    <div class="metric-label">Dernière Durée (ms)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
             <h2>📝 Journal d'Entraînement</h2>
             <div>
                 <span class="status-indicator" id="statusIndicator"></span>
@@ -293,6 +365,36 @@
                 <div class="log-entry log-info">Interface d'entraînement initialisée.</div>
                 <div class="log-entry log-info">TensorFlow.js chargé avec succès.</div>
                 <div class="log-entry log-info">Prêt pour l'entraînement...</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>📈 Statistiques d'Entraînement</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="totalTrainingTime">0s</div>
+                    <div class="metric-label">Temps Total</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="averageEpisodeTime">0s</div>
+                    <div class="metric-label">Temps Moy./Épisode</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="bestReward">0.00</div>
+                    <div class="metric-label">Meilleure Récompense</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="modelSize">0 KB</div>
+                    <div class="metric-label">Taille du Modèle</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="memoryUsage">0 MB</div>
+                    <div class="metric-label">Mémoire Utilisée</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="trainingEfficiency">0%</div>
+                    <div class="metric-label">Efficacité</div>
+                </div>
             </div>
         </div>
     </div>
@@ -347,6 +449,9 @@
                     this.eventBus = new EventBus();
                     this.trainingOrchestrator = new TrainingOrchestrator(this.eventBus);
                     
+                    // Initialiser le visualiseur
+                    this.initializeVisualizer();
+                    
                     this.initializeCharts();
                     this.setupEventListeners();
                     this.setupTrainingEventListeners();
@@ -370,7 +475,8 @@
                     { name: 'EventBus', check: () => typeof EventBus !== 'undefined' },
                     { name: 'TrainingOrchestrator', check: () => typeof TrainingOrchestrator !== 'undefined' },
                     { name: 'HeadlessRocketEnvironment', check: () => typeof HeadlessRocketEnvironment !== 'undefined' },
-                    { name: 'RocketAI', check: () => typeof RocketAI !== 'undefined' }
+                    { name: 'RocketAI', check: () => typeof RocketAI !== 'undefined' },
+                    { name: 'TrainingVisualizer', check: () => typeof TrainingVisualizer !== 'undefined' }
                 ];
 
                 const missing = dependencies.filter(dep => !dep.check());
@@ -401,11 +507,36 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
-                            legend: { display: false }
+                            legend: { 
+                                display: true,
+                                labels: { color: 'white' }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Évolution des Récompenses',
+                                color: 'white',
+                                font: { size: 14 }
+                            }
                         },
                         scales: {
-                            x: { display: false },
+                            x: { 
+                                display: true,
+                                title: {
+                                    display: true,
+                                    text: 'Épisodes d\'Entraînement',
+                                    color: 'white',
+                                    font: { size: 12 }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.1)' },
+                                ticks: { color: 'white' }
+                            },
                             y: { 
+                                title: {
+                                    display: true,
+                                    text: 'Récompense Moyenne',
+                                    color: 'white',
+                                    font: { size: 12 }
+                                },
                                 grid: { color: 'rgba(255,255,255,0.1)' },
                                 ticks: { color: 'white' }
                             }
@@ -431,11 +562,36 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
-                            legend: { display: false }
+                            legend: { 
+                                display: true,
+                                labels: { color: 'white' }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Évolution de la Perte d\'Entraînement',
+                                color: 'white',
+                                font: { size: 14 }
+                            }
                         },
                         scales: {
-                            x: { display: false },
+                            x: { 
+                                display: true,
+                                title: {
+                                    display: true,
+                                    text: 'Épisodes d\'Entraînement',
+                                    color: 'white',
+                                    font: { size: 12 }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.1)' },
+                                ticks: { color: 'white' }
+                            },
                             y: { 
+                                title: {
+                                    display: true,
+                                    text: 'Valeur de la Perte (Loss)',
+                                    color: 'white',
+                                    font: { size: 12 }
+                                },
                                 grid: { color: 'rgba(255,255,255,0.1)' },
                                 ticks: { color: 'white' }
                             }
@@ -451,6 +607,15 @@
                 document.getElementById('saveModel').addEventListener('click', () => this.saveModel());
                 document.getElementById('loadModel').addEventListener('click', () => this.loadModel());
                 document.getElementById('resetTraining').addEventListener('click', () => this.resetTraining());
+                
+                // Événements de visualisation
+                document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
+                document.getElementById('clearTrajectory').addEventListener('click', () => this.clearTrajectory());
+                document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
+                document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
+                
+                // Gérer le changement de mode d'entraînement
+                document.getElementById('trainingMode').addEventListener('change', (e) => this.onTrainingModeChanged(e.target.value));
             }
 
             setupTrainingEventListeners() {
@@ -648,10 +813,10 @@
             updateMetrics(metrics) {
                 document.getElementById('currentEpisode').textContent = metrics.episode || 0;
                 document.getElementById('totalSteps').textContent = metrics.totalSteps || 0;
-                document.getElementById('avgReward').textContent = (metrics.avgReward || 0).toFixed(2);
+                document.getElementById('averageReward').textContent = (metrics.avgReward || 0).toFixed(2);
                 document.getElementById('successRate').textContent = `${(metrics.successRate || 0).toFixed(1)}%`;
-                document.getElementById('currentEpsilon').textContent = (metrics.epsilon || 0).toFixed(3);
-                document.getElementById('loss').textContent = (metrics.loss || 0).toFixed(4);
+                document.getElementById('explorationRate').textContent = (metrics.epsilon || 0).toFixed(3);
+                document.getElementById('trainingLoss').textContent = (metrics.loss || 0).toFixed(4);
                 
                 // Mise à jour de la barre de progression
                 const totalEpisodes = this.getTrainingConfig().episodes;
@@ -659,6 +824,21 @@
                 document.getElementById('trainingProgress').style.width = `${Math.min(progress, 100)}%`;
                 document.getElementById('progressText').textContent = 
                     `Épisode ${metrics.episode || 0} / ${totalEpisodes}`;
+                
+                // Mise à jour des métriques de concurrence TensorFlow.js
+                if (this.trainingOrchestrator && this.trainingOrchestrator.rocketAI && 
+                    typeof this.trainingOrchestrator.rocketAI.getConcurrencyMetrics === 'function') {
+                    const concurrencyMetrics = this.trainingOrchestrator.rocketAI.getConcurrencyMetrics();
+                    document.getElementById('totalTrainingCalls').textContent = concurrencyMetrics.totalTrainingCalls || 0;
+                    document.getElementById('blockedCalls').textContent = concurrencyMetrics.blockedCalls || 0;
+                    document.getElementById('successfulTrainings').textContent = concurrencyMetrics.successfulTrainings || 0;
+                    document.getElementById('blockingRate').textContent = concurrencyMetrics.blockingRate || '0.0%';
+                    document.getElementById('averageTrainingDuration').textContent = Math.round(concurrencyMetrics.averageTrainingDuration || 0);
+                    document.getElementById('lastTrainingTime').textContent = concurrencyMetrics.lastTrainingTime || 0;
+                }
+                
+                // Mise à jour des statistiques d'entraînement
+                this.updateTrainingStatistics(metrics);
             }
 
             updateCharts(episode, reward, loss) {
@@ -680,6 +860,68 @@
                 this.lossChart.data.labels = this.trainingData.episodes;
                 this.lossChart.data.datasets[0].data = this.trainingData.losses;
                 this.lossChart.update('none');
+            }
+            
+            updateTrainingStatistics(metrics) {
+                // Calculer le temps total d'entraînement
+                if (this.trainingOrchestrator && this.trainingOrchestrator.metrics && this.trainingOrchestrator.metrics.trainingStartTime) {
+                    const totalTime = Date.now() - this.trainingOrchestrator.metrics.trainingStartTime;
+                    const totalSeconds = Math.floor(totalTime / 1000);
+                    const hours = Math.floor(totalSeconds / 3600);
+                    const minutes = Math.floor((totalSeconds % 3600) / 60);
+                    const seconds = totalSeconds % 60;
+                    
+                    let timeStr = '';
+                    if (hours > 0) timeStr += `${hours}h `;
+                    if (minutes > 0) timeStr += `${minutes}m `;
+                    timeStr += `${seconds}s`;
+                    
+                    document.getElementById('totalTrainingTime').textContent = timeStr;
+                    
+                    // Temps moyen par épisode
+                    if (metrics.episode > 0) {
+                        const avgTimePerEpisode = totalTime / metrics.episode;
+                        const avgSeconds = Math.floor(avgTimePerEpisode / 1000);
+                        document.getElementById('averageEpisodeTime').textContent = `${avgSeconds}s`;
+                    }
+                } else {
+                    document.getElementById('totalTrainingTime').textContent = '0s';
+                    document.getElementById('averageEpisodeTime').textContent = '0s';
+                }
+                
+                // Meilleure récompense
+                if (metrics.averageRewards && metrics.averageRewards.length > 0) {
+                    const bestReward = Math.max(...metrics.averageRewards);
+                    document.getElementById('bestReward').textContent = bestReward.toFixed(2);
+                } else {
+                    document.getElementById('bestReward').textContent = '0.00';
+                }
+                
+                // Taille du modèle (estimation)
+                if (this.trainingOrchestrator && this.trainingOrchestrator.rocketAI && this.trainingOrchestrator.rocketAI.model) {
+                    try {
+                        const modelSize = this.trainingOrchestrator.rocketAI.model.countParams() * 4; // 4 bytes par paramètre (float32)
+                        const sizeKB = Math.round(modelSize / 1024);
+                        document.getElementById('modelSize').textContent = `${sizeKB} KB`;
+                    } catch (e) {
+                        document.getElementById('modelSize').textContent = 'N/A';
+                    }
+                } else {
+                    document.getElementById('modelSize').textContent = '0 KB';
+                }
+                
+                // Utilisation mémoire (estimation)
+                if (typeof performance !== 'undefined' && performance.memory) {
+                    const memoryMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
+                    document.getElementById('memoryUsage').textContent = `${memoryMB} MB`;
+                } else {
+                    document.getElementById('memoryUsage').textContent = 'N/A';
+                }
+                
+                // Efficacité d'entraînement (taux de succès * vitesse)
+                const successRate = metrics.successRate || 0;
+                const efficiency = Math.round(successRate);
+                document.getElementById('trainingEfficiency').textContent = `${efficiency}%`;
             }
 
             log(message, type = 'info') {
@@ -704,12 +946,15 @@
             async saveModel() {
                 this.log('Sauvegarde du modèle en cours...', 'info');
                 try {
-                    if (this.trainingOrchestrator.rocketAI) {
-                        await this.trainingOrchestrator.rocketAI.saveModel();
-                        this.log('Modèle sauvegardé avec succès', 'success');
-                    } else {
-                        throw new Error('Agent IA non initialisé');
+                    // Créer un agent temporaire si nécessaire
+                    let rocketAI = this.trainingOrchestrator.rocketAI;
+                    if (!rocketAI) {
+                        this.log('Création d\'un agent IA temporaire pour la sauvegarde...', 'info');
+                        rocketAI = new RocketAI(this.eventBus);
                     }
+                    
+                    await rocketAI.saveModel();
+                    this.log('Modèle sauvegardé avec succès', 'success');
                 } catch (error) {
                     this.log(`Erreur lors de la sauvegarde: ${error.message}`, 'error');
                 }
@@ -718,11 +963,18 @@
             async loadModel() {
                 this.log('Chargement du modèle en cours...', 'info');
                 try {
-                    if (this.trainingOrchestrator.rocketAI) {
-                        await this.trainingOrchestrator.rocketAI.loadModel();
+                    // Créer un agent temporaire si nécessaire
+                    let rocketAI = this.trainingOrchestrator.rocketAI;
+                    if (!rocketAI) {
+                        this.log('Création d\'un agent IA temporaire pour le chargement...', 'info');
+                        rocketAI = new RocketAI(this.eventBus);
+                    }
+                    
+                    const success = await rocketAI.loadModel();
+                    if (success) {
                         this.log('Modèle chargé avec succès', 'success');
                     } else {
-                        throw new Error('Agent IA non initialisé');
+                        this.log('Aucun modèle sauvegardé trouvé', 'info');
                     }
                 } catch (error) {
                     this.log(`Erreur lors du chargement: ${error.message}`, 'error');
@@ -749,6 +1001,121 @@
                     this.log('Entraînement réinitialisé', 'info');
                 }, 1000);
             }
+            
+            // Méthodes de visualisation
+            initializeVisualizer() {
+                const canvas = document.getElementById('visualizationCanvas');
+                if (!canvas) {
+                    console.warn('Canvas de visualisation non trouvé');
+                    return;
+                }
+                
+                this.visualizer = new TrainingVisualizer(canvas, this.eventBus);
+                this.visualizationActive = false;
+                
+                // Redimensionner le canvas
+                this.resizeVisualizationCanvas();
+                
+                // Écouter les redimensionnements
+                window.addEventListener('resize', () => this.resizeVisualizationCanvas());
+                
+                this.log('Visualiseur d\'entraînement initialisé', 'success');
+            }
+            
+            resizeVisualizationCanvas() {
+                const canvas = document.getElementById('visualizationCanvas');
+                const panel = document.getElementById('visualizationPanel');
+                if (!canvas || !panel) return;
+                
+                // Obtenir les dimensions du conteneur parent du canvas
+                const container = canvas.parentElement;
+                if (!container) return;
+                
+                const rect = container.getBoundingClientRect();
+                
+                // Calculer les dimensions pour utiliser toute la largeur disponible
+                const maxWidth = Math.floor(rect.width - 40); // Marge de 20px de chaque côté
+                const maxHeight = Math.floor(rect.height - 20); // Marge de 10px de chaque côté
+                
+                // Utiliser toute la largeur disponible avec une hauteur proportionnelle
+                const width = Math.max(400, Math.min(maxWidth, 1200)); // Entre 400 et 1200px
+                const height = Math.max(400, Math.min(maxHeight, 600)); // Entre 400 et 600px
+                
+                // Appliquer les dimensions
+                canvas.width = width;
+                canvas.height = height;
+                canvas.style.width = width + 'px';
+                canvas.style.height = height + 'px';
+                
+                if (this.visualizer) {
+                    this.visualizer.resize(width, height);
+                }
+                
+                console.log(`Canvas redimensionné: ${width}x${height}`);
+            }
+            
+            onTrainingModeChanged(mode) {
+                const panel = document.getElementById('visualizationPanel');
+                if (mode === 'visual') {
+                    panel.style.display = 'block';
+                    this.resizeVisualizationCanvas();
+                    this.log('Mode de visualisation activé', 'info');
+                } else {
+                    panel.style.display = 'none';
+                    if (this.visualizationActive) {
+                        this.toggleVisualization();
+                    }
+                    this.log('Mode headless activé', 'info');
+                }
+            }
+            
+            toggleVisualization() {
+                if (!this.visualizer) {
+                    this.log('Visualiseur non initialisé', 'error');
+                    return;
+                }
+                
+                this.visualizationActive = !this.visualizationActive;
+                this.visualizer.setActive(this.visualizationActive);
+                
+                const button = document.getElementById('toggleVisualization');
+                if (this.visualizationActive) {
+                    button.textContent = '👁️ Désactiver';
+                    this.log('Visualisation activée', 'info');
+                } else {
+                    button.textContent = '👁️ Activer';
+                    this.log('Visualisation désactivée', 'info');
+                }
+            }
+            
+            clearTrajectory() {
+                if (this.visualizer) {
+                    this.visualizer.clearTrajectory();
+                    this.log('Trajectoire effacée', 'info');
+                }
+            }
+            
+
+            
+            zoomIn() {
+                if (this.visualizer) {
+                    const factor = this.visualizer.camera.targetZoom < 0.0001 ? 2.0 : 1.5;
+                    const newZoom = Math.min(this.visualizer.camera.maxZoom, this.visualizer.camera.targetZoom * factor);
+                    this.visualizer.camera.targetZoom = newZoom;
+                    this.log(`Zoom avant: ${newZoom.toExponential(2)}`, 'info');
+                }
+            }
+            
+            zoomOut() {
+                if (this.visualizer) {
+                    const factor = this.visualizer.camera.targetZoom > 0.0001 ? 1.5 : 2.0;
+                    const newZoom = Math.max(this.visualizer.camera.minZoom, this.visualizer.camera.targetZoom / factor);
+                    this.visualizer.camera.targetZoom = newZoom;
+                    this.log(`Zoom arrière: ${newZoom.toExponential(2)}`, 'info');
+                }
+            }
+            
+
         }
 
         // Initialiser l'interface au chargement

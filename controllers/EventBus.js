@@ -178,8 +178,14 @@ class EventBus {
                 }
             }
         }
-        // Warning si aucun listener
-        if (!notified) {
+        // Warning si aucun listener (sauf pour les événements internes connus)
+        const silentEvents = [
+            'rocket:internalStateChanged',
+            'ai:training:progress',
+            'physics:debug:acceleration'
+        ];
+        
+        if (!notified && !silentEvents.includes(eventType)) {
             console.warn(`EventBus: aucun auditeur pour l'événement "${eventType}"`);
         }
     }

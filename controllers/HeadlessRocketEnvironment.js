@@ -111,13 +111,78 @@ class HeadlessRocketEnvironment {
 
         this.universeModel.reset(this.config.universeConfig || {}); // UniverseModel.reset accepte une config
         
-        // MissionManager.resetMissions() ne prend pas d'argument pour le moment.
-        // Si missionConfig doit être utilisé, resetMissions doit être adapté.
-        this.missionManager.resetMissions(); 
+        // Créer les corps célestes si fournis dans la configuration
+        if (this.config.universeConfig && this.config.universeConfig.celestialBodies) {
+            for (const bodyConfig of this.config.universeConfig.celestialBodies) {
+                const celestialBody = new CelestialBodyModel(
+                    bodyConfig.name,
+                    bodyConfig.mass,
+                    bodyConfig.radius,
+                    bodyConfig.position,
+                    bodyConfig.color || '#FFFFFF',
+                    null, // parentBody - pour l'instant pas de support d'orbites complexes
+                    0,    // orbitDistance
+                    0,    // initialOrbitAngle
+                    0     // orbitSpeed
+                );
+                this.universeModel.addCelestialBody(celestialBody);
+            }
+            console.log(`HeadlessRocketEnvironment: ${this.config.universeConfig.celestialBodies.length} corps célestes créés.`);
+        } else {
+            // Configuration par défaut avec la Terre
+            const earth = new CelestialBodyModel(
+                'Terre',
+                CELESTIAL_BODY.MASS,
+                CELESTIAL_BODY.RADIUS,
+                { x: 0, y: CELESTIAL_BODY.RADIUS + 100 }, // Fusée commence juste au-dessus de la surface
+                '#1E88E5'
+            );
+            this.universeModel.addCelestialBody(earth);
+            console.log("HeadlessRocketEnvironment: Corps céleste par défaut (Terre) créé.");
+        }
+        
+        // Réinitialiser les missions
+        this.missionManager.resetMissions(); // Vide les missions existantes et crée les missions par défaut
+        
+        // Si une configuration de mission personnalisée est fournie, l'utiliser
         if (this.config.missionConfig) {
-            // Potentiellement, passer missionConfig à une méthode de setup sur missionManager
-            // ou modifier resetMissions pour l'accepter.
-            console.warn("HeadlessRocketEnvironment: missionConfig fourni mais resetMissions() ne l'utilise pas actuellement.");
+            // Vider d'abord les missions par défaut
+            this.missionManager.missions = [];
+            
+            // Créer les missions selon la configuration
+            if (this.config.missionConfig.objective) {
+                switch (this.config.missionConfig.objective) {
+                    case 'orbit':
+                        // Mission d'orbite : pas de cargo requis, succès basé sur la performance
+                        // Utiliser un cargo impossible à obtenir pour éviter la complétion automatique
+                        this.missionManager.createMission("Terre", "Orbite", [{ type: "OrbitToken", quantity: 1 }], 100);
+                        break;
+                    case 'land':
+                        // Mission d'atterrissage : atterrir sur un corps céleste
+                        this.missionManager.createMission("Terre", "Lune", [{ type: "LandingToken", quantity: 1 }], 200);
+                        break;
+                    case 'explore':
+                        // Mission d'exploration : visiter plusieurs corps célestes
+                        this.missionManager.createMission("Terre", "Mars", [{ type: "ExploreToken", quantity: 1 }], 300);
+                        break;
+                    default:
+                        // Mission par défaut
+                        this.missionManager.createMission("Terre", "Lune", [{ type: "LandingToken", quantity: 1 }], 150);
+                }
+            } else if (this.config.missionConfig.missions) {
+                // Missions personnalisées définies explicitement
+                for (const missionConfig of this.config.missionConfig.missions) {
+                    this.missionManager.createMission(
+                        missionConfig.from || "Terre",
+                        missionConfig.to || "Lune", 
+                        missionConfig.requiredCargo || [{ type: "Fuel", quantity: 5 }],
+                        missionConfig.reward || 100
+                    );
+                }
+            }
+            console.log(`HeadlessRocketEnvironment: ${this.missionManager.missions.length} mission(s) configurée(s) selon missionConfig.`);
+        } else {
+            console.log(`HeadlessRocketEnvironment: ${this.missionManager.missions.length} mission(s) par défaut créée(s).`);
         }
 
         // Réinitialiser le monde physique avec les modèles mis à jour
@@ -125,9 +190,52 @@ class HeadlessRocketEnvironment {
 
         this.currentStep = 0;
         this.totalRewardInEpisode = 0;
+        this._missionAlreadyRewardedThisEpisode = false;
+        
+        // Réinitialiser les compteurs de succès spécifiques
+        this.orbitSuccessCounter = 0;
+        this.visitedBodies = new Set();
         
         console.log("HeadlessRocketEnvironment: Épisode réinitialisé.");
+        
+        // Émettre événement de début d'épisode
+        this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_STARTED, {
+            config: this.config,
+            celestialBodies: this.universeModel.celestialBodies
+        });
+        
         return this.getObservation();
+    }
+    
+    /**
+     * Émettre les données pour la visualisation
+     */
+    emitVisualizationData() {
+        // Émettre seulement si nécessaire (éviter le spam)
+        if (this.currentStep % 2 === 0) { // Émettre tous les 2 pas pour réduire la charge
+            this.eventBus.emit(this.EVENT_TYPES.AI.TRAINING_STEP, {
+                rocket: {
+                    position: { ...this.rocketModel.position },
+                    velocity: { ...this.rocketModel.velocity },
+                    angle: this.rocketModel.angle,
+                    angularVelocity: this.rocketModel.angularVelocity,
+                    fuel: this.rocketModel.fuel,
+                    health: this.rocketModel.health,
+                    isDestroyed: this.rocketModel.isDestroyed,
+                    isLanded: this.rocketModel.isLanded,
+                    landedOn: this.rocketModel.landedOn
+                },
+                celestialBodies: this.universeModel.celestialBodies.map(body => ({
+                    name: body.name,
+                    position: { ...body.position },
+                    radius: body.radius,
+                    mass: body.mass,
+                    color: body.color
+                })),
+                step: this.currentStep,
+                reward: this.totalRewardInEpisode
+            });
+        }
     }
 
     /**
@@ -201,6 +309,9 @@ class HeadlessRocketEnvironment {
         this.totalRewardInEpisode += reward;
         this.currentStep++;
 
+        // Émettre les données pour la visualisation (si activée)
+        this.emitVisualizationData();
+
         const info = { 
             currentStep: this.currentStep, 
             totalReward: this.totalRewardInEpisode,
@@ -216,6 +327,13 @@ class HeadlessRocketEnvironment {
                           this.missionManager.isCurrentMissionSuccessful() ? 'mission_success' :
                           this.currentStep >= this.maxStepsPerEpisode ? 'max_steps_reached' : 'unknown_done_reason';
             console.log(`HeadlessRocketEnvironment: Épisode terminé. Raison: ${info.status}, Récompense totale: ${this.totalRewardInEpisode.toFixed(2)}, Pas: ${this.currentStep}`);
+            
+            // Émettre événement de fin d'épisode
+            this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_ENDED, {
+                reason: info.status,
+                totalReward: this.totalRewardInEpisode,
+                steps: this.currentStep
+            });
         }
 
         return { observation, reward, done, info };
@@ -280,25 +398,229 @@ class HeadlessRocketEnvironment {
             reward -= 100; 
         }
         
-        // Grosse récompense pour mission réussie (une seule fois par épisode)
-        // Note: this.missionManager.isCurrentMissionSuccessful() doit être implémentée dans MissionManager.js
-        if (this.missionManager.isCurrentMissionSuccessful && typeof this.missionManager.isCurrentMissionSuccessful === 'function') {
-            if (this.missionManager.isCurrentMissionSuccessful()) { 
-                if (!this._missionAlreadyRewardedThisEpisode) {
-                    reward += 200; 
-                    this._missionAlreadyRewardedThisEpisode = true; 
-                }
-            }
-        } else {
-            // Ce message peut être bruyant, envisagez un log unique ou conditionnel
-            // console.warn("HeadlessRocketEnvironment: missionManager.isCurrentMissionSuccessful() n'est pas disponible ou n'est pas une fonction.");
+        // Récompenses spécifiques selon l'objectif de mission
+        const currentMission = this.missionManager.getCurrentMissionDetails();
+        if (currentMission) {
+            reward += this.calculateObjectiveSpecificReward(currentMission);
         }
         
-        // TODO: Ajouter d'autres sources de récompense/pénalité (shaping rewards)
-        // - Se rapprocher de la cible
-        // - Atterrissage réussi (si ce n'est pas la condition de mission)
-        // - Éviter des zones dangereuses
+        // Récompenses pour progression vers les objectifs
+        if (this.config.missionConfig && this.config.missionConfig.objective) {
+            switch (this.config.missionConfig.objective) {
+                case 'orbit':
+                    // Récompense progressive pour se rapprocher de l'orbite
+                    const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
+                    if (earth) {
+                        const dx = this.rocketModel.position.x - earth.position.x;
+                        const dy = this.rocketModel.position.y - earth.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const altitude = distance - earth.radius;
+                        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+                        
+                        // Récompense pour être dans la zone orbitale
+                        if (altitude >= 200 && altitude <= 800) {
+                            reward += 0.1;
+                            // Bonus pour vitesse orbitale appropriée
+                            if (speed >= 30 && speed <= 70) {
+                                reward += 0.2;
+                            }
+                        }
+                        
+                        // Grosse récompense pour succès d'orbite
+                        if (this.checkOrbitSuccess() && !this._missionAlreadyRewardedThisEpisode) {
+                            reward += 100;
+                            this._missionAlreadyRewardedThisEpisode = true;
+                        }
+                    }
+                    break;
+                    
+                case 'land':
+                    // Récompense pour se rapprocher de la Lune
+                    const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+                    if (moon) {
+                        const dx = this.rocketModel.position.x - moon.position.x;
+                        const dy = this.rocketModel.position.y - moon.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const altitude = distance - moon.radius;
+                        
+                        // Récompense progressive pour approche
+                        if (altitude < 1000) {
+                            reward += 0.05;
+                            if (altitude < 500) {
+                                reward += 0.1;
+                                if (altitude < 100) {
+                                    reward += 0.2;
+                                }
+                            }
+                        }
+                        
+                        // Grosse récompense pour atterrissage réussi
+                        if (this.checkLandingSuccess() && !this._missionAlreadyRewardedThisEpisode) {
+                            reward += 100;
+                            this._missionAlreadyRewardedThisEpisode = true;
+                        }
+                    }
+                    break;
+                    
+                case 'explore':
+                    // Récompense pour mouvement et exploration
+                    const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+                    if (speed > 5 && speed < 100) {
+                        reward += 0.02; // Encourager le mouvement
+                    }
+                    
+                    // Récompense pour visiter de nouveaux corps
+                    if (this.rocketModel.isLanded && this.rocketModel.landedOn) {
+                        if (!this.visitedBodies.has(this.rocketModel.landedOn)) {
+                            reward += 10; // Bonus pour nouveau lieu
+                        }
+                    }
+                    
+                    // Grosse récompense pour exploration complète
+                    if (this.checkExplorationSuccess() && !this._missionAlreadyRewardedThisEpisode) {
+                        reward += 100;
+                        this._missionAlreadyRewardedThisEpisode = true;
+                    }
+                    break;
+            }
+        }
 
+        return reward;
+    }
+
+    /**
+     * Calcule les récompenses spécifiques selon l'objectif de la mission
+     * @param {object} mission - La mission actuelle
+     * @return {number} La récompense spécifique à l'objectif
+     */
+    calculateObjectiveSpecificReward(mission) {
+        let reward = 0;
+        
+        if (!this.rocketModel || !this.universeModel) return reward;
+        
+        // Déterminer l'objectif basé sur la destination de la mission
+        const objective = mission.to === 'Orbite' ? 'orbit' : 
+                         mission.to === 'Lune' || mission.to === 'Mars' ? 'land' : 'explore';
+        
+        switch (objective) {
+            case 'orbit':
+                reward += this.calculateOrbitReward();
+                break;
+            case 'land':
+                reward += this.calculateLandingReward();
+                break;
+            case 'explore':
+                reward += this.calculateExplorationReward();
+                break;
+        }
+        
+        return reward;
+    }
+
+    /**
+     * Calcule la récompense pour l'objectif d'orbite
+     */
+    calculateOrbitReward() {
+        let reward = 0;
+        
+        // Trouver le corps céleste le plus proche (généralement la Terre)
+        const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
+        if (!earth) return reward;
+        
+        const dx = this.rocketModel.position.x - earth.position.x;
+        const dy = this.rocketModel.position.y - earth.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const altitude = distance - earth.radius;
+        
+        // Récompense pour maintenir une altitude orbitale (entre 100 et 1000 unités)
+        const targetAltitude = 500;
+        const altitudeDiff = Math.abs(altitude - targetAltitude);
+        
+        if (altitudeDiff < 100) {
+            reward += 0.1; // Bonne altitude
+        } else if (altitudeDiff < 300) {
+            reward += 0.05; // Altitude acceptable
+        }
+        
+        // Récompense pour vitesse orbitale appropriée
+        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+        const targetSpeed = 50; // Vitesse orbitale cible
+        const speedDiff = Math.abs(speed - targetSpeed);
+        
+        if (speedDiff < 10) {
+            reward += 0.1; // Bonne vitesse
+        } else if (speedDiff < 25) {
+            reward += 0.05; // Vitesse acceptable
+        }
+        
+        // Pénalité pour être trop proche ou trop loin
+        if (altitude < 50) {
+            reward -= 0.5; // Trop proche, risque de crash
+        } else if (altitude > 2000) {
+            reward -= 0.2; // Trop loin, pas vraiment en orbite
+        }
+        
+        return reward;
+    }
+
+    /**
+     * Calcule la récompense pour l'objectif d'atterrissage
+     */
+    calculateLandingReward() {
+        let reward = 0;
+        
+        // Récompense pour se rapprocher de la cible
+        const targetBody = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+        if (targetBody) {
+            const dx = this.rocketModel.position.x - targetBody.position.x;
+            const dy = this.rocketModel.position.y - targetBody.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const altitude = distance - targetBody.radius;
+            
+            // Récompense progressive pour se rapprocher
+            if (altitude < 100) {
+                reward += 0.2; // Très proche
+                
+                // Récompense supplémentaire pour vitesse d'approche lente
+                const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+                if (speed < 5) {
+                    reward += 0.1; // Approche lente et contrôlée
+                }
+            } else if (altitude < 500) {
+                reward += 0.1; // Proche
+            } else if (altitude < 1000) {
+                reward += 0.05; // En approche
+            }
+            
+            // Grosse récompense pour atterrissage réussi
+            if (this.rocketModel.isLanded && this.rocketModel.landedOn === targetBody.name) {
+                reward += 1.0; // Atterrissage réussi !
+            }
+        }
+        
+        return reward;
+    }
+
+    /**
+     * Calcule la récompense pour l'objectif d'exploration
+     */
+    calculateExplorationReward() {
+        let reward = 0;
+        
+        // Récompense pour explorer différentes zones
+        // (Implémentation simplifiée - pourrait être étendue)
+        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+        
+        // Récompense pour mouvement (exploration active)
+        if (speed > 10 && speed < 100) {
+            reward += 0.05; // Mouvement d'exploration
+        }
+        
+        // Récompense pour visiter différents corps célestes
+        if (this.rocketModel.isLanded) {
+            reward += 0.2; // Exploration d'un nouveau lieu
+        }
+        
         return reward;
     }
 
@@ -309,10 +631,81 @@ class HeadlessRocketEnvironment {
     isDone() {
         if (this.rocketModel.isDestroyed) return true;
         if (this.rocketModel.fuel <= 0) return true;
-        if (this.missionManager.isCurrentMissionSuccessful()) return true; 
         if (this.currentStep >= this.maxStepsPerEpisode) return true;
+        
+        // Vérifier les conditions de succès spécifiques selon l'objectif
+        if (this.config.missionConfig && this.config.missionConfig.objective) {
+            switch (this.config.missionConfig.objective) {
+                case 'orbit':
+                    // Mission d'orbite réussie si altitude et vitesse appropriées pendant plusieurs pas
+                    return this.checkOrbitSuccess();
+                case 'land':
+                    // Mission d'atterrissage réussie si atterri sur la cible
+                    return this.checkLandingSuccess();
+                case 'explore':
+                    // Mission d'exploration réussie si certaines zones visitées
+                    return this.checkExplorationSuccess();
+            }
+        }
+        
         // Autres conditions (ex: sortie des limites de simulation si pertinent)
         return false;
+    }
+
+    /**
+     * Vérifie si la mission d'orbite est réussie
+     */
+    checkOrbitSuccess() {
+        if (!this.orbitSuccessCounter) this.orbitSuccessCounter = 0;
+        
+        const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
+        if (!earth) return false;
+        
+        const dx = this.rocketModel.position.x - earth.position.x;
+        const dy = this.rocketModel.position.y - earth.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const altitude = distance - earth.radius;
+        
+        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+        
+        // Conditions d'orbite : altitude entre 200-800 et vitesse entre 30-70
+        const inOrbit = (altitude >= 200 && altitude <= 800) && (speed >= 30 && speed <= 70);
+        
+        if (inOrbit) {
+            this.orbitSuccessCounter++;
+            // Succès si maintenu en orbite pendant 100 pas (environ 1.67 secondes)
+            return this.orbitSuccessCounter >= 100;
+        } else {
+            this.orbitSuccessCounter = 0; // Reset si sort de l'orbite
+            return false;
+        }
+    }
+
+    /**
+     * Vérifie si la mission d'atterrissage est réussie
+     */
+    checkLandingSuccess() {
+        // Succès si atterri sur la Lune avec vitesse faible
+        if (this.rocketModel.isLanded && this.rocketModel.landedOn === 'Lune') {
+            const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+            return speed < 10; // Atterrissage en douceur
+        }
+        return false;
+    }
+
+    /**
+     * Vérifie si la mission d'exploration est réussie
+     */
+    checkExplorationSuccess() {
+        if (!this.visitedBodies) this.visitedBodies = new Set();
+        
+        // Marquer les corps visités
+        if (this.rocketModel.isLanded && this.rocketModel.landedOn) {
+            this.visitedBodies.add(this.rocketModel.landedOn);
+        }
+        
+        // Succès si au moins 2 corps différents visités
+        return this.visitedBodies.size >= 2;
     }
 }
 

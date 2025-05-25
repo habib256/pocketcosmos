@@ -193,6 +193,11 @@ class ThrusterPhysics {
 
     // Jouer le son du propulseur principal
     playMainThrusterSound() {
+        // Désactiver le son en mode headless
+        if (this.physicsController.isHeadless) {
+            return;
+        }
+        
         try {
             if (!this.mainThrusterSound) {
                 this.mainThrusterSound = new Audio('assets/sound/rocketthrustmaxx.mp3');
@@ -201,12 +206,18 @@ class ThrusterPhysics {
             }
             if (!this.mainThrusterSoundPlaying) {
                 this.mainThrusterSound.play().catch(error => {
-                    console.error("Erreur lors de la lecture du son du propulseur principal:", error);
+                    // Silencieux en mode headless
+                    if (!this.physicsController.isHeadless) {
+                        console.error("Erreur lors de la lecture du son du propulseur principal:", error);
+                    }
                 });
                 this.mainThrusterSoundPlaying = true;
             }
         } catch (error) {
-            console.error("Erreur lors de la création/lecture du son du propulseur principal:", error);
+            // Silencieux en mode headless
+            if (!this.physicsController.isHeadless) {
+                console.error("Erreur lors de la création/lecture du son du propulseur principal:", error);
+            }
         }
     }
 

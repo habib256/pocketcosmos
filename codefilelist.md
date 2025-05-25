@@ -29,7 +29,8 @@
 │   ├── RocketController.js     # Gère la logique spécifique à la fusée (propulsion, rotation)
 │   ├── SynchronizationManager.js # Synchronise état logique (modèles) et physique (Matter.js)
 │   ├── ThrusterPhysics.js      # Applique les forces des propulseurs de la fusée au moteur physique
-│   └── TrainingOrchestrator.js # Orchestrateur d'entraînement IA avec métriques, checkpoints et évaluation
+│   ├── TrainingOrchestrator.js # Orchestrateur d'entraînement IA avec métriques, checkpoints et évaluation
+│   └── TrainingVisualizer.js   # Visualiseur temps réel pour l'entraînement IA (trajectoires, corps célestes)
 ├── models/           # Représentation des données et de l'état
 │   ├── CameraModel.js          # Gère la position, le zoom et le suivi de la caméra
 │   ├── CelestialBodyModel.js   # Représente un corps céleste (masse, position, rayon)
@@ -73,6 +74,7 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **RocketAI.js** : Agent IA utilisant Deep Q-Network (DQN) avec TensorFlow.js pour apprendre à contrôler la fusée
 - **TrainingOrchestrator.js** : Gestionnaire d'entraînement avec métriques, checkpoints, early stopping et évaluation
 - **HeadlessRocketEnvironment.js** : Environnement de simulation rapide sans rendu graphique pour l'entraînement
+- **TrainingVisualizer.js** : Visualiseur temps réel pour l'entraînement avec trajectoires multiples et contrôles de caméra
 - **training-interface.html** : Interface web complète avec monitoring temps réel, graphiques et contrôles
 - **train.js** : Scripts de démonstration et fonctions utilitaires pour l'entraînement
 - **AI_TRAINING_GUIDE.md** : Documentation complète du système d'entraînement
@@ -80,16 +82,48 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 ### Fonctionnalités IA
 - **Entraînement DQN** : Algorithme d'apprentissage par renforcement profond
 - **Environnement Headless** : Simulation rapide sans rendu pour l'entraînement intensif
-- **Métriques Temps Réel** : Suivi des performances, taux de succès, exploration
+- **Visualisation Temps Réel** : Trajectoires multiples persistantes, caméra adaptative, contrôles de zoom étendus
+- **Métriques Temps Réel** : Suivi des performances, taux de succès, exploration, métriques de concurrence TensorFlow.js
 - **Sauvegarde/Chargement** : Modèles persistants avec checkpoints automatiques
-- **Interface Web** : Monitoring visuel avec graphiques Chart.js et contrôles interactifs
+- **Interface Web** : Monitoring visuel avec graphiques Chart.js, contrôles interactifs et statistiques d'entraînement
 - **Évaluation Automatique** : Tests périodiques sur environnement séparé
 - **Multi-Objectifs** : Entraînement pour orbite, atterrissage, exploration
 
 ### Méthodes d'Entraînement
-1. **Interface Web** : `training-interface.html` avec contrôles graphiques
+1. **Interface Web** : `training-interface.html` avec contrôles graphiques (modes headless ou visual)
 2. **Console** : Fonctions `demonstrateTraining()`, `quickTraining()`, `benchmarkEnvironment()`
 3. **Programmation** : Utilisation directe de `TrainingOrchestrator` avec configuration personnalisée
+
+### Interface d'Entraînement Améliorée (training-interface.html)
+
+**Structure de l'Interface :**
+```
+┌─────────────────────┬─────────────────────┐
+│ 🚀 Configuration    │ 📊 Métriques        │
+│    d'Entraînement   │    en Temps Réel    │
+├─────────────────────┴─────────────────────┤
+│ 🎯 Visualisation de l'Entraînement       │
+│    (Toute la largeur, 650px de hauteur)  │
+├─────────────────────┬─────────────────────┤
+│ 📈 Graphiques de    │ 📊 Métriques de     │
+│    Performance      │    Concurrence TF.js│
+├─────────────────────┼─────────────────────┤
+│ 📝 Journal          │ 📈 Statistiques     │
+│    d'Entraînement   │    d'Entraînement   │
+└─────────────────────┴─────────────────────┘
+```
+
+**Fonctionnalités de Visualisation :**
+- **Trajectoires Multiples** : Conservation des trajectoires des 10 derniers épisodes avec opacité décroissante
+- **Caméra Adaptative** : Terre toujours centrée, zoom étendu (1/1000000 à 1/1000), contrôles intuitifs
+- **Corps Célestes** : Affichage correct de la Terre (bleue) et de la Lune (grise) avec échelles adaptées
+- **Contrôles Simplifiés** : Activer/désactiver visualisation, effacer trajectoires, zoom avant/arrière (toujours centré sur la Terre)
+
+**Métriques Complètes :**
+- **Performance** : Épisode actuel, étapes totales, récompense moyenne, taux de succès
+- **Exploration** : Taux d'exploration (epsilon), perte d'entraînement
+- **Concurrence TensorFlow.js** : Appels totaux/bloqués, durée moyenne, taux de blocage
+- **Statistiques** : Temps total/moyen par épisode, meilleure récompense, taille modèle, efficacité
 
 ## Vues principales (`views/`)
 - **RocketView.js** : Affiche la fusée et ses états (propulseurs, image, crash).
@@ -128,6 +162,7 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **RocketAI.js** : Gère l'IA de contrôle de la fusée avec TensorFlow.js (prise de décision, apprentissage par renforcement DQN).
 - **RocketCargo.js** : Gère le cargo de la fusée (chargement, déchargement, gestion des ressources).
 - **TrainingOrchestrator.js** : Orchestrateur complet pour l'entraînement IA avec métriques temps réel, checkpoints, early stopping et évaluation automatique.
+- **TrainingVisualizer.js** : Visualiseur temps réel pour l'entraînement IA avec trajectoires multiples, caméra adaptative et contrôles de zoom étendus.
 
 ## Points d'Entrée Importants
 - **main.js** : Initialisation globale du jeu.
@@ -148,11 +183,13 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 ## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
 - ** IL N'Y A PAS DE PROBLEME AVEC MATTER.JS et son plugin **
 - **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html` et `training-interface.html`. L'ordre d'inclusion est crucial. Il ne doit pas y avoir d'import ES6
-- **Système IA** : L'entraînement fonctionne avec les vrais composants (TrainingOrchestrator, RocketAI, HeadlessRocketEnvironment). L'interface web est maintenant connectée aux vrais événements d'entraînement.
+- **Système IA** : L'entraînement fonctionne avec les vrais composants (TrainingOrchestrator, RocketAI, HeadlessRocketEnvironment, TrainingVisualizer). L'interface web est maintenant connectée aux vrais événements d'entraînement avec visualisation temps réel.
 - **Calculs physiques** : !! L'accélération F/m est calculée dans `PhysicsController` (méthode `calculateGravityAccelerationAt`) avant l'appel à `Engine.update()` de Matter.js. Le plugin `matter-attractors` gère ensuite l'application de la gravité. Matter.js reste responsable des collisions et du mouvement. Pour les planètes et les lunes, les collisions sont gérées par Matter.js tandis que `SynchronizationManager.js` traite les états ou la fusée est détruite ou posée.
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus sert pour découpler le système MVC afin de l'interfacer avec le système IA. Surtout pas d'imports ES6 on utilise window.EVENTS dans tous les contrôleurs et ailleurs pour accéder à l'EventBus.
 - **Entraînement IA** : Utilise TensorFlow.js avec algorithme DQN. Trois méthodes d'entraînement disponibles : interface web, console, et programmation directe.
 - **Performance** : L'environnement headless permet un entraînement rapide sans rendu graphique. Métriques temps réel disponibles.
+- **Visualisation d'Entraînement** : TrainingVisualizer.js gère l'affichage temps réel avec trajectoires multiples, caméra adaptative et zoom étendu. Initialisation automatique des corps célestes (Terre et Lune) avec debug amélioré. Interface complètement fonctionnelle avec métriques de concurrence TensorFlow.js.
+- **Interface Web** : training-interface.html est maintenant une interface complète avec 6 panneaux : configuration, métriques temps réel, visualisation pleine largeur, graphiques, métriques de concurrence et statistiques d'entraînement.
 - **Nettoyage** : Supprimer les fichiers obsolètes ou redondants dès que possible pour garder la base de code la plus propre possible.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
 
@@ -162,16 +199,25 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - Architectures avancées : Réseaux convolutionnels, LSTM, Actor-Critic
 - Apprentissage multi-objectifs et transfert d'apprentissage
 - Environnements plus complexes avec obstacles et contraintes temporelles
-- Interface avancée avec visualisation de l'espace des états
+- Visualisation de l'espace des états et des politiques apprises
+- Entraînement distribué et parallélisation
 
 **Performance et Structure** :
 - Éviter les scripts "monolithiques" : chaque controller trop gros avec par exemple plus de 600 lignes (GameController.js ...) devrait être refactorisé
 - En cas de très nombreux corps : envisager une structure de type Barnes-Hut pour le calcul de champ gravitationnel
 - Prévoir un "GamepadController" dédié pour centraliser lecture et mapping, plutôt que de tester ad hoc sur https://hardwaretester.com.
+- Optimisation des performances de rendu pour la visualisation d'entraînement
 
 **Fonctionnalités Jeu** :
 - Extension des missions et objectifs
 - Système de ressources et économie spatiale
 - Multiples vaisseaux et flotte
+- Mode multijoueur avec IA collaborative
+
+**Interface d'Entraînement** :
+- Sauvegarde/chargement de configurations d'entraînement
+- Comparaison de modèles et A/B testing
+- Export des données d'entraînement pour analyse externe
+- Intégration avec TensorBoard pour visualisations avancées
 
 
