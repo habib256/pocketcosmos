@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Existence des Fichiers</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .test-result {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .success { background: #2a4d3a; }
+        .error { background: #4d2a2a; }
+        .status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .status.ok { background: #51cf66; color: black; }
+        .status.fail { background: #ff6b6b; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Test d'Existence des Fichiers du Projet</h1>
+    
+    <div id="results"></div>
+    
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        function addResult(fileName, exists) {
+            const div = document.createElement('div');
+            div.className = `test-result ${exists ? 'success' : 'error'}`;
+            
+            const status = document.createElement('span');
+            status.className = `status ${exists ? 'ok' : 'fail'}`;
+            status.textContent = exists ? 'OK' : 'FAIL';
+            
+            div.appendChild(status);
+            div.appendChild(document.createTextNode(fileName));
+            
+            resultsDiv.appendChild(div);
+        }
+        
+        // Liste des fichiers critiques à vérifier
+        const criticalFiles = [
+            // Fichiers de base
+            'constants.js',
+            'EventTypes.js',
+            
+            // Contrôleurs
+            'controllers/EventBus.js',
+            'controllers/TrainingOrchestrator.js',
+            'controllers/RocketAI.js',
+            'controllers/HeadlessRocketEnvironment.js',
+            'controllers/PhysicsController.js',
+            'controllers/RocketController.js',
+            'controllers/MissionManager.js',
+            'controllers/ParticleController.js',
+            'controllers/PhysicsVectors.js',
+            'controllers/ThrusterPhysics.js',
+            'controllers/BodyFactory.js',
+            'controllers/CollisionHandler.js',
+            'controllers/SynchronizationManager.js',
+            'controllers/CelestialBodyFactory.js',
+            'controllers/ControllerContainer.js',
+            'controllers/RocketCargo.js',
+            
+            // Modèles
+            'models/RocketModel.js',
+            'models/UniverseModel.js',
+            'models/CelestialBodyModel.js',
+            'models/ParticleModel.js',
+            'models/ParticleSystemModel.js',
+            'models/CameraModel.js',
+            
+            // Vues
+            'views/RocketView.js',
+            'views/UniverseView.js',
+            'views/CelestialBodyView.js',
+            'views/ParticleView.js',
+            'views/TraceView.js',
+            'views/VectorsView.js',
+            'views/UIView.js',
+            
+            // Fichiers principaux
+            'main.js',
+            'index.html',
+            'training-interface.html'
+        ];
+        
+        async function checkFile(fileName) {
+            try {
+                const response = await fetch(fileName, { method: 'HEAD' });
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+        
+        async function runTests() {
+            resultsDiv.innerHTML = '<p>⏳ Vérification des fichiers en cours...</p>';
+            
+            let totalFiles = criticalFiles.length;
+            let existingFiles = 0;
+            
+            resultsDiv.innerHTML = '';
+            
+            for (const fileName of criticalFiles) {
+                const exists = await checkFile(fileName);
+                if (exists) existingFiles++;
+                addResult(fileName, exists);
+            }
+            
+            // Résumé
+            const summaryDiv = document.createElement('div');
+            summaryDiv.style.marginTop = '20px';
+            summaryDiv.style.padding = '15px';
+            summaryDiv.style.background = existingFiles === totalFiles ? '#2a4d3a' : '#4d3a2a';
+            summaryDiv.style.borderRadius = '8px';
+            summaryDiv.innerHTML = `
+                <h3>📊 Résumé</h3>
+                <p><strong>${existingFiles}/${totalFiles}</strong> fichiers trouvés</p>
+                ${existingFiles === totalFiles ? 
+                    '<p>✅ Tous les fichiers critiques sont présents!</p>' : 
+                    '<p>❌ Certains fichiers sont manquants. Vérifiez la structure du projet.</p>'
+                }
+            `;
+            
+            resultsDiv.appendChild(summaryDiv);
+        }
+        
+        // Lancer les tests
+        runTests();
+    </script>
+</body>
+</html> 

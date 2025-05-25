@@ -299,6 +299,22 @@
 
     <!-- Initialisation du plugin Matter Attractors -->
     <script>
+        // Gestionnaire d'erreurs global pour capturer les problèmes
+        window.addEventListener('error', (event) => {
+            console.error('Erreur JS détectée:', event.error);
+            const errorMsg = `ERREUR: ${event.error?.message || event.message}\nFichier: ${event.filename}\nLigne: ${event.lineno}`;
+            if (window.trainingInterface) {
+                window.trainingInterface.log(errorMsg, 'error');
+            }
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Promesse rejetée:', event.reason);
+            if (window.trainingInterface) {
+                window.trainingInterface.log(`Promesse rejetée: ${event.reason}`, 'error');
+            }
+        });
+
         try {
             Matter.use(MatterAttractors);
             console.log('Plugin Matter Attractors initialisé avec succès');
@@ -321,16 +337,49 @@
                     episodes: []
                 };
                 
-                // Initialiser les composants réels d'entraînement
-                this.eventBus = new EventBus();
-                this.trainingOrchestrator = new TrainingOrchestrator(this.eventBus);
+                this.log('Initialisation de l\'interface d\'entraînement...', 'info');
                 
-                this.initializeCharts();
-                this.setupEventListeners();
-                this.setupTrainingEventListeners();
-                this.updateStatus('idle', 'Pret pour l\'entrainement');
+                try {
+                    // Vérifier les dépendances critiques
+                    this.checkDependencies();
+                    
+                    // Initialiser les composants réels d'entraînement
+                    this.eventBus = new EventBus();
+                    this.trainingOrchestrator = new TrainingOrchestrator(this.eventBus);
+                    
+                    this.initializeCharts();
+                    this.setupEventListeners();
+                    this.setupTrainingEventListeners();
+                    this.updateStatus('idle', 'Prêt pour l\'entraînement');
+                    
+                    this.log('Interface d\'entraînement initialisée avec succès', 'success');
+                } catch (error) {
+                    this.log(`Erreur lors de l'initialisation: ${error.message}`, 'error');
+                    this.updateStatus('error', 'Erreur d\'initialisation');
+                }
+            }
+
+            checkDependencies() {
+                const dependencies = [
+                    { name: 'TensorFlow.js', check: () => typeof tf !== 'undefined' },
+                    { name: 'Matter.js', check: () => typeof Matter !== 'undefined' },
+                    { name: 'Matter Attractors', check: () => typeof MatterAttractors !== 'undefined' },
+                    { name: 'EVENTS', check: () => typeof window.EVENTS !== 'undefined' },
+                    { name: 'ROCKET constants', check: () => typeof ROCKET !== 'undefined' && ROCKET.FUEL_MAX !== 'undefined' },
+                    { name: 'PHYSICS constants', check: () => typeof PHYSICS !== 'undefined' },
+                    { name: 'EventBus', check: () => typeof EventBus !== 'undefined' },
+                    { name: 'TrainingOrchestrator', check: () => typeof TrainingOrchestrator !== 'undefined' },
+                    { name: 'HeadlessRocketEnvironment', check: () => typeof HeadlessRocketEnvironment !== 'undefined' },
+                    { name: 'RocketAI', check: () => typeof RocketAI !== 'undefined' }
+                ];
+
+                const missing = dependencies.filter(dep => !dep.check());
+                if (missing.length > 0) {
+                    const missingNames = missing.map(dep => dep.name).join(', ');
+                    throw new Error(`Dépendances manquantes: ${missingNames}`);
+                }
                 
-                this.log('Interface d\'entraînement initialisée avec composants réels', 'success');
+                this.log('Toutes les dépendances sont présentes', 'success');
             }
 
             initializeCharts() {
@@ -409,130 +458,183 @@
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_STARTED, (data) => {
                     this.log('Entraînement démarré!', 'success');
                     this.updateStatus('training', 'Entraînement en cours...');
+                    this.isTraining = true;
+                    this.updateButtons();
                 });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_PROGRESS, (data) => {
-                    const metrics = data.metrics;
-                    const config = data.config;
+                    if (!data || !data.metrics) return;
                     
-                    // Calculer les métriques pour l'affichage
-                    const avgReward = metrics.averageRewards.length > 0 ? 
+                    const metrics = data.metrics;
+                    
+                    // Calculer les métriques pour l'affichage avec des valeurs par défaut sûres
+                    const avgReward = (metrics.averageRewards && metrics.averageRewards.length > 0) ? 
                         metrics.averageRewards.reduce((a, b) => a + b, 0) / metrics.averageRewards.length : 0;
-                    const successRate = (metrics.successfulEpisodes / Math.max(metrics.episode, 1)) * 100;
-                    const currentEpsilon = metrics.explorationRates[metrics.explorationRates.length - 1] || 1.0;
-                    const currentLoss = metrics.losses[metrics.losses.length - 1] || 0;
+                    const successRate = (metrics.successfulEpisodes && metrics.episode > 0) ? 
+                        (metrics.successfulEpisodes / metrics.episode) * 100 : 0;
+                    const currentEpsilon = (metrics.explorationRates && metrics.explorationRates.length > 0) ? 
+                        metrics.explorationRates[metrics.explorationRates.length - 1] : 1.0;
+                    const currentLoss = (metrics.losses && metrics.losses.length > 0) ? 
+                        metrics.losses[metrics.losses.length - 1] : 0;
                     
                     this.updateMetrics({
-                        episode: metrics.episode,
-                        totalSteps: metrics.totalSteps,
+                        episode: metrics.episode || 0,
+                        totalSteps: metrics.totalSteps || 0,
                         avgReward: avgReward,
                         successRate: successRate,
                         epsilon: currentEpsilon,
                         loss: currentLoss
                     });
                     
-                    // Mettre à jour les graphiques
-                    if (data.episode % 10 === 0) { // Mise à jour tous les 10 épisodes
-                        this.updateCharts(data.episode, avgReward, currentLoss);
+                    // Mettre à jour les graphiques périodiquement
+                    if (metrics.episode && metrics.episode % 10 === 0) {
+                        this.updateCharts(metrics.episode, avgReward, currentLoss);
                     }
                     
                     // Log périodique
-                    if (data.episode % 50 === 0) {
-                        this.log(`Épisode ${data.episode}: Récompense=${avgReward.toFixed(2)}, Succès=${successRate.toFixed(1)}%`, 'info');
+                    if (metrics.episode && metrics.episode % 50 === 0) {
+                        this.log(`Épisode ${metrics.episode}: Récompense=${avgReward.toFixed(2)}, Succès=${successRate.toFixed(1)}%`, 'info');
                     }
                 });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.EVALUATION_COMPLETED, (data) => {
-                    this.log(`Évaluation: Score=${data.averageScore.toFixed(2)}, Succès=${(data.successRate * 100).toFixed(1)}%`, 'success');
+                    if (data && data.averageScore !== undefined && data.successRate !== undefined) {
+                        this.log(`Évaluation: Score=${data.averageScore.toFixed(2)}, Succès=${(data.successRate * 100).toFixed(1)}%`, 'success');
+                    }
                 });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_COMPLETED, (stats) => {
                     this.isTraining = false;
                     this.updateStatus('idle', 'Entraînement terminé');
                     this.updateButtons();
-                    this.log(`Entraînement terminé! Épisodes: ${stats.episodes}, Succès: ${(stats.finalSuccessRate * 100).toFixed(1)}%`, 'success');
+                    if (stats) {
+                        this.log(`Entraînement terminé! Épisodes: ${stats.episodes || 'N/A'}, Succès: ${((stats.finalSuccessRate || 0) * 100).toFixed(1)}%`, 'success');
+                    } else {
+                        this.log('Entraînement terminé!', 'success');
+                    }
                 });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_ERROR, (data) => {
                     this.isTraining = false;
                     this.updateStatus('error', 'Erreur d\'entraînement');
                     this.updateButtons();
-                    this.log(`Erreur: ${data.error}`, 'error');
+                    this.log(`Erreur: ${data?.error || 'Erreur inconnue'}`, 'error');
                 });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_STOPPED, () => {
                     this.isTraining = false;
+                    this.isPaused = false;
                     this.updateStatus('idle', 'Entraînement arrêté');
                     this.updateButtons();
                     this.log('Entraînement arrêté', 'info');
                 });
+
+                this.eventBus.subscribe(window.EVENTS.AI.TRAINING_PAUSED, () => {
+                    this.isPaused = true;
+                    this.updateStatus('idle', 'Entraînement en pause');
+                    this.updateButtons();
+                    this.log('Entraînement mis en pause', 'info');
+                });
+
+                this.eventBus.subscribe(window.EVENTS.AI.TRAINING_RESUMED, () => {
+                    this.isPaused = false;
+                    this.updateStatus('training', 'Entraînement repris');
+                    this.updateButtons();
+                    this.log('Entraînement repris', 'info');
+                });
             }
 
             startTraining() {
+                if (this.isTraining && !this.isPaused) {
+                    this.log('Entraînement déjà en cours', 'warning');
+                    return;
+                }
+
                 if (this.isPaused) {
                     this.trainingOrchestrator.resumeTraining();
                     return;
                 }
 
-                this.isTraining = true;
-                this.updateButtons();
-                
-                const config = this.getTrainingConfig();
-                this.log('Démarrage de l\'entraînement avec les paramètres:', 'info');
-                this.log(JSON.stringify(config, null, 2), 'info');
-                
-                // Adapter la configuration pour TrainingOrchestrator
-                const orchestratorConfig = {
-                    maxEpisodes: config.episodes,
-                    learningRate: config.learningRate,
-                    epsilon: config.epsilon,
-                    gamma: config.gamma,
-                    batchSize: config.batchSize,
-                    headlessMode: config.trainingMode === 'headless',
-                    objectives: [config.objective]
-                };
-                
-                // Démarrer l'entraînement réel
-                this.trainingOrchestrator.startTraining(orchestratorConfig)
-                    .catch(error => {
-                        this.log(`Erreur lors du démarrage: ${error.message}`, 'error');
-                        this.isTraining = false;
-                        this.updateButtons();
-                    });
+                try {
+                    const config = this.getTrainingConfig();
+                    this.log('Démarrage de l\'entraînement avec les paramètres:', 'info');
+                    this.log(JSON.stringify(config, null, 2), 'info');
+                    
+                    // Adapter la configuration pour TrainingOrchestrator
+                    const orchestratorConfig = {
+                        maxEpisodes: config.episodes,
+                        learningRate: config.learningRate,
+                        epsilon: config.epsilon,
+                        gamma: config.gamma,
+                        batchSize: config.batchSize,
+                        headlessMode: config.trainingMode === 'headless',
+                        objectives: [config.objective]
+                    };
+                    
+                    // Démarrer l'entraînement réel
+                    this.trainingOrchestrator.startTraining(orchestratorConfig)
+                        .catch(error => {
+                            this.log(`Erreur lors du démarrage: ${error.message}`, 'error');
+                            this.isTraining = false;
+                            this.updateButtons();
+                            this.updateStatus('error', 'Erreur de démarrage');
+                        });
+                        
+                } catch (error) {
+                    this.log(`Erreur de configuration: ${error.message}`, 'error');
+                    this.updateStatus('error', 'Erreur de configuration');
+                }
             }
 
             pauseTraining() {
+                if (!this.isTraining) return;
                 this.trainingOrchestrator.pauseTraining();
             }
 
             resumeTraining() {
+                if (!this.isPaused) return;
                 this.trainingOrchestrator.resumeTraining();
             }
 
             stopTraining() {
+                if (!this.isTraining) return;
                 this.trainingOrchestrator.stopTraining();
             }
 
             getTrainingConfig() {
                 return {
-                    episodes: parseInt(document.getElementById('episodes').value),
-                    learningRate: parseFloat(document.getElementById('learningRate').value),
-                    epsilon: parseFloat(document.getElementById('epsilon').value),
-                    gamma: parseFloat(document.getElementById('gamma').value),
-                    batchSize: parseInt(document.getElementById('batchSize').value),
-                    updateFreq: parseInt(document.getElementById('updateFreq').value),
-                    objective: document.getElementById('objective').value,
-                    trainingMode: document.getElementById('trainingMode').value
+                    episodes: parseInt(document.getElementById('episodes').value) || 1000,
+                    learningRate: parseFloat(document.getElementById('learningRate').value) || 0.001,
+                    epsilon: parseFloat(document.getElementById('epsilon').value) || 1.0,
+                    gamma: parseFloat(document.getElementById('gamma').value) || 0.99,
+                    batchSize: parseInt(document.getElementById('batchSize').value) || 32,
+                    updateFreq: parseInt(document.getElementById('updateFreq').value) || 1000,
+                    objective: document.getElementById('objective').value || 'orbit',
+                    trainingMode: document.getElementById('trainingMode').value || 'headless'
                 };
             }
 
             updateButtons() {
-                document.getElementById('startTraining').disabled = this.isTraining && !this.isPaused;
-                document.getElementById('pauseTraining').disabled = !this.isTraining || this.isPaused;
-                document.getElementById('stopTraining').disabled = !this.isTraining;
-                
                 const startBtn = document.getElementById('startTraining');
-                startBtn.textContent = this.isPaused ? '▶️ Reprendre' : '🎯 Démarrer l\'Entraînement';
+                const pauseBtn = document.getElementById('pauseTraining');
+                const stopBtn = document.getElementById('stopTraining');
+                
+                if (this.isPaused) {
+                    startBtn.textContent = '▶️ Reprendre';
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    stopBtn.disabled = false;
+                } else if (this.isTraining) {
+                    startBtn.textContent = '🎯 Démarrer l\'Entraînement';
+                    startBtn.disabled = true;
+                    pauseBtn.disabled = false;
+                    stopBtn.disabled = false;
+                } else {
+                    startBtn.textContent = '🎯 Démarrer l\'Entraînement';
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    stopBtn.disabled = true;
+                }
             }
 
             updateStatus(status, text) {
@@ -552,10 +654,11 @@
                 document.getElementById('loss').textContent = (metrics.loss || 0).toFixed(4);
                 
                 // Mise à jour de la barre de progression
-                const progress = ((metrics.episode || 0) / (this.getTrainingConfig().episodes)) * 100;
+                const totalEpisodes = this.getTrainingConfig().episodes;
+                const progress = ((metrics.episode || 0) / totalEpisodes) * 100;
                 document.getElementById('trainingProgress').style.width = `${Math.min(progress, 100)}%`;
                 document.getElementById('progressText').textContent = 
-                    `Épisode ${metrics.episode || 0} / ${this.getTrainingConfig().episodes}`;
+                    `Épisode ${metrics.episode || 0} / ${totalEpisodes}`;
             }
 
             updateCharts(episode, reward, loss) {
@@ -593,12 +696,14 @@
                 while (logContainer.children.length > 200) {
                     logContainer.removeChild(logContainer.firstChild);
                 }
+                
+                // Aussi logger dans la console
+                console.log(`[${type.toUpperCase()}] ${message}`);
             }
 
             async saveModel() {
                 this.log('Sauvegarde du modèle en cours...', 'info');
                 try {
-                    // Utiliser le vrai système de sauvegarde
                     if (this.trainingOrchestrator.rocketAI) {
                         await this.trainingOrchestrator.rocketAI.saveModel();
                         this.log('Modèle sauvegardé avec succès', 'success');
@@ -613,7 +718,6 @@
             async loadModel() {
                 this.log('Chargement du modèle en cours...', 'info');
                 try {
-                    // Utiliser le vrai système de chargement
                     if (this.trainingOrchestrator.rocketAI) {
                         await this.trainingOrchestrator.rocketAI.loadModel();
                         this.log('Modèle chargé avec succès', 'success');
@@ -627,28 +731,46 @@
 
             resetTraining() {
                 this.stopTraining();
-                this.currentEpisode = 0;
-                this.totalSteps = 0;
-                this.trainingData = { rewards: [], losses: [], episodes: [] };
                 
-                this.updateMetrics({});
-                this.rewardChart.data.labels = [];
-                this.rewardChart.data.datasets[0].data = [];
-                this.rewardChart.update();
-                this.lossChart.data.labels = [];
-                this.lossChart.data.datasets[0].data = [];
-                this.lossChart.update();
-                
-                this.log('Entraînement réinitialisé', 'info');
+                // Attendre un peu que l'arrêt soit effectif
+                setTimeout(() => {
+                    this.currentEpisode = 0;
+                    this.totalSteps = 0;
+                    this.trainingData = { rewards: [], losses: [], episodes: [] };
+                    
+                    this.updateMetrics({});
+                    this.rewardChart.data.labels = [];
+                    this.rewardChart.data.datasets[0].data = [];
+                    this.rewardChart.update();
+                    this.lossChart.data.labels = [];
+                    this.lossChart.data.datasets[0].data = [];
+                    this.lossChart.update();
+                    
+                    this.log('Entraînement réinitialisé', 'info');
+                }, 1000);
             }
         }
 
         // Initialiser l'interface au chargement
         document.addEventListener('DOMContentLoaded', () => {
-            // Initialiser ControllerContainer global pour les dépendances
-            window.controllerContainer = new ControllerContainer();
-            
-            window.trainingInterface = new TrainingInterface();
+            try {
+                // Initialiser ControllerContainer global pour les dépendances
+                if (typeof ControllerContainer !== 'undefined') {
+                    window.controllerContainer = new ControllerContainer();
+                }
+                
+                window.trainingInterface = new TrainingInterface();
+            } catch (error) {
+                console.error('Erreur lors de l\'initialisation de l\'interface:', error);
+                document.body.innerHTML = `
+                    <div style="color: red; padding: 20px; font-family: Arial;">
+                        <h1>Erreur d'Initialisation</h1>
+                        <p><strong>Erreur:</strong> ${error.message}</p>
+                        <p>Vérifiez que tous les fichiers sont correctement chargés et que le serveur est lancé.</p>
+                        <p>Consultez la console pour plus de détails.</p>
+                    </div>
+                `;
+            }
         });
     </script>
 </body>

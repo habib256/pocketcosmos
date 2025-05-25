@@ -177,7 +177,7 @@ async function benchmarkEnvironment() {
         rocketInitialState: {
             position: { x: 0, y: 0 },
             velocity: { x: 0, y: 0 },
-            fuel: ROCKET.FUEL_CAPACITY,
+            fuel: ROCKET.FUEL_MAX,
             health: 100
         }
     });

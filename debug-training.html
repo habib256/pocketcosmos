@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Interface d'Entraînement</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            margin: 20px;
+        }
+        .error-log {
+            background: #333;
+            padding: 20px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .status.success { background: #2a4d3a; }
+        .status.error { background: #4d2a2a; }
+        .status.warning { background: #4d3a2a; }
+        .status.info { background: #2a3a4d; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug Interface d'Entraînement</h1>
+    
+    <div id="status-log"></div>
+    
+    <h2>Console d'erreurs</h2>
+    <div id="error-log" class="error-log"></div>
+    
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    
+    <!-- Bibliothèques physiques -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- Plugin Matter Attractors -->
+    <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
+    
+    <script>
+        const statusLog = document.getElementById('status-log');
+        const errorLog = document.getElementById('error-log');
+        
+        function addStatus(type, message) {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            statusLog.appendChild(div);
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Capturer les erreurs globales
+        window.addEventListener('error', (event) => {
+            const errorMsg = `ERREUR: ${event.error?.message || event.message}\nFichier: ${event.filename}\nLigne: ${event.lineno}\nStack: ${event.error?.stack || 'N/A'}`;
+            errorLog.textContent += errorMsg + '\n\n';
+            addStatus('error', `Erreur JS: ${event.error?.message || event.message}`);
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            const errorMsg = `PROMESSE REJETÉE: ${event.reason}\nStack: ${event.reason?.stack || 'N/A'}`;
+            errorLog.textContent += errorMsg + '\n\n';
+            addStatus('error', `Promesse rejetée: ${event.reason}`);
+        });
+        
+        // Test 1: TensorFlow.js
+        addStatus('info', 'Test TensorFlow.js...');
+        try {
+            if (typeof tf !== 'undefined') {
+                addStatus('success', `TensorFlow.js ${tf.version.tfjs} chargé avec succès`);
+                // Test simple
+                const tensor = tf.tensor2d([[1, 2], [3, 4]]);
+                addStatus('success', 'Opération TensorFlow.js de base réussie');
+                tensor.dispose();
+            } else {
+                addStatus('error', 'TensorFlow.js non disponible');
+            }
+        } catch (e) {
+            addStatus('error', `Erreur TensorFlow.js: ${e.message}`);
+        }
+        
+        // Test 2: Matter.js
+        addStatus('info', 'Test Matter.js...');
+        try {
+            if (typeof Matter !== 'undefined') {
+                addStatus('success', 'Matter.js chargé avec succès');
+                // Test création d'un moteur simple
+                const engine = Matter.Engine.create();
+                addStatus('success', 'Moteur Matter.js créé avec succès');
+            } else {
+                addStatus('error', 'Matter.js non disponible');
+            }
+        } catch (e) {
+            addStatus('error', `Erreur Matter.js: ${e.message}`);
+        }
+        
+        // Test 3: Plugin Matter Attractors
+        addStatus('info', 'Test plugin Matter Attractors...');
+        try {
+            if (typeof MatterAttractors !== 'undefined') {
+                Matter.use(MatterAttractors);
+                addStatus('success', 'Plugin Matter Attractors initialisé avec succès');
+            } else {
+                addStatus('error', 'Plugin Matter Attractors non disponible');
+            }
+        } catch (e) {
+            addStatus('error', `Erreur plugin Matter Attractors: ${e.message}`);
+        }
+        
+        // Test 4: Chargement des dépendances du projet
+        addStatus('info', 'Chargement des dépendances du projet...');
+        
+        const scriptsToLoad = [
+            'constants.js',
+            'EventTypes.js',
+            'controllers/EventBus.js'
+        ];
+        
+        async function loadScripts() {
+            for (const script of scriptsToLoad) {
+                try {
+                    addStatus('info', `Chargement de ${script}...`);
+                    await loadScript(script);
+                    addStatus('success', `${script} chargé avec succès`);
+                } catch (e) {
+                    addStatus('error', `Erreur lors du chargement de ${script}: ${e.message}`);
+                }
+            }
+            
+            // Test des variables globales après chargement
+            setTimeout(() => {
+                testGlobalVariables();
+            }, 1000);
+        }
+        
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Impossible de charger ${src}`));
+                document.head.appendChild(script);
+            });
+        }
+        
+        function testGlobalVariables() {
+            addStatus('info', 'Test des variables globales...');
+            
+            // Test window.EVENTS
+            if (typeof window.EVENTS !== 'undefined') {
+                addStatus('success', 'window.EVENTS défini');
+                if (window.EVENTS.AI && window.EVENTS.AI.TRAINING_STARTED) {
+                    addStatus('success', 'Événements IA disponibles');
+                } else {
+                    addStatus('warning', 'Événements IA incomplets');
+                }
+            } else {
+                addStatus('error', 'window.EVENTS non défini');
+            }
+            
+            // Test EventBus
+            if (typeof EventBus !== 'undefined') {
+                addStatus('success', 'Classe EventBus disponible');
+                try {
+                    const testEventBus = new EventBus();
+                    addStatus('success', 'Instance EventBus créée avec succès');
+                } catch (e) {
+                    addStatus('error', `Erreur création EventBus: ${e.message}`);
+                }
+            } else {
+                addStatus('error', 'Classe EventBus non disponible');
+            }
+            
+            // Test constantes
+            if (typeof ROCKET !== 'undefined') {
+                addStatus('success', 'Constantes ROCKET disponibles');
+            } else {
+                addStatus('warning', 'Constantes ROCKET non disponibles');
+            }
+        }
+        
+        // Démarrer les tests
+        loadScripts();
+    </script>
+</body>
+</html> 

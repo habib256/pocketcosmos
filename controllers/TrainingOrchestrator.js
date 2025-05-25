@@ -128,7 +128,7 @@ class TrainingOrchestrator {
             rocketInitialState: {
                 position: { x: 0, y: 0 },
                 velocity: { x: 0, y: 0 },
-                fuel: ROCKET.FUEL_CAPACITY,
+                fuel: ROCKET.FUEL_MAX,
                 health: 100
             },
             universeConfig: {
@@ -338,7 +338,7 @@ class TrainingOrchestrator {
             (environmentState.rocketVY || 0) / 100,    // Vitesse Y normalisée
             (environmentState.rocketAngle || 0) / (2 * Math.PI), // Angle normalisé
             (environmentState.rocketAngularVelocity || 0) / 10,  // Vitesse angulaire normalisée
-            (environmentState.rocketFuel || 0) / (ROCKET?.FUEL_CAPACITY || 1000), // Carburant normalisé
+            (environmentState.rocketFuel || 0) / (ROCKET?.FUEL_MAX || 1000), // Carburant normalisé
             (environmentState.rocketHealth || 100) / 100,       // Santé normalisée
             // Distance au corps céleste le plus proche (approximative avec la position)
             Math.min(Math.sqrt((environmentState.rocketX || 0)**2 + (environmentState.rocketY || 0)**2) / 10000, 1),
