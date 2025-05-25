@@ -153,10 +153,16 @@ class HeadlessRocketEnvironment {
         // 1. Traduire l'action de l'agent en commandes pour RocketController (via EventBus)
         // Exemple: Si action = { mainThruster: 0.5, rotationInput: -0.1 (pour tourner à droite) }
         if (action.hasOwnProperty('mainThruster')) {
-            this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'main', power: action.mainThruster * this.ROCKET_CONSTS.THRUSTER_POWER.MAIN });
+            this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { 
+                thrusterId: 'main', 
+                power: action.mainThruster * (this.ROCKET_CONSTS.THRUSTER_POWER?.MAIN || 1000)
+            });
         }
         if (action.hasOwnProperty('rearThruster')) {
-            this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'rear', power: action.rearThruster * this.ROCKET_CONSTS.THRUSTER_POWER.REAR });
+            this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { 
+                thrusterId: 'rear', 
+                power: action.rearThruster * (this.ROCKET_CONSTS.THRUSTER_POWER?.REAR || 200)
+            });
         }
         // Pour la rotation, on peut émettre ROTATE_COMMAND ou directement SET_THRUSTER_POWER pour left/right
         // Si on utilise ROTATE_COMMAND, RocketController le traduira.
@@ -165,10 +171,16 @@ class HeadlessRocketEnvironment {
         } else {
             // Si l'agent contrôle directement les propulseurs latéraux
             if (action.hasOwnProperty('leftThruster')) {
-                this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: action.leftThruster * this.ROCKET_CONSTS.THRUSTER_POWER.LEFT });
+                this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { 
+                    thrusterId: 'left', 
+                    power: action.leftThruster * (this.ROCKET_CONSTS.THRUSTER_POWER?.LEFT || 20)
+                });
             }
             if (action.hasOwnProperty('rightThruster')) {
-                this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: action.rightThruster * this.ROCKET_CONSTS.THRUSTER_POWER.RIGHT });
+                this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { 
+                    thrusterId: 'right', 
+                    power: action.rightThruster * (this.ROCKET_CONSTS.THRUSTER_POWER?.RIGHT || 20)
+                });
             }
         }
         // S'assurer que les propulseurs non spécifiés dans l'action sont à 0 si l'action est complète

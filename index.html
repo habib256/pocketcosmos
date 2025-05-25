@@ -241,6 +241,9 @@
     <!-- Constantes globales -->
     <script src="constants.js"></script>
     
+    <!-- Types d'événements (doit être chargé avant EventBus) -->
+    <script src="EventTypes.js"></script>
+    
     <!-- Scripts: Modèles -->
     <script src="models/UniverseModel.js"></script>
     <script src="models/CelestialBodyModel.js"></script>
@@ -251,7 +254,6 @@
 
     <!-- Scripts: Contrôleurs -->
     <script src="controllers/EventBus.js"></script>
-    <script src="EventTypes.js"></script>
     <!-- Nouveaux handlers de physique -->
     <script src="controllers/BodyFactory.js"></script>
     <script src="controllers/CollisionHandler.js"></script>
@@ -265,19 +267,20 @@
     <script src="controllers/RenderingController.js"></script>
     <script src="controllers/ParticleController.js"></script>
     <script src="controllers/RocketController.js"></script>
-    <script src="controllers/RocketAI.js"></script>
     <script src="controllers/MissionManager.js"></script>
     <script src="controllers/RocketCargo.js"></script>
     <!-- NOUVEAUX SCRIPTS POUR LA REFACTORISATION -->
     <script src="controllers/CelestialBodyFactory.js"></script>
     <script src="controllers/ControllerContainer.js"></script>
-    <script src="controllers/GameSetupController.js"></script>
-    <script src="controllers/GameController.js"></script>
     
-    <!-- SCRIPTS POUR L'ENTRAÎNEMENT IA -->
+    <!-- SCRIPTS POUR L'ENTRAÎNEMENT IA (ordre critique) -->
+    <script src="controllers/RocketAI.js"></script>
     <script src="controllers/HeadlessRocketEnvironment.js"></script>
     <script src="controllers/TrainingOrchestrator.js"></script>
     <script src="train.js"></script>
+    
+    <script src="controllers/GameSetupController.js"></script>
+    <script src="controllers/GameController.js"></script>
 
     <!-- Scripts: Vues -->
     <script src="views/RocketView.js"></script>

@@ -184,6 +184,17 @@ class TrainingOrchestrator {
         // Créer une nouvelle instance ou utiliser l'existante
         this.rocketAI = new RocketAI(this.eventBus);
         
+        // Injecter les dépendances depuis l'environnement d'entraînement
+        if (this.trainingEnv) {
+            this.rocketAI.injectDependencies({
+                rocketModel: this.trainingEnv.rocketModel,
+                universeModel: this.trainingEnv.universeModel,
+                physicsController: this.trainingEnv.physicsController,
+                missionManager: this.trainingEnv.missionManager,
+                rocketController: this.trainingEnv.rocketController
+            });
+        }
+        
         // Configurer les hyperparamètres
         this.rocketAI.config.learningRate = this.config.learningRate;
         this.rocketAI.config.epsilon = this.config.epsilon;
@@ -193,13 +204,18 @@ class TrainingOrchestrator {
         this.rocketAI.config.batchSize = this.config.batchSize;
         this.rocketAI.config.replayBufferSize = this.config.replayBufferSize;
         
-        // Recompiler le modèle avec les nouveaux paramètres
-        this.rocketAI.model.compile({
-            optimizer: tf.train.adam(this.config.learningRate),
-            loss: 'meanSquaredError'
-        });
+        // Activer le mode entraînement
+        this.rocketAI.isTraining = true;
         
-        console.log('[TrainingOrchestrator] Agent IA configuré');
+        // Recompiler le modèle avec les nouveaux paramètres
+        if (this.rocketAI.model) {
+            this.rocketAI.model.compile({
+                optimizer: tf.train.adam(this.config.learningRate),
+                loss: 'meanSquaredError'
+            });
+        }
+        
+        console.log('[TrainingOrchestrator] Agent IA configuré avec dépendances injectées');
     }
     
     /**

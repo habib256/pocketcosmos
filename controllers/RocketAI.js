@@ -163,6 +163,22 @@ class RocketAI {
         }
     }
     
+    // Vérifier que toutes les dépendances sont disponibles
+    checkDependencies() {
+        const missing = [];
+        if (!this.rocketModel) missing.push('rocketModel');
+        if (!this.universeModel) missing.push('universeModel');
+        if (!this.physicsController) missing.push('physicsController');
+        if (!this.missionManager) missing.push('missionManager');
+        if (!this.rocketController) missing.push('rocketController');
+        
+        if (missing.length > 0) {
+            console.warn(`[RocketAI] Dépendances manquantes: ${missing.join(', ')}`);
+            return false;
+        }
+        return true;
+    }
+    
     // Étape d'apprentissage par renforcement
     step() {
         // Construire l'état actuel
@@ -222,10 +238,34 @@ class RocketAI {
             return Array(10).fill(0);
         }
         
+        // Vérifier que les propriétés nécessaires existent
+        const requiredRocketProps = ['x', 'y', 'vx', 'vy', 'angle', 'angularVelocity'];
+        const requiredBodyProps = ['x', 'y'];
+        
+        for (const prop of requiredRocketProps) {
+            if (typeof this.rocketData[prop] !== 'number' || !isFinite(this.rocketData[prop])) {
+                console.warn(`[RocketAI] Propriété rocket invalide: ${prop} = ${this.rocketData[prop]}`);
+                return Array(10).fill(0);
+            }
+        }
+        
+        for (const prop of requiredBodyProps) {
+            if (typeof this.celestialBodyData[prop] !== 'number' || !isFinite(this.celestialBodyData[prop])) {
+                console.warn(`[RocketAI] Propriété celestialBody invalide: ${prop} = ${this.celestialBodyData[prop]}`);
+                return Array(10).fill(0);
+            }
+        }
+        
         // Calculer la distance au corps céleste
         const dx = this.rocketData.x - this.celestialBodyData.x;
         const dy = this.rocketData.y - this.celestialBodyData.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Vérifier que la distance est valide et non nulle
+        if (!isFinite(distance) || distance === 0) {
+            console.warn(`[RocketAI] Distance invalide: ${distance}`);
+            return Array(10).fill(0);
+        }
         
         // Calculer l'angle entre la fusée et le corps céleste
         const angleToBody = Math.atan2(dy, dx);
@@ -240,19 +280,29 @@ class RocketAI {
         const radialVelocity = (this.rocketData.vx * dx / distance) + (this.rocketData.vy * dy / distance);
         const tangentialVelocity = (this.rocketData.vx * -dy / distance) + (this.rocketData.vy * dx / distance);
         
-        // Construire le vecteur d'état (10 dimensions)
-        return [
-            dx / 1000,                   // Position relative X (normalisée)
-            dy / 1000,                   // Position relative Y (normalisée)
-            this.rocketData.vx / 10,     // Vitesse X (normalisée)
-            this.rocketData.vy / 10,     // Vitesse Y (normalisée)
-            this.rocketData.angle / Math.PI, // Angle de la fusée (normalisé entre -1 et 1)
-            this.rocketData.angularVelocity / 0.1, // Vitesse angulaire (normalisée)
-            distance / 1000,             // Distance au corps céleste (normalisée)
-            angleDiff / Math.PI,         // Différence d'angle par rapport à la tangente (normalisée)
-            radialVelocity / 10,         // Vitesse radiale (normalisée)
-            tangentialVelocity / 10      // Vitesse tangentielle (normalisée)
+        // Construire le vecteur d'état (10 dimensions) avec normalisation sécurisée
+        const state = [
+            Math.max(-10, Math.min(10, dx / 1000)),                   // Position relative X (normalisée et bornée)
+            Math.max(-10, Math.min(10, dy / 1000)),                   // Position relative Y (normalisée et bornée)
+            Math.max(-10, Math.min(10, this.rocketData.vx / 10)),     // Vitesse X (normalisée et bornée)
+            Math.max(-10, Math.min(10, this.rocketData.vy / 10)),     // Vitesse Y (normalisée et bornée)
+            Math.max(-1, Math.min(1, this.rocketData.angle / Math.PI)), // Angle de la fusée (normalisé entre -1 et 1)
+            Math.max(-10, Math.min(10, this.rocketData.angularVelocity / 0.1)), // Vitesse angulaire (normalisée et bornée)
+            Math.max(0, Math.min(20, distance / 1000)),               // Distance au corps céleste (normalisée et bornée)
+            Math.max(-1, Math.min(1, angleDiff / Math.PI)),           // Différence d'angle par rapport à la tangente (normalisée)
+            Math.max(-10, Math.min(10, radialVelocity / 10)),         // Vitesse radiale (normalisée et bornée)
+            Math.max(-10, Math.min(10, tangentialVelocity / 10))      // Vitesse tangentielle (normalisée et bornée)
         ];
+        
+        // Vérifier que tous les éléments de l'état sont des nombres finis
+        for (let i = 0; i < state.length; i++) {
+            if (!isFinite(state[i])) {
+                console.warn(`[RocketAI] État invalide à l'index ${i}: ${state[i]}`);
+                return Array(10).fill(0);
+            }
+        }
+        
+        return state;
     }
     
     // Choisir une action en fonction de l'état courant
@@ -273,41 +323,68 @@ class RocketAI {
     
     // Calculer la récompense en fonction de l'état actuel
     calculateReward() {
-        if (!this.rocketData || !this.celestialBodyData) return -1;
+        // Vérifier que les données nécessaires sont disponibles
+        if (!this.rocketData || !this.celestialBodyData) {
+            console.warn('[RocketAI] Données manquantes pour calculer la récompense');
+            return -1;
+        }
+        
+        // Vérifier que les propriétés nécessaires existent
+        if (typeof this.rocketData.x !== 'number' || typeof this.rocketData.y !== 'number' ||
+            typeof this.celestialBodyData.x !== 'number' || typeof this.celestialBodyData.y !== 'number') {
+            console.warn('[RocketAI] Propriétés de position manquantes ou invalides');
+            return -1;
+        }
         
         // Calculer la distance au corps céleste
         const dx = this.rocketData.x - this.celestialBodyData.x;
         const dy = this.rocketData.y - this.celestialBodyData.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
+        // Vérifier que la distance est valide
+        if (!isFinite(distance) || distance < 0) {
+            console.warn('[RocketAI] Distance calculée invalide:', distance);
+            return -10;
+        }
+        
         // Distance orbitale cible
-        const targetOrbitDistance = this.celestialBodyData.radius + this.thresholds.approach;
+        const targetOrbitDistance = (this.celestialBodyData.radius || 100) + this.thresholds.approach;
         
         // Récompense de base liée à la distance par rapport à l'orbite idéale
         let reward = -Math.abs(distance - targetOrbitDistance) / 100;
         
-        // Angle tangent à l'orbite
-        const angleToBody = Math.atan2(dy, dx);
-        const tangentAngle = angleToBody + Math.PI / 2;
-        
-        // Pénalité pour une mauvaise orientation
-        let angleDiff = (tangentAngle - this.rocketData.angle) % (2 * Math.PI);
-        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-        
-        reward -= Math.abs(angleDiff) * 2;
-        
-        // Pénalité pour une vitesse angulaire élevée
-        reward -= Math.abs(this.rocketData.angularVelocity) * 5;
-        
-        // Bonus pour une orbite stable
-        if (Math.abs(distance - targetOrbitDistance) < 20 && Math.abs(angleDiff) < 0.1) {
-            reward += 10;
+        // Vérifier les propriétés d'angle si elles existent
+        if (typeof this.rocketData.angle === 'number' && typeof this.rocketData.angularVelocity === 'number') {
+            // Angle tangent à l'orbite
+            const angleToBody = Math.atan2(dy, dx);
+            const tangentAngle = angleToBody + Math.PI / 2;
+            
+            // Pénalité pour une mauvaise orientation
+            let angleDiff = (tangentAngle - this.rocketData.angle) % (2 * Math.PI);
+            if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+            if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+            
+            reward -= Math.abs(angleDiff) * 2;
+            
+            // Pénalité pour une vitesse angulaire élevée
+            reward -= Math.abs(this.rocketData.angularVelocity) * 5;
+            
+            // Bonus pour une orbite stable
+            if (Math.abs(distance - targetOrbitDistance) < 20 && Math.abs(angleDiff) < 0.1) {
+                reward += 10;
+            }
         }
         
         // Collision avec le corps céleste
-        if (distance < this.celestialBodyData.radius) {
+        const bodyRadius = this.celestialBodyData.radius || 100;
+        if (distance < bodyRadius) {
             reward = -100;  // Pénalité importante pour un crash
+        }
+        
+        // S'assurer que la récompense est un nombre fini
+        if (!isFinite(reward)) {
+            console.warn('[RocketAI] Récompense calculée invalide:', reward);
+            return -1;
         }
         
         return reward;
