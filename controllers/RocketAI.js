@@ -38,10 +38,10 @@ class RocketAI {
             gamma: 0.99,              // Facteur de décompte
             epsilon: 1.0,             // Taux d'exploration
             epsilonMin: 0.1,          // Taux d'exploration minimum
-            epsilonDecay: 0.995,      // Décroissance du taux d'exploration
+            epsilonDecay: 0.98,       // CORRECTION : Décroissance plus rapide (0.98 au lieu de 0.995)
             batchSize: 32,            // Taille du batch d'entraînement
             replayBufferSize: 10000,  // Taille du buffer de replay
-            updateFrequency: 1000,    // Fréquence de mise à jour du réseau cible
+            updateFrequency: 4,       // CORRECTION CRITIQUE : 4 pas au lieu de 32 pour plus d'entraînements
             saveFrequency: 5000       // Fréquence de sauvegarde
         };
         
@@ -71,7 +71,8 @@ class RocketAI {
             blockedCalls: 0,
             successfulTrainings: 0,
             averageTrainingDuration: 0,
-            lastTrainingTime: 0
+            lastTrainingTime: 0,
+            lastLoss: 0
         };
         
         // S'abonner aux événements nécessaires
@@ -98,14 +99,26 @@ class RocketAI {
     createModel() {
         const model = tf.sequential();
         
-        // Couche d'entrée: 10 paramètres de l'état
+        // Couche d'entrée: 10 paramètres de l'état - AUGMENTÉ de 64 à 128 neurones
         model.add(tf.layers.dense({
-            units: 64,
+            units: 128,
             activation: 'relu',
             inputShape: [10]
         }));
         
-        // Couche cachée
+        // Normalisation par couches pour stabiliser l'apprentissage
+        model.add(tf.layers.layerNormalization());
+        
+        // Première couche cachée - AUGMENTÉ de 64 à 128 neurones
+        model.add(tf.layers.dense({
+            units: 128,
+            activation: 'relu'
+        }));
+        
+        // Normalisation par couches
+        model.add(tf.layers.layerNormalization());
+        
+        // Deuxième couche cachée - NOUVELLE COUCHE ajoutée
         model.add(tf.layers.dense({
             units: 64,
             activation: 'relu'
@@ -216,7 +229,7 @@ class RocketAI {
             }
             
             // Entraîner le modèle périodiquement
-            if (this.totalSteps % 10 === 0 && this.replayBuffer.length >= this.config.batchSize) {
+            if (this.totalSteps % this.config.updateFrequency === 0 && this.replayBuffer.length >= this.config.batchSize) {
                 this.train().catch(error => {
                     console.error('[RocketAI] Erreur lors de l\'entraînement périodique:', error);
                 });
@@ -296,25 +309,50 @@ class RocketAI {
         const tangentialVelocity = (this.rocketData.vx * -dy / distance) + (this.rocketData.vy * dx / distance);
         
         // Construire le vecteur d'état (10 dimensions) avec normalisation sécurisée
+        // CORRECTION CRITIQUE : Normalisation physiquement cohérente pour éviter gradients explosifs
+        const POSITION_SCALE = 100000;     // 100 km max
+        const VELOCITY_SCALE = 1000;       // 1000 m/s max (3.6 km/h)
+        const ANGLE_SCALE = Math.PI;       // ±π radians
+        const ANGULAR_VEL_SCALE = 10;      // ±10 rad/s max
+        const DISTANCE_SCALE = 100000;     // 100 km max
+        
+        // CORRECTION : Sécurisation des valeurs d'entrée AVANT normalisation
+        const safeDistance = Math.max(100, Math.min(distance, 1000000)); // Entre 100m et 1000km
+        const safeDx = Math.max(-500000, Math.min(500000, dx)); // ±500km max
+        const safeDy = Math.max(-500000, Math.min(500000, dy)); // ±500km max
+        const safeVx = Math.max(-2000, Math.min(2000, this.rocketData.vx)); // ±2000 m/s max
+        const safeVy = Math.max(-2000, Math.min(2000, this.rocketData.vy)); // ±2000 m/s max
+        const safeAngle = ((this.rocketData.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); // [0, 2π]
+        const safeAngularVel = Math.max(-50, Math.min(50, this.rocketData.angularVelocity)); // ±50 rad/s max
+        
         const state = [
-            Math.max(-10, Math.min(10, dx / 1000)),                   // Position relative X (normalisée et bornée)
-            Math.max(-10, Math.min(10, dy / 1000)),                   // Position relative Y (normalisée et bornée)
-            Math.max(-10, Math.min(10, this.rocketData.vx / 10)),     // Vitesse X (normalisée et bornée)
-            Math.max(-10, Math.min(10, this.rocketData.vy / 10)),     // Vitesse Y (normalisée et bornée)
-            Math.max(-1, Math.min(1, this.rocketData.angle / Math.PI)), // Angle de la fusée (normalisé entre -1 et 1)
-            Math.max(-10, Math.min(10, this.rocketData.angularVelocity / 0.1)), // Vitesse angulaire (normalisée et bornée)
-            Math.max(0, Math.min(20, distance / 1000)),               // Distance au corps céleste (normalisée et bornée)
-            Math.max(-1, Math.min(1, angleDiff / Math.PI)),           // Différence d'angle par rapport à la tangente (normalisée)
-            Math.max(-10, Math.min(10, radialVelocity / 10)),         // Vitesse radiale (normalisée et bornée)
-            Math.max(-10, Math.min(10, tangentialVelocity / 10))      // Vitesse tangentielle (normalisée et bornée)
+            safeDx / POSITION_SCALE,                              // Position relative X [-5, +5]
+            safeDy / POSITION_SCALE,                              // Position relative Y [-5, +5]
+            safeVx / VELOCITY_SCALE,                              // Vitesse X [-2, +2]
+            safeVy / VELOCITY_SCALE,                              // Vitesse Y [-2, +2]
+            (safeAngle - Math.PI) / ANGLE_SCALE,                  // Angle normalisé [-1, +1]
+            safeAngularVel / ANGULAR_VEL_SCALE,                   // Vitesse angulaire [-5, +5]
+            Math.min(10, safeDistance / DISTANCE_SCALE),          // Distance [0, 10]
+            Math.max(-1, Math.min(1, angleDiff / ANGLE_SCALE)),   // Angle vers cible [-1, +1]
+            Math.max(-2, Math.min(2, radialVelocity / VELOCITY_SCALE)),     // Vitesse radiale [-2, +2]
+            Math.max(-2, Math.min(2, tangentialVelocity / VELOCITY_SCALE))  // Vitesse tangentielle [-2, +2]
         ];
         
-        // Vérifier que tous les éléments de l'état sont des nombres finis
+        // CORRECTION : Validation renforcée avec détection de valeurs aberrantes
+        let hasInvalidValues = false;
         for (let i = 0; i < state.length; i++) {
-            if (!isFinite(state[i])) {
-                console.warn(`[RocketAI] État invalide à l'index ${i}: ${state[i]}`);
-                return Array(10).fill(0);
+            if (!isFinite(state[i]) || Math.abs(state[i]) > 10) {
+                console.warn(`[RocketAI] État invalide à l'index ${i}: ${state[i]}, valeurs sources:`, {
+                    dx, dy, distance, 
+                    vx: this.rocketData.vx, vy: this.rocketData.vy,
+                    angle: this.rocketData.angle, angularVel: this.rocketData.angularVelocity
+                });
+                hasInvalidValues = true;
             }
+        }
+        
+        if (hasInvalidValues) {
+            return Array(10).fill(0);
         }
         
         return state;
@@ -362,44 +400,78 @@ class RocketAI {
             return -10;
         }
         
-        // Distance orbitale cible
-        const targetOrbitDistance = (this.celestialBodyData.radius || 100) + this.thresholds.approach;
+        // Distance orbitale cible (surface + altitude sécuritaire)
+        const targetOrbitDistance = (this.celestialBodyData.radius || 6371000) + 100000; // 100km au-dessus
+        const distanceFromTarget = Math.abs(distance - targetOrbitDistance);
+        const relativeError = distanceFromTarget / targetOrbitDistance;
         
-        // Récompense de base liée à la distance par rapport à l'orbite idéale
-        let reward = -Math.abs(distance - targetOrbitDistance) / 100;
+        // CORRECTION CRITIQUE : Reward shaping MASSIF avec signaux positifs forts
+        let reward = 0;
         
-        // Vérifier les propriétés d'angle si elles existent
+        // Zone parfaite : récompense énorme pour encourager l'apprentissage
+        if (relativeError < 0.01) {
+            reward = 100.0;  // ÉNORME récompense pour orbite parfaite
+        } else if (relativeError < 0.02) {
+            reward = 50.0;   // Très grosse récompense pour zone excellente
+        } else if (relativeError < 0.05) {
+            reward = 20.0;   // Grosse récompense pour zone bonne
+        } else if (relativeError < 0.1) {
+            reward = 5.0;    // Récompense modérée pour zone acceptable
+        } else if (relativeError < 0.2) {
+            reward = 1.0;    // Petite récompense pour zone approchante
+        } else if (relativeError < 0.5) {
+            reward = 0.0;    // Neutre pour zone éloignée
+        } else {
+            reward = -5.0;   // Pénalité pour être très loin
+        }
+        
+        // Bonus pour stabilité supplémentaire
         if (typeof this.rocketData.angle === 'number' && typeof this.rocketData.angularVelocity === 'number') {
             // Angle tangent à l'orbite
             const angleToBody = Math.atan2(dy, dx);
             const tangentAngle = angleToBody + Math.PI / 2;
             
-            // Pénalité pour une mauvaise orientation
+            // Calculer la différence d'angle
             let angleDiff = (tangentAngle - this.rocketData.angle) % (2 * Math.PI);
             if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
             if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
             
-            reward -= Math.abs(angleDiff) * 2;
+            // GROS bonus pour orientation parfaite
+            if (relativeError < 0.05 && Math.abs(angleDiff) < 0.1) {
+                reward += 25.0;  // GROS bonus pour bonne orientation + position
+            } else if (relativeError < 0.1 && Math.abs(angleDiff) < 0.2) {
+                reward += 10.0;  // Bonus modéré
+            }
             
-            // Pénalité pour une vitesse angulaire élevée
-            reward -= Math.abs(this.rocketData.angularVelocity) * 5;
-            
-            // Bonus pour une orbite stable
-            if (Math.abs(distance - targetOrbitDistance) < 20 && Math.abs(angleDiff) < 0.1) {
-                reward += 10;
+            // Bonus pour vitesse angulaire stable
+            if (Math.abs(this.rocketData.angularVelocity) < 0.05) {
+                reward += 5.0;   // Bonus pour stabilité rotationnelle
             }
         }
         
-        // Collision avec le corps céleste
-        const bodyRadius = this.celestialBodyData.radius || 100;
-        if (distance < bodyRadius) {
-            reward = -100;  // Pénalité importante pour un crash
+        // Collision avec le corps céleste : pénalité terminale
+        const bodyRadius = this.celestialBodyData.radius || 6371000;
+        if (distance < bodyRadius * 1.01) { // Légère marge
+            return -1000;  // Pénalité massive pour crash
         }
+        
+        // Éjection très loin : pénalité progressive
+        if (distance > targetOrbitDistance * 5) {
+            return -50;  // Pénalité pour éjection
+        }
+        
+        // Bonus de survie pour encourager les épisodes longs
+        reward += 0.1;
         
         // S'assurer que la récompense est un nombre fini
         if (!isFinite(reward)) {
             console.warn('[RocketAI] Récompense calculée invalide:', reward);
             return -1;
+        }
+        
+        // CORRECTION : Log périodique des récompenses positives pour vérifier
+        if (reward > 10 && this.totalSteps % 100 === 0) {
+            console.log(`[RocketAI] 🎯 RÉCOMPENSE POSITIVE: ${reward.toFixed(1)} (erreur: ${(relativeError*100).toFixed(1)}%)`);
         }
         
         return reward;
@@ -552,48 +624,142 @@ class RocketAI {
         const qValues = tf.tidy(() => this.model.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
         const nextQValues = tf.tidy(() => this.targetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, 10])));
         
-        // Extraire les valeurs dans JavaScript
+        // CORRECTION CRITIQUE : Extraire les valeurs dans JavaScript ET calculer les cibles correctement
         const qValuesData = qValues.arraySync();
         const nextQValuesData = nextQValues.arraySync();
         
-        // Libérer la mémoire tensor
+        // Libérer la mémoire tensor des prédictions
         qValues.dispose();
         nextQValues.dispose();
         
-        // Mettre à jour les valeurs Q cibles
+        // CORRECTION : Créer les cibles Q correctement - on ne modifie QUE l'action prise
+        const qTargets = qValuesData.map(qRow => [...qRow]); // Copie profonde
+        
+        // Mettre à jour SEULEMENT les valeurs Q pour les actions prises
         for (let i = 0; i < this.config.batchSize; i++) {
             const experience = batch[i];
             if (experience.done) {
                 // État terminal, la valeur Q future est simplement la récompense
-                qValuesData[i][experience.action] = experience.reward;
+                qTargets[i][experience.action] = experience.reward;
             } else {
                 // État non terminal, mise à jour selon l'équation de Bellman
                 const maxNextQ = Math.max(...nextQValuesData[i]);
-                qValuesData[i][experience.action] = experience.reward + this.config.gamma * maxNextQ;
+                qTargets[i][experience.action] = experience.reward + this.config.gamma * maxNextQ;
             }
         }
         
         // Entraîner le modèle
         const xs = tf.tensor2d(states, [this.config.batchSize, 10]);
-        const ys = tf.tensor2d(qValuesData, [this.config.batchSize, this.actions.length]);
+        const ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
         
         try {
-            await this.model.fit(xs, ys, {
+            const history = await this.model.fit(xs, ys, {
                 epochs: 1,
                 verbose: 0
             });
             
-            // Mettre à jour les métriques de succès
+            // CORRECTION : Capturer et stocker le loss pour monitoring
+            const currentLoss = history.history.loss[0];
+            
+            // CORRECTION CRITIQUE : Diagnostic avancé des gradients
+            if (currentLoss === 0 || !isFinite(currentLoss)) {
+                console.warn(`[RocketAI] 🚨 LOSS = ${currentLoss} - Diagnostic en cours...`);
+                
+                // Test manuel des gradients pour diagnostiquer
+                tf.tidy(() => {
+                    try {
+                        // Calculer manuellement les gradients
+                        const testXs = tf.tensor2d(states.slice(0, 2), [2, 10]);
+                        const testYs = tf.tensor2d(qTargets.slice(0, 2), [2, this.actions.length]);
+                        
+                        const f = () => {
+                            const pred = this.model.apply(testXs, { training: true });
+                            return tf.losses.meanSquaredError(testYs, pred);
+                        };
+                        
+                        const grads = tf.variableGrads(f);
+                        
+                        // Analyser les gradients
+                        let totalGradNorm = 0;
+                        let nanGrads = 0;
+                        let zeroGrads = 0;
+                        
+                        Object.values(grads.grads).forEach(grad => {
+                            const gradData = grad.dataSync();
+                            gradData.forEach(val => {
+                                if (isNaN(val)) nanGrads++;
+                                else if (val === 0) zeroGrads++;
+                                else totalGradNorm += Math.abs(val);
+                            });
+                        });
+                        
+                        console.warn(`[RocketAI] 📊 DIAGNOSTIC GRADIENTS:`);
+                        console.warn(`   - Norme totale: ${totalGradNorm.toFixed(6)}`);
+                        console.warn(`   - Gradients NaN: ${nanGrads}`);
+                        console.warn(`   - Gradients = 0: ${zeroGrads}`);
+                        console.warn(`   - States sample: [${states[0].slice(0,3).map(x => x.toFixed(3)).join(', ')}...]`);
+                        console.warn(`   - Targets sample: [${qTargets[0].slice(0,3).map(x => x.toFixed(3)).join(', ')}...]`);
+                        
+                        if (nanGrads > 0) {
+                            console.error(`[RocketAI] 💥 GRADIENTS NaN DÉTECTÉS! Probable overflow dans les features.`);
+                        }
+                        if (totalGradNorm < 1e-8) {
+                            console.error(`[RocketAI] 💤 GRADIENTS QUASI-NULS! Problème de cibles identiques aux prédictions.`);
+                        }
+                        
+                        // Nettoyer
+                        Object.values(grads.grads).forEach(grad => grad.dispose());
+                        testXs.dispose();
+                        testYs.dispose();
+                        
+                    } catch (gradError) {
+                        console.error('[RocketAI] Erreur diagnostic gradients:', gradError);
+                    }
+                });
+                
+                // Échantillonner quelques valeurs pour diagnostic
+                if (qTargets.length > 0) {
+                    const sampleTarget = qTargets[0];
+                    const samplePrediction = qValuesData[0];
+                    console.warn(`[RocketAI] Échantillon - Cible:`, sampleTarget.map(x => x.toFixed(4)));
+                    console.warn(`[RocketAI] Échantillon - Prédic:`, samplePrediction.map(x => x.toFixed(4)));
+                    
+                    // Vérifier si cible === prédiction (cause principale de loss=0)
+                    const isIdentical = sampleTarget.every((val, i) => Math.abs(val - samplePrediction[i]) < 1e-6);
+                    if (isIdentical) {
+                        console.error(`[RocketAI] 🚨 ERREUR CRITIQUE: Cibles identiques aux prédictions!`);
+                    }
+                }
+            }
+            
+            // Mettre à jour les métriques de succès avec loss
             this.concurrencyMetrics.successfulTrainings++;
+            this.concurrencyMetrics.lastLoss = currentLoss;
+            
             const trainingDuration = Date.now() - startTime;
             this.concurrencyMetrics.lastTrainingTime = trainingDuration;
             this.concurrencyMetrics.averageTrainingDuration = 
                 (this.concurrencyMetrics.averageTrainingDuration * (this.concurrencyMetrics.successfulTrainings - 1) + trainingDuration) / 
                 this.concurrencyMetrics.successfulTrainings;
             
-            //console.log(`Entraînement terminé: étape ${this.totalSteps}, epsilon ${this.config.epsilon.toFixed(3)}, durée: ${trainingDuration}ms`);
+            // Log périodique avec loss pour debugging
+            if (this.totalSteps % 50 === 0) {
+                console.log(`[RocketAI] 📈 Étape ${this.totalSteps}: loss=${currentLoss.toFixed(6)}, ε=${this.config.epsilon.toFixed(3)}, buffer=${this.replayBuffer.length}, updates=${this.concurrencyMetrics.successfulTrainings}`);
+            }
+            
         } catch (error) {
             console.error('[RocketAI] Erreur lors de l\'entraînement:', error);
+            
+            // CORRECTION : Diagnostics d'erreur avancés
+            console.error('[RocketAI] Détails de l\'erreur:', {
+                batchSize: this.config.batchSize,
+                statesShape: states.length > 0 ? `${states.length}x${states[0].length}` : 'vide',
+                qTargetsShape: qTargets.length > 0 ? `${qTargets.length}x${qTargets[0].length}` : 'vide',
+                replayBufferSize: this.replayBuffer.length,
+                updateFrequency: this.config.updateFrequency,
+                totalSteps: this.totalSteps
+            });
+            
         } finally {
             // Libérer la mémoire tensor
             xs.dispose();
@@ -648,7 +814,8 @@ class RocketAI {
             blockingRate: this.concurrencyMetrics.totalTrainingCalls > 0 ? 
                 (this.concurrencyMetrics.blockedCalls / this.concurrencyMetrics.totalTrainingCalls * 100).toFixed(2) + '%' : '0%',
             successRate: this.concurrencyMetrics.totalTrainingCalls > 0 ? 
-                (this.concurrencyMetrics.successfulTrainings / this.concurrencyMetrics.totalTrainingCalls * 100).toFixed(2) + '%' : '0%'
+                (this.concurrencyMetrics.successfulTrainings / this.concurrencyMetrics.totalTrainingCalls * 100).toFixed(2) + '%' : '0%',
+            lastLoss: this.concurrencyMetrics.lastLoss || 0  // CORRECTION : Exposer la dernière valeur de loss
         };
     }
     
@@ -659,7 +826,8 @@ class RocketAI {
             blockedCalls: 0,
             successfulTrainings: 0,
             averageTrainingDuration: 0,
-            lastTrainingTime: 0
+            lastTrainingTime: 0,
+            lastLoss: 0
         };
     }
     

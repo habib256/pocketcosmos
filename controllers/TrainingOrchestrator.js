@@ -23,7 +23,7 @@ class TrainingOrchestrator {
             learningRate: 0.001,
             epsilon: 1.0,
             epsilonMin: 0.1,
-            epsilonDecay: 0.995,
+            epsilonDecay: 0.98,
             gamma: 0.99,
             batchSize: 64,
             replayBufferSize: 50000,
@@ -354,7 +354,7 @@ class TrainingOrchestrator {
             }
             
             // Entraîner le modèle si suffisamment d'expériences
-            if (this.rocketAI.replayBuffer.length >= this.config.batchSize && steps % 10 === 0) {
+            if (this.rocketAI.replayBuffer.length >= this.config.batchSize && steps % this.rocketAI.config.updateFrequency === 0) {
                 await this.rocketAI.train();
             }
             
@@ -362,6 +362,11 @@ class TrainingOrchestrator {
             totalReward += result.reward;
             done = result.done;
             steps++;
+        }
+        
+        // CORRECTION : Appliquer la décroissance d'epsilon après chaque épisode
+        if (this.rocketAI.config.epsilon > this.rocketAI.config.epsilonMin) {
+            this.rocketAI.config.epsilon *= this.rocketAI.config.epsilonDecay;
         }
         
         const episodeDuration = Date.now() - startTime;

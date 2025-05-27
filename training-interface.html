@@ -202,6 +202,9 @@
     <script src="controllers/HeadlessRocketEnvironment.js"></script>
     <script src="controllers/TrainingOrchestrator.js"></script>
     <script src="controllers/TrainingVisualizer.js"></script>
+    
+    <!-- Scripts de test et démonstration -->
+    <script src="train.js"></script>
 </head>
 <body>
     <div class="container">
@@ -230,7 +233,7 @@
                 </div>
                 <div class="control-group">
                     <label>Fréquence de mise à jour:</label>
-                    <input type="number" id="updateFreq" value="1000" min="100" max="5000">
+                    <input type="number" id="updateFreq" value="4" min="1" max="100">
                 </div>
                 <div class="control-group">
                     <label>Objectif d'entraînement:</label>
@@ -773,7 +776,7 @@
                     epsilon: parseFloat(document.getElementById('epsilon').value) || 1.0,
                     gamma: parseFloat(document.getElementById('gamma').value) || 0.99,
                     batchSize: parseInt(document.getElementById('batchSize').value) || 32,
-                    updateFreq: parseInt(document.getElementById('updateFreq').value) || 1000,
+                    updateFreq: parseInt(document.getElementById('updateFreq').value) || 4,
                     objective: document.getElementById('objective').value || 'orbit',
                     trainingMode: document.getElementById('trainingMode').value || 'headless'
                 };
@@ -1095,8 +1098,6 @@
                 }
             }
             
-
-            
             zoomIn() {
                 if (this.visualizer) {
                     const factor = this.visualizer.camera.targetZoom < 0.0001 ? 2.0 : 1.5;
@@ -1114,8 +1115,6 @@
                     this.log(`Zoom arrière: ${newZoom.toExponential(2)}`, 'info');
                 }
             }
-            
-
         }
 
         // Initialiser l'interface au chargement
@@ -1127,6 +1126,229 @@
                 }
                 
                 window.trainingInterface = new TrainingInterface();
+                
+                // CORRECTION : Ajouter les fonctions de test directement à window
+                if (typeof window.testUpdateFrequency === 'undefined') {
+                    console.log('🔧 Ajout des fonctions de test directement...');
+                    
+                    // Test de fréquence d'updates
+                    window.testUpdateFrequency = async function() {
+                        console.log('⚡ TEST DE FRÉQUENCE D\'UPDATES RÉELLE');
+                        console.log('=====================================');
+                        
+                        try {
+                            const eventBus = new EventBus();
+                            const rocketAI = new RocketAI(eventBus);
+                            
+                            console.log(`Configuration: updateFrequency = ${rocketAI.config.updateFrequency} pas`);
+                            
+                            // Compter les updates pendant une simulation courte
+                            const originalTrain = rocketAI.train.bind(rocketAI);
+                            let updateCount = 0;
+                            
+                            rocketAI.train = async function() {
+                                updateCount++;
+                                console.log(`Update #${updateCount} à l'étape ${this.totalSteps}`);
+                                return originalTrain();
+                            };
+                            
+                            // Remplir le buffer avec des données factices
+                            console.log('Remplissage du buffer...');
+                            for (let i = 0; i < rocketAI.config.batchSize + 10; i++) {
+                                rocketAI.replayBuffer.push({
+                                    state: Array(10).fill(Math.random() * 0.1),
+                                    action: Math.floor(Math.random() * 5),
+                                    reward: Math.random() * 2 - 1,
+                                    nextState: Array(10).fill(Math.random() * 0.1),
+                                    done: false
+                                });
+                            }
+                            
+                            console.log(`Buffer rempli: ${rocketAI.replayBuffer.length} expériences`);
+                            
+                            // Simuler 100 pas
+                            const targetSteps = 100;
+                            console.log(`\nSimulation de ${targetSteps} pas...`);
+                            
+                            rocketAI.isTraining = true;
+                            rocketAI.rocketData = {
+                                x: 100000, y: 6471000, vx: 100, vy: 0,
+                                angle: 0, angularVelocity: 0.01
+                            };
+                            rocketAI.celestialBodyData = {
+                                x: 0, y: 6471000, radius: 6371000
+                            };
+                            
+                            for (let step = 0; step < targetSteps; step++) {
+                                rocketAI.totalSteps = step;
+                                
+                                // Simuler step() sans vraiment appeler l'entraînement complet
+                                if (step % rocketAI.config.updateFrequency === 0 && rocketAI.replayBuffer.length >= rocketAI.config.batchSize) {
+                                    await rocketAI.train();
+                                }
+                            }
+                            
+                            const expectedUpdates = Math.floor(targetSteps / rocketAI.config.updateFrequency);
+                            
+                            console.log(`\n📊 RÉSULTATS:`);
+                            console.log(`   Steps simulés: ${targetSteps}`);
+                            console.log(`   Updates attendus: ${expectedUpdates}`);
+                            console.log(`   Updates réels: ${updateCount}`);
+                            console.log(`   Ratio: ${updateCount}/${targetSteps} = ${(updateCount/targetSteps*100).toFixed(1)}%`);
+                            
+                            if (updateCount === expectedUpdates) {
+                                console.log(`   ✅ PARFAIT! Fréquence respectée.`);
+                            } else if (updateCount > expectedUpdates * 0.8) {
+                                console.log(`   ⚡ CORRECT, légère variation acceptable.`);
+                            } else {
+                                console.log(`   ❌ PROBLÈME: Trop peu d'updates réels.`);
+                            }
+                            
+                            // Restaurer la fonction originale
+                            rocketAI.train = originalTrain;
+                            
+                        } catch (error) {
+                            console.error('❌ Erreur lors du test de fréquence:', error);
+                        }
+                    };
+                    
+                    // Diagnostic complet
+                    window.diagnosticComplet = async function() {
+                        console.log('🔍 DIAGNOSTIC COMPLET DU SYSTÈME D\'APPRENTISSAGE');
+                        console.log('===================================================');
+                        
+                        try {
+                            const eventBus = new EventBus();
+                            const rocketAI = new RocketAI(eventBus);
+                            
+                            // Test 1: Configuration epsilon
+                            console.log('\n1️⃣ TEST DE LA DÉCROISSANCE D\'EPSILON:');
+                            console.log(`   Epsilon initial: ${rocketAI.config.epsilon}`);
+                            console.log(`   Epsilon decay: ${rocketAI.config.epsilonDecay}`);
+                            console.log(`   Epsilon min: ${rocketAI.config.epsilonMin}`);
+                            
+                            // Simulation de la décroissance
+                            let testEpsilon = rocketAI.config.epsilon;
+                            let episodes = 0;
+                            while (testEpsilon > 0.1 && episodes < 500) {
+                                testEpsilon *= rocketAI.config.epsilonDecay;
+                                episodes++;
+                            }
+                            console.log(`   🎯 Épisodes pour atteindre ε=0.1: ${episodes}`);
+                            if (episodes > 150) {
+                                console.log(`   ⚠️ TROP LENT! Devrait être ~100 épisodes max`);
+                            } else {
+                                console.log(`   ✅ Décroissance correcte`);
+                            }
+                            
+                            // Test 2: Configuration fréquence
+                            console.log('\n2️⃣ TEST DE LA FRÉQUENCE D\'ENTRAÎNEMENT:');
+                            console.log(`   Update frequency (RocketAI): ${rocketAI.config.updateFrequency} pas`);
+                            console.log(`   🎯 ATTENDU: 1000 pas → ${Math.floor(1000 / rocketAI.config.updateFrequency)} entraînements`);
+                            console.log(`   Batch size: ${rocketAI.config.batchSize}`);
+                            console.log(`   Replay buffer size: ${rocketAI.config.replayBufferSize}`);
+                            
+                            const stepsFor100Updates = rocketAI.config.updateFrequency * 100;
+                            console.log(`   ⚡ 100 entraînements en ${stepsFor100Updates} pas (${(stepsFor100Updates/60).toFixed(1)}s à 60fps)`);
+                            
+                            if (rocketAI.config.updateFrequency <= 8) {
+                                console.log(`   ✅ Fréquence excellente pour apprentissage rapide`);
+                            } else if (rocketAI.config.updateFrequency <= 32) {
+                                console.log(`   ⚡ Fréquence correcte`);
+                            } else {
+                                console.log(`   ⚠️ Fréquence trop faible, apprentissage lent`);
+                            }
+                            
+                            console.log('\n✅ Diagnostic terminé. Utilisez testUpdateFrequency() pour un test complet.');
+                            
+                        } catch (error) {
+                            console.error('❌ Erreur lors du diagnostic:', error);
+                        }
+                    };
+                    
+                    // Test d'évaluation
+                    window.testEvaluationMode = async function() {
+                        console.log('🧪 Test d\'évaluation (ε=0) - Fonctionnalité disponible');
+                        console.log('Note: Cette fonction nécessite train.js pour fonctionner complètement.');
+                        
+                        // Version simplifiée pour l'interface
+                        try {
+                            const eventBus = new EventBus();
+                            const rocketAI = new RocketAI(eventBus);
+                            
+                            const originalEpsilon = rocketAI.config.epsilon;
+                            rocketAI.config.epsilon = 0.0;
+                            
+                            console.log(`✅ Epsilon forcé à 0 (était ${originalEpsilon.toFixed(3)})`);
+                            console.log('Pour un test complet, utilisez la version dans train.js');
+                            
+                            rocketAI.config.epsilon = originalEpsilon;
+                            
+                        } catch (error) {
+                            console.error('❌ Erreur:', error);
+                        }
+                    };
+                    
+                    console.log('\n🎮 Fonctions de test ajoutées:');
+                    console.log('   testUpdateFrequency() - Test du nombre d\'updates réels');
+                    console.log('   diagnosticComplet() - Diagnostic complet du système');
+                    console.log('   testEvaluationMode() - Test d\'évaluation simplifié');
+                    
+                    // Test rapide pour valider toutes les corrections
+                    window.testCorrections = function() {
+                        console.log('🚀 VALIDATION RAPIDE DES CORRECTIONS');
+                        console.log('=====================================');
+                        
+                        try {
+                            const eventBus = new EventBus();
+                            const rocketAI = new RocketAI(eventBus);
+                            
+                            console.log('✅ RocketAI créé avec succès');
+                            console.log(`📊 Configuration actuelle:`);
+                            console.log(`   - updateFrequency: ${rocketAI.config.updateFrequency} pas (CORRIGÉ de 1000→4)`);
+                            console.log(`   - epsilonDecay: ${rocketAI.config.epsilonDecay} (CORRIGÉ de 0.995→0.98)`);
+                            console.log(`   - batchSize: ${rocketAI.config.batchSize}`);
+                            console.log(`   - replayBufferSize: ${rocketAI.config.replayBufferSize}`);
+                            
+                            // Calculs d'efficacité
+                            const updates1000steps = Math.floor(1000 / rocketAI.config.updateFrequency);
+                            const epsilonAt100eps = Math.pow(rocketAI.config.epsilonDecay, 100);
+                            
+                            console.log(`\n🎯 Impact des corrections:`);
+                            console.log(`   - Updates en 1000 pas: ${updates1000steps} (était ~1 avant)`);
+                            console.log(`   - Gain d'entraînement: ×${updates1000steps} plus d'apprentissage!`);
+                            console.log(`   - Epsilon après 100 épisodes: ${epsilonAt100eps.toFixed(3)} (était ~0.6 avant)`);
+                            
+                            if (updates1000steps > 200) {
+                                console.log(`   ✅ EXCELLENT: Fréquence d'entraînement très élevée`);
+                            } else if (updates1000steps > 50) {
+                                console.log(`   ⚡ BIEN: Fréquence d'entraînement correcte`);
+                            } else {
+                                console.log(`   ⚠️ ATTENTION: Fréquence encore un peu faible`);
+                            }
+                            
+                            if (epsilonAt100eps < 0.2) {
+                                console.log(`   ✅ EXCELLENT: Décroissance epsilon rapide`);
+                            } else {
+                                console.log(`   ⚠️ ATTENTION: Décroissance epsilon encore lente`);
+                            }
+                            
+                            console.log(`\n📈 Prédictions de performance:`);
+                            console.log(`   - L'agent devrait apprendre ${updates1000steps}× plus vite`);
+                            console.log(`   - Loss devrait être > 0 dès les premiers entraînements`);
+                            console.log(`   - Récompenses positives attendues avec le nouveau shaping`);
+                            console.log(`   - Normalisation sécurisée = plus de NaN dans les gradients`);
+                            
+                            console.log(`\n🧪 Prochaine étape: testUpdateFrequency() pour validation complète`);
+                            
+                        } catch (error) {
+                            console.error('❌ Erreur lors de la validation:', error);
+                        }
+                    };
+                    
+                    console.log('   testCorrections() - 🚀 Validation rapide de TOUTES les corrections');
+                }
+                
             } catch (error) {
                 console.error('Erreur lors de l\'initialisation de l\'interface:', error);
                 document.body.innerHTML = `

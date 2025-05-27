@@ -211,17 +211,350 @@ async function benchmarkEnvironment() {
     console.log(`📊 ${numEpisodes} épisodes en ${duration}ms`);
 }
 
+/**
+ * Test d'évaluation avec epsilon=0 pour diagnostiquer les performances réelles
+ */
+async function testEvaluationMode() {
+    console.log('🧪 Test d\'évaluation (ε=0) - 5 épisodes sans exploration');
+    console.log('========================================================');
+    
+    try {
+        const eventBus = new EventBus();
+        const rocketAI = new RocketAI(eventBus);
+        
+        // Sauvegarder epsilon actuel et le mettre à 0
+        const originalEpsilon = rocketAI.config.epsilon;
+        rocketAI.config.epsilon = 0.0;
+        
+        console.log(`Epsilon forcé à 0 (was ${originalEpsilon.toFixed(3)})`);
+        
+        // Créer un environnement de test
+        const testEnv = new HeadlessRocketEnvironment({
+            maxStepsPerEpisode: 1000,
+            rocketInitialState: {
+                position: { x: 0, y: 0 },
+                velocity: { x: 0, y: 0 },
+                fuel: ROCKET.FUEL_MAX,
+                health: 100
+            }
+        });
+        
+        let totalScore = 0;
+        const scores = [];
+        
+        for (let episode = 0; episode < 5; episode++) {
+            let state = testEnv.reset();
+            let episodeReward = 0;
+            let done = false;
+            let steps = 0;
+            
+            while (!done && steps < 1000) {
+                // Construire l'état pour l'IA
+                const aiState = [
+                    (state.rocketX || 0) / 10000,
+                    (state.rocketY || 0) / 10000,
+                    (state.rocketVX || 0) / 100,
+                    (state.rocketVY || 0) / 100,
+                    (state.rocketAngle || 0) / Math.PI,
+                    (state.rocketAngularVelocity || 0) / 1,
+                    Math.min(Math.sqrt((state.rocketX || 0)**2 + (state.rocketY || 0)**2) / 10000, 10),
+                    Math.atan2(state.rocketY || 0, state.rocketX || 0) / Math.PI,
+                    0, // Vitesse radiale (approximation)
+                    0  // Vitesse tangentielle (approximation)
+                ];
+                
+                // Action de l'IA (exploitation pure)
+                const actionIndex = rocketAI.act(aiState);
+                
+                // Convertir en action environnement
+                const actions = [
+                    { mainThruster: 1.0, rotationInput: 0 },
+                    { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 },
+                    { mainThruster: 0, rotationInput: -1.0 },
+                    { mainThruster: 0, rotationInput: 1.0 },
+                    { mainThruster: 0, rotationInput: 0 }
+                ];
+                const action = actions[actionIndex] || actions[4];
+                
+                const result = testEnv.step(action);
+                state = result.observation;
+                episodeReward += result.reward;
+                done = result.done;
+                steps++;
+            }
+            
+            scores.push(episodeReward);
+            totalScore += episodeReward;
+            console.log(`Épisode ${episode + 1}: Score=${episodeReward.toFixed(2)}, Étapes=${steps}`);
+        }
+        
+        const averageScore = totalScore / 5;
+        const expectedRandom = -331; // Score attendu pour action aléatoire
+        
+        console.log(`\n📊 Résultats:`);
+        console.log(`   Score moyen: ${averageScore.toFixed(2)}`);
+        console.log(`   Scores individuels: ${scores.map(s => s.toFixed(1)).join(', ')}`);
+        console.log(`   Score aléatoire attendu: ${expectedRandom}`);
+        
+        if (averageScore > expectedRandom * 0.8) {
+            console.log(`✅ SUCCÈS: L'agent apprend vraiment (score >> aléatoire)`);
+        } else {
+            console.log(`❌ ÉCHEC: Performance proche du hasard, gains probablement aléatoires`);
+        }
+        
+        // Restaurer epsilon
+        rocketAI.config.epsilon = originalEpsilon;
+        
+    } catch (error) {
+        console.error('❌ Erreur lors du test d\'évaluation:', error);
+    }
+}
+
+/**
+ * Diagnostic complet du système d'apprentissage
+ */
+async function diagnosticComplet() {
+    console.log('🔍 DIAGNOSTIC COMPLET DU SYSTÈME D\'APPRENTISSAGE');
+    console.log('===================================================');
+    
+    try {
+        const eventBus = new EventBus();
+        const rocketAI = new RocketAI(eventBus);
+        
+        // Test 1: Configuration epsilon
+        console.log('\n1️⃣ TEST DE LA DÉCROISSANCE D\'EPSILON:');
+        console.log(`   Epsilon initial: ${rocketAI.config.epsilon}`);
+        console.log(`   Epsilon decay: ${rocketAI.config.epsilonDecay}`);
+        console.log(`   Epsilon min: ${rocketAI.config.epsilonMin}`);
+        
+        // Simulation de la décroissance
+        let testEpsilon = rocketAI.config.epsilon;
+        let episodes = 0;
+        while (testEpsilon > 0.1 && episodes < 500) {
+            testEpsilon *= rocketAI.config.epsilonDecay;
+            episodes++;
+        }
+        console.log(`   🎯 Épisodes pour atteindre ε=0.1: ${episodes}`);
+        if (episodes > 150) {
+            console.log(`   ⚠️ TROP LENT! Devrait être ~100 épisodes max`);
+        } else {
+            console.log(`   ✅ Décroissance correcte`);
+        }
+        
+        // Test 2: Configuration fréquence
+        console.log('\n2️⃣ TEST DE LA FRÉQUENCE D\'ENTRAÎNEMENT:');
+        console.log(`   Update frequency (RocketAI): ${rocketAI.config.updateFrequency} pas`);
+        console.log(`   🎯 ATTENDU: 1000 pas → ${Math.floor(1000 / rocketAI.config.updateFrequency)} entraînements`);
+        console.log(`   Batch size: ${rocketAI.config.batchSize}`);
+        console.log(`   Replay buffer size: ${rocketAI.config.replayBufferSize}`);
+        
+        // Calcul de l'efficacité d'entraînement
+        const stepsFor100Updates = rocketAI.config.updateFrequency * 100;
+        console.log(`   ⚡ 100 entraînements en ${stepsFor100Updates} pas (${(stepsFor100Updates/60).toFixed(1)}s à 60fps)`);
+        
+        if (rocketAI.config.updateFrequency <= 8) {
+            console.log(`   ✅ Fréquence excellente pour apprentissage rapide`);
+        } else if (rocketAI.config.updateFrequency <= 32) {
+            console.log(`   ⚡ Fréquence correcte`);
+        } else {
+            console.log(`   ⚠️ Fréquence trop faible, apprentissage lent`);
+        }
+        
+        // Test 3: Structure du modèle
+        console.log('\n3️⃣ TEST DE LA STRUCTURE DU MODÈLE:');
+        if (rocketAI.model) {
+            const summary = [];
+            rocketAI.model.layers.forEach((layer, i) => {
+                summary.push(`   Couche ${i}: ${layer.name} - ${layer.outputShape || 'N/A'}`);
+            });
+            console.log(summary.join('\n'));
+            
+            // Calcul approximatif du nombre de paramètres
+            let totalParams = 0;
+            rocketAI.model.layers.forEach(layer => {
+                if (layer.countParams) {
+                    totalParams += layer.countParams();
+                }
+            });
+            console.log(`   📊 Paramètres estimés: ~${totalParams} (taille: ~${(totalParams * 4 / 1024).toFixed(1)} KB)`);
+        }
+        
+        // Test 4: Test de gradient detachment
+        console.log('\n4️⃣ TEST DE CALCUL DES CIBLES Q:');
+        
+        // Créer des données de test
+        const testStates = [Array(10).fill(0.5), Array(10).fill(-0.5)];
+        const testNextStates = [Array(10).fill(0.3), Array(10).fill(-0.3)];
+        const testActions = [0, 1];
+        const testRewards = [1.0, -1.0];
+        
+        // Simuler le calcul des Q-values
+        const qValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testStates, [2, 10])));
+        const nextQValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testNextStates, [2, 10])));
+        
+        const qValuesData = qValues.arraySync();
+        const nextQValuesData = nextQValues.arraySync();
+        
+        qValues.dispose();
+        nextQValues.dispose();
+        
+        console.log(`   Q-values actuelles (échantillon): [${qValuesData[0].map(v => v.toFixed(3)).join(', ')}]`);
+        console.log(`   Q-values futures (échantillon): [${nextQValuesData[0].map(v => v.toFixed(3)).join(', ')}]`);
+        
+        // Calculer les cibles comme dans le vrai code
+        const qTargets = qValuesData.map(qRow => [...qRow]);
+        for (let i = 0; i < 2; i++) {
+            const maxNextQ = Math.max(...nextQValuesData[i]);
+            qTargets[i][testActions[i]] = testRewards[i] + 0.99 * maxNextQ;
+        }
+        
+        console.log(`   Cibles calculées (échantillon): [${qTargets[0].map(v => v.toFixed(3)).join(', ')}]`);
+        
+        // Vérifier si identiques
+        const isIdentical = qTargets[0].every((val, i) => Math.abs(val - qValuesData[0][i]) < 1e-6);
+        if (isIdentical) {
+            console.log(`   🚨 PROBLÈME: Cibles identiques aux prédictions!`);
+        } else {
+            console.log(`   ✅ Cibles différentes des prédictions`);
+        }
+        
+        // Test 5: Fonction de récompense
+        console.log('\n5️⃣ TEST DE LA FONCTION DE RÉCOMPENSE:');
+        
+        // Simuler différents scénarios
+        const scenarios = [
+            { name: 'Orbite parfaite', distance: 600, target: 600, error: 0.01 },
+            { name: 'Orbite acceptable', distance: 620, target: 600, error: 0.03 },
+            { name: 'Hors zone', distance: 700, target: 600, error: 0.15 },
+            { name: 'Collision', distance: 90, target: 600, error: 0.85 },
+        ];
+        
+        scenarios.forEach(scenario => {
+            // Simuler la récompense
+            let reward = 0;
+            const relativeError = scenario.error;
+            
+            if (relativeError < 0.02) {
+                reward = 1.0;
+            } else if (relativeError < 0.05) {
+                reward = 0.0;
+            } else {
+                reward = -1.0;
+            }
+            reward -= 0.01; // Coût temporel
+            
+            if (scenario.distance < 100) reward = -100; // Collision
+            
+            console.log(`   ${scenario.name}: distance=${scenario.distance}, reward=${reward.toFixed(2)}`);
+        });
+        
+        console.log('\n✅ Diagnostic terminé. Vérifiez les alertes ci-dessus!');
+        
+    } catch (error) {
+        console.error('❌ Erreur lors du diagnostic:', error);
+    }
+}
+
+/**
+ * Test rapide pour vérifier le nombre d'updates effectifs
+ */
+async function testUpdateFrequency() {
+    console.log('⚡ TEST DE FRÉQUENCE D\'UPDATES RÉELLE');
+    console.log('=====================================');
+    
+    try {
+        const eventBus = new EventBus();
+        const rocketAI = new RocketAI(eventBus);
+        
+        console.log(`Configuration: updateFrequency = ${rocketAI.config.updateFrequency} pas`);
+        
+        // Compter les updates pendant une simulation courte
+        const originalTrain = rocketAI.train.bind(rocketAI);
+        let updateCount = 0;
+        
+        rocketAI.train = async function() {
+            updateCount++;
+            console.log(`Update #${updateCount} à l'étape ${this.totalSteps}`);
+            return originalTrain();
+        };
+        
+        // Remplir le buffer avec des données factices
+        console.log('Remplissage du buffer...');
+        for (let i = 0; i < rocketAI.config.batchSize + 10; i++) {
+            rocketAI.replayBuffer.push({
+                state: Array(10).fill(Math.random() * 0.1),
+                action: Math.floor(Math.random() * 5),
+                reward: Math.random() * 2 - 1,
+                nextState: Array(10).fill(Math.random() * 0.1),
+                done: false
+            });
+        }
+        
+        console.log(`Buffer rempli: ${rocketAI.replayBuffer.length} expériences`);
+        
+        // Simuler 100 pas
+        const targetSteps = 100;
+        console.log(`\nSimulation de ${targetSteps} pas...`);
+        
+        rocketAI.isTraining = true;
+        rocketAI.rocketData = {
+            x: 100000, y: 6471000, vx: 100, vy: 0,
+            angle: 0, angularVelocity: 0.01
+        };
+        rocketAI.celestialBodyData = {
+            x: 0, y: 6471000, radius: 6371000
+        };
+        
+        for (let step = 0; step < targetSteps; step++) {
+            rocketAI.totalSteps = step;
+            
+            // Simuler step() sans vraiment appeler l'entraînement complet
+            if (step % rocketAI.config.updateFrequency === 0 && rocketAI.replayBuffer.length >= rocketAI.config.batchSize) {
+                await rocketAI.train();
+            }
+        }
+        
+        const expectedUpdates = Math.floor(targetSteps / rocketAI.config.updateFrequency);
+        
+        console.log(`\n📊 RÉSULTATS:`);
+        console.log(`   Steps simulés: ${targetSteps}`);
+        console.log(`   Updates attendus: ${expectedUpdates}`);
+        console.log(`   Updates réels: ${updateCount}`);
+        console.log(`   Ratio: ${updateCount}/${targetSteps} = ${(updateCount/targetSteps*100).toFixed(1)}%`);
+        
+        if (updateCount === expectedUpdates) {
+            console.log(`   ✅ PARFAIT! Fréquence respectée.`);
+        } else if (updateCount > expectedUpdates * 0.8) {
+            console.log(`   ⚡ CORRECT, légère variation acceptable.`);
+        } else {
+            console.log(`   ❌ PROBLÈME: Trop peu d'updates réels.`);
+        }
+        
+        // Restaurer la fonction originale
+        rocketAI.train = originalTrain;
+        
+    } catch (error) {
+        console.error('❌ Erreur lors du test de fréquence:', error);
+    }
+}
+
 // Exportation pour utilisation dans la console du navigateur
 if (typeof window !== 'undefined') {
     window.demonstrateTraining = demonstrateTraining;
     window.quickTraining = quickTraining;
     window.benchmarkEnvironment = benchmarkEnvironment;
+    window.testEvaluationMode = testEvaluationMode;
+    window.diagnosticComplet = diagnosticComplet;
+    window.testUpdateFrequency = testUpdateFrequency;
     
     // Instructions pour l'utilisateur
     console.log('\n🎮 Commandes disponibles dans la console:');
     console.log('   demonstrateTraining() - Démo complète d\'entraînement');
     console.log('   quickTraining() - Entraînement rapide (100 épisodes)');
     console.log('   benchmarkEnvironment() - Test de performance');
+    console.log('   testEvaluationMode() - Test ε=0 pour détecter l\'apprentissage réel');
+    console.log('   diagnosticComplet() - Diagnostic complet du système');
+    console.log('   testUpdateFrequency() - Test du nombre d\'updates réels');
 }
 
 // Exportation pour Node.js (si applicable)
@@ -230,6 +563,9 @@ if (typeof module !== 'undefined' && module.exports) {
         demonstrateTraining,
         quickTraining,
         benchmarkEnvironment,
+        testEvaluationMode,
+        diagnosticComplet,
+        testUpdateFrequency,
         TRAINING_DEMO_CONFIG
     };
 } 
