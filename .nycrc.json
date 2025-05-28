@@ -1,0 +1,33 @@
+{
+  "include": [
+    "core/**/*.js",
+    "models/**/*.js", 
+    "physics/**/*.js",
+    "game/**/*.js",
+    "input/**/*.js",
+    "rendering/**/*.js",
+    "ai/**/*.js"
+  ],
+  "exclude": [
+    "**/*.bundle.js",
+    "**/node_modules/**",
+    "**/tests/**",
+    "**/tools/**",
+    "**/.build/**",
+    "**/coverage/**",
+    "**/coverage-nyc/**"
+  ],
+  "reporter": [
+    "text",
+    "html",
+    "lcov"
+  ],
+  "report-dir": "coverage-nyc",
+  "cache": false,
+  "all": true,
+  "check-coverage": false,
+  "statements": 15,
+  "branches": 5,
+  "functions": 15,
+  "lines": 15
+} 

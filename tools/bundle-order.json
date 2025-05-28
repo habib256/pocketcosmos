@@ -1,0 +1,55 @@
+{
+  "core": [
+    "constants.js",
+    "EventTypes.js",
+    "EventBus.js",
+    "utils/MathUtils.js",
+    "utils/DebugProfiler.js"
+  ],
+  "models": [
+    "core/UniverseModel.js",
+    "core/CameraModel.js",
+    "entities/CelestialBodyModel.js",
+    "entities/RocketModel.js",
+    "effects/ParticleModel.js",
+    "effects/ParticleSystemModel.js"
+  ],
+  "physics": [
+    "PhysicsVectors.js",
+    "factories/BodyFactory.js",
+    "factories/CelestialBodyFactory.js",
+    "handlers/CollisionHandler.js",
+    "handlers/ThrusterPhysics.js",
+    "SynchronizationManager.js",
+    "PhysicsController.js"
+  ],
+  "game": [
+    "missions/MissionManager.js",
+    "rocket/RocketCargo.js",
+    "rocket/RocketController.js",
+    "particles/ParticleController.js",
+    "camera/CameraController.js",
+    "GameSetupController.js",
+    "GameController.js"
+  ],
+  "input": [
+    "InputController.js"
+  ],
+  "rendering": [
+    "views/RocketView.js",
+    "views/UniverseView.js",
+    "views/CelestialBodyView.js",
+    "views/ParticleView.js",
+    "views/VectorsView.js",
+    "views/TraceView.js",
+    "views/UIView.js",
+    "RenderingController.js"
+  ],
+  "ai": [
+    "scripts/ControllerContainer.js",
+    "RocketAI.js",
+    "training/HeadlessRocketEnvironment.js",
+    "training/TrainingOrchestrator.js",
+    "training/TrainingVisualizer.js"
+  ]
+}

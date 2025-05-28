@@ -172,39 +172,17 @@
     <!-- Plugin Matter Attractors -->
     <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
     
-    <!-- Dépendances nécessaires pour l'entraînement -->
-    <script src="constants.js"></script>
-    <script src="controllers/EventBus.js"></script>
-    <script src="EventTypes.js"></script>
-    <script src="models/UniverseModel.js"></script>
-    <script src="models/CelestialBodyModel.js"></script>
-    <script src="models/RocketModel.js"></script>
-    <script src="models/CameraModel.js"></script>
-    <script src="models/ParticleModel.js"></script>
-    <script src="models/ParticleSystemModel.js"></script>
-    
-    <!-- Contrôleurs nécessaires pour HeadlessRocketEnvironment -->
-    <script src="controllers/BodyFactory.js"></script>
-    <script src="controllers/CollisionHandler.js"></script>
-    <script src="controllers/ThrusterPhysics.js"></script>
-    <script src="controllers/SynchronizationManager.js"></script>
-    <script src="controllers/PhysicsVectors.js"></script>
-    <script src="controllers/PhysicsController.js"></script>
-    <script src="controllers/ParticleController.js"></script>
-    <script src="controllers/RocketController.js"></script>
-    <script src="controllers/MissionManager.js"></script>
-    <script src="controllers/RocketCargo.js"></script>
-    <script src="controllers/CelestialBodyFactory.js"></script>
-    <script src="controllers/ControllerContainer.js"></script>
-    
-    <!-- Composants IA -->
-    <script src="controllers/RocketAI.js"></script>
-    <script src="controllers/HeadlessRocketEnvironment.js"></script>
-    <script src="controllers/TrainingOrchestrator.js"></script>
-    <script src="controllers/TrainingVisualizer.js"></script>
+    <!-- Bundles compilés dans l'ordre de dépendance -->
+    <script src="core/core.bundle.js"></script>
+    <script src="models/models.bundle.js"></script>
+    <script src="physics/physics.bundle.js"></script>
+    <script src="game/game.bundle.js"></script>
+    <script src="input/input.bundle.js"></script>
+    <script src="rendering/rendering.bundle.js"></script>
+    <script src="ai/ai.bundle.js"></script>
     
     <!-- Scripts de test et démonstration -->
-    <script src="train.js"></script>
+    <script src="ai/scripts/train.js"></script>
 </head>
 <body>
     <div class="container">

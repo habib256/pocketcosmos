@@ -1,0 +1,110 @@
+{
+  "name": "pocketcosmos",
+  "version": "2.0.0",
+  "description": "Simulation spatiale avec IA - Architecture factorielle",
+  "main": "ui/index.html",
+  "scripts": {
+    "build": "node tools/build.js",
+    "build:watch": "node tools/build.js --watch",
+    "build:physics": "node tools/build.js --domain=physics",
+    "build:ai": "node tools/build.js --domain=ai",
+    "build:game": "node tools/build.js --domain=game",
+    "build:rendering": "node tools/build.js --domain=rendering",
+    "dev": "node tools/dev-server.js --watch",
+    "serve": "node tools/dev-server.js",
+    "serve:port": "node tools/dev-server.js --port=3000",
+    "help:build": "node tools/build.js --help",
+    "help:serve": "node tools/dev-server.js --help",
+    "clean": "rm -rf .build/ core/*.bundle.js models/*.bundle.js physics/*.bundle.js game/*.bundle.js input/*.bundle.js rendering/*.bundle.js ai/*.bundle.js",
+    "migrate": "echo '📖 Consultez MIGRATION_GUIDE.md pour les instructions de migration'",
+    "test:bundles": "node tools/test-bundles.js",
+    "test:page": "echo '🌐 Ouvrez http://localhost:3000/ui/test-bundles.html pour tester les bundles'",
+    "validate:migration": "node tools/validate-migration.js",
+    "start": "npm run dev",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --config=jest.coverage.config.js",
+    "test:coverage:source": "jest --coverage --config=jest.coverage.config.js",
+    "test:coverage:html": "jest --coverage --config=jest.coverage.config.js && echo 'Rapport de couverture généré dans coverage/lcov-report/index.html'",
+    "test:coverage:open": "npm run test:coverage:html && xdg-open coverage/lcov-report/index.html",
+    "test:coverage:nyc": "nyc --reporter=text --reporter=html --reporter=lcov --include='core/**/*.js' --include='models/**/*.js' --include='physics/**/*.js' --include='game/**/*.js' --include='input/**/*.js' --include='rendering/**/*.js' --include='ai/**/*.js' --exclude='**/*.bundle.js' --exclude='**/node_modules/**' --exclude='**/tests/**' --exclude='**/tools/**' --exclude='**/.build/**' --report-dir='coverage-nyc' npm test",
+    "test:coverage:simple": "nyc --reporter=text --reporter=html --exclude='**/*.bundle.js' --exclude='**/node_modules/**' --exclude='**/tests/**' --exclude='**/tools/**' --exclude='**/.build/**' npm test",
+    "test:core": "jest tests/core",
+    "test:models": "jest tests/models",
+    "test:physics": "jest tests/physics",
+    "test:game": "jest tests/game",
+    "test:input": "jest tests/input",
+    "test:rendering": "jest tests/rendering",
+    "test:ai": "jest tests/ai",
+    "test:verbose": "jest --verbose",
+    "test:silent": "jest --silent"
+  },
+  "keywords": [
+    "space",
+    "simulation",
+    "physics",
+    "ai",
+    "tensorflow",
+    "matter.js",
+    "game",
+    "rocket"
+  ],
+  "author": "PocketCosmos Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.0.0-beta.3",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.0.0-beta.3",
+    "jsdom": "^26.1.0",
+    "nyc": "^17.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/votre-username/pocketcosmos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/votre-username/pocketcosmos/issues"
+  },
+  "homepage": "https://github.com/votre-username/pocketcosmos#readme",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "files": [
+    "core/",
+    "physics/",
+    "game/",
+    "rendering/",
+    "input/",
+    "ai/",
+    "models/",
+    "ui/",
+    "assets/",
+    "tools/",
+    "*.md",
+    "LICENSE"
+  ],
+  "config": {
+    "domains": [
+      "core",
+      "models",
+      "physics",
+      "game",
+      "input",
+      "rendering",
+      "ai"
+    ],
+    "buildOrder": [
+      "core",
+      "models",
+      "physics",
+      "game",
+      "input",
+      "rendering",
+      "ai"
+    ]
+  }
+}
