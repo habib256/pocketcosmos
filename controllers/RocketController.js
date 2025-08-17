@@ -195,13 +195,11 @@ class RocketController {
         let powerLeft = 0;
         let powerRight = 0;
 
-        if (rotateValue < 0) { // Rotation vers la droite (propulseur droit pour tourner à droite, ou propulseur gauche si c'est un couple)
-            // La logique originale dans GameController activait le propulseur droit.
+        if (rotateValue < 0) { // Rotation vers la droite (propulseur droit)
             // ROCKET.THRUSTER_POWER.RIGHT est la puissance max du propulseur droit.
-            // Math.abs(rotateValue) est un multiplicateur (0 à 1).
-            powerRight = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.RIGHT || ROCKET.DEFAULT_ROTATION_THRUST);
+            powerRight = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.RIGHT;
         } else if (rotateValue > 0) { // Rotation vers la gauche (propulseur gauche)
-            powerLeft = Math.abs(rotateValue) * (ROCKET.THRUSTER_POWER.LEFT || ROCKET.DEFAULT_ROTATION_THRUST);
+            powerLeft = Math.abs(rotateValue) * ROCKET.THRUSTER_POWER.LEFT;
         }
 
         // Appliquer les puissances et gérer les particules

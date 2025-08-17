@@ -45,14 +45,18 @@ class CollisionHandler {
                        window._missionSuccessTextTime = Date.now(); 
                     }
                     
-                    // Déclencher l'effet particules à la position de la fusée via l'EventBus interne
-                    // si d'autres systèmes doivent réagir à la position spécifique.
+                    // Déclencher un effet d'explosion via l'EventBus interne si disponible
                     const rocketModel = this.physicsController.rocketModel;
-                    if (rocketModel && this.physicsController.eventBus && window.EVENTS && window.EVENTS.EFFECTS && window.EVENTS.EFFECTS.SPAWN_PARTICLES_AT_ROCKET) {
-                        this.physicsController.eventBus.emit(window.EVENTS.EFFECTS.SPAWN_PARTICLES_AT_ROCKET, {
-                            type: 'mission_success',
-                            position: { ...rocketModel.position },
-                            message: "Mission réussie"
+                    if (rocketModel && this.physicsController.eventBus && window.EVENTS && window.EVENTS.PARTICLES && window.EVENTS.PARTICLES.CREATE_EXPLOSION) {
+                        this.physicsController.eventBus.emit(window.EVENTS.PARTICLES.CREATE_EXPLOSION, {
+                            x: rocketModel.position.x,
+                            y: rocketModel.position.y,
+                            count: 120,
+                            speed: 8,
+                            size: 10,
+                            lifetime: 2.5,
+                            colorStart: '#FFDD00',
+                            colorEnd: '#FF3300'
                         });
                     }
                     
@@ -249,25 +253,9 @@ class CollisionHandler {
      * @param {number} impactVelocity - La vélocité de l'impact.
      */
     playCollisionSound(impactVelocity) {
-        // Modifié : Jouer le son même si la fusée est détruite, car cela peut être le son de destruction.
-        // La logique de quel son jouer (collision vs destruction) pourrait être affinée.
-        // if (this.physicsController.rocketModel && this.physicsController.rocketModel.isDestroyed) {
-        //     return; // Ne pas jouer de son si la fusée est déjà détruite.
-        // }
-        console.log(`[CollisionHandler.playCollisionSound] Tentative de lecture du son pour impactVelocity: ${impactVelocity.toFixed(2)}. rocketModel.isDestroyed: ${this.physicsController.rocketModel ? this.physicsController.rocketModel.isDestroyed : 'N/A'}`);
-        try {
-            const collisionSound = new Audio('assets/sound/collision.mp3');
-            const maxVolume = 1.0;
-            const minVolume = 0.3;
-            // Normaliser la vélocité d'impact pour le volume (ex: impacts légers moins forts).
-            const volumeScale = Math.min((impactVelocity - 2.5) / 10, 1); // Exemple de normalisation.
-            collisionSound.volume = minVolume + volumeScale * (maxVolume - minVolume);
-            collisionSound.play().catch(error => {
-                console.error("Erreur lors de la lecture du son de collision:", error);
-            });
-        } catch (error) {
-            console.error("Erreur lors de la création de l'objet Audio pour collision.mp3:", error);
-        }
+        if (!window.audioManager) return;
+        window.audioManager.preload('collision', 'assets/sound/collision.mp3', { volume: 0.6 });
+        window.audioManager.play('collision');
     }
 
     /**
@@ -366,7 +354,6 @@ class CollisionHandler {
             if (crashReason) {
                 console.error(`CRASH DÉTECTÉ sur ${otherBody.label}! Cause: ${crashReason}`);
                 console.log(`   Détails - Vitesse: ${speed.toFixed(2)}, Angle: ${angleDiffDeg.toFixed(1)}°, Rotation: ${angularVelocity.toFixed(3)}`);
-                rocketModel.crashedOn = otherBody.label;
                 rocketModel.landedOn = otherBody.label; // Indique le contact, même si c'est un crash.
                 rocketModel.attachedTo = otherBody.label; // Similaire à landedOn pour la logique de suivi.
                 

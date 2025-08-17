@@ -61,6 +61,25 @@ class ParticleController {
             } else {
                 console.warn('[ParticleController] Did not subscribe to ROCKET.DESTROYED. Check window.EVENTS.ROCKET.DESTROYED definition.', window.EVENTS);
             }
+
+            // S'abonner à une requête générique de création d'explosion
+            if (window.EVENTS && window.EVENTS.PARTICLES && window.EVENTS.PARTICLES.CREATE_EXPLOSION) {
+                window.controllerContainer.track(
+                    this.eventBus.subscribe(window.EVENTS.PARTICLES.CREATE_EXPLOSION, (p) => {
+                        if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') {
+                            console.warn('[ParticleController] PARTICLES.CREATE_EXPLOSION reçu sans coordonnées valides:', p);
+                            return;
+                        }
+                        const count = typeof p.count === 'number' ? p.count : 120;
+                        const speed = typeof p.speed === 'number' ? p.speed : 8;
+                        const size = typeof p.size === 'number' ? p.size : 10;
+                        const lifetime = typeof p.lifetime === 'number' ? p.lifetime : 2.5;
+                        const colorStart = typeof p.colorStart === 'string' ? p.colorStart : '#FFDD00';
+                        const colorEnd = typeof p.colorEnd === 'string' ? p.colorEnd : '#FF3300';
+                        this.createExplosion(p.x, p.y, count, speed, size, lifetime, colorStart, colorEnd);
+                    })
+                );
+            }
         } else {
             // Avertissement si l'EventBus n'est pas correctement initialisé ou disponible,
             // ce qui pourrait indiquer un problème de configuration ou un contexte d'exécution limité (ex: tests).

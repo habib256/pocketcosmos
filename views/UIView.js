@@ -22,7 +22,7 @@ class UIView {
      * @param {EventBus} eventBus - Le bus d'événements pour la communication (potentiellement future).
      */
     constructor(eventBus) {
-        this.eventBus = eventBus; // Conservé pour usage futur potentiel
+        this.eventBus = eventBus; // Utilisé pour émettre/écouter des événements UI
 
         // Styles par défaut
         this.fontFamily = 'Arial'; // Utiliser une seule source pour la famille de police
@@ -57,6 +57,16 @@ class UIView {
         };
 
         this.subscribeToEvents();
+
+        // Brancher un gestionnaire de clic global et le relayer via EventBus (découplage InputController/UI)
+        const onClick = (ev) => {
+            if (!this.eventBus || !window.EVENTS || !window.EVENTS.UI || !window.EVENTS.UI.UPDATE) return;
+            this.eventBus.emit(window.EVENTS.UI.UPDATE, { type: 'canvas_click', x: ev.clientX, y: ev.clientY });
+        };
+        window.addEventListener('click', onClick);
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(() => window.removeEventListener('click', onClick));
+        }
     }
 
     subscribeToEvents() {

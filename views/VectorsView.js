@@ -17,6 +17,12 @@ class VectorsView {
         this.gridY = 80;
         /** @private @type {Array<Array<{ax: number, ay: number, wx: number, wy: number, potential: number}>> | null} Grille contenant le champ de gravité (accélération ax, ay) et le potentiel scalaire (potential) calculés aux coordonnées monde (wx, wy) de chaque point de la grille. Recalculée à chaque frame si l'affichage du champ est actif. */
         this.gravityFieldGrid = null;
+        /** @private @type {number} Timestamp du dernier calcul de grille pour throttle. */
+        this._lastGridComputeTime = 0;
+        /** @private @type {number} Délai minimal (ms) entre deux recalculs de grille. */
+        this._gridComputeIntervalMs = 150; // Throttle léger
+        /** @private */
+        this._lastCameraSignature = null; // Pour cache basique (zoom/offset)
     }
 
     /**
@@ -28,6 +34,15 @@ class VectorsView {
      * @private
      */
     computeGravityFieldGrid(ctx, camera, physicsController) {
+        // Throttle/reuse: ne recalculer que si la caméra a sensiblement changé ou si intervalle écoulé
+        const now = performance && performance.now ? performance.now() : Date.now();
+        const sig = `${camera.x.toFixed(1)}|${camera.y.toFixed(1)}|${camera.zoom.toFixed(3)}|${ctx.canvas.width}|${ctx.canvas.height}`;
+        const canReuse = this.gravityFieldGrid && this._lastCameraSignature === sig && (now - this._lastGridComputeTime) < this._gridComputeIntervalMs;
+        if (canReuse) {
+            return; // Réutiliser la grille existante
+        }
+        this._lastCameraSignature = sig;
+        this._lastGridComputeTime = now;
         // Note: Recalculer cette grille à chaque frame peut être coûteux en performances,
         // surtout avec de nombreux corps célestes. Optimisations possibles si nécessaire.
         const gridX = this.gridX;

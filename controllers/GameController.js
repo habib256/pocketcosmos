@@ -428,6 +428,13 @@ class GameController {
         this.rocketAI = controllers.rocketAI || null; // MODIFIÉ: Utiliser rocketAI
         console.log('[GameController.setControllers] RocketAI reçu:', this.rocketAI);
 
+        // Décorrélation UI: traiter les événements UI génériques ici
+        if (this.eventBus && window.EVENTS && window.EVENTS.UI && window.EVENTS.UI.UPDATE) {
+            window.controllerContainer && window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.UI.UPDATE, (payload) => this.handleUIEvent(payload))
+            );
+        }
+
         // Si CameraController est créé ici ou dépend de contrôleurs externes, initialisez/mettez à jour ici.
         // Actuellement, CameraController est créé dans le constructeur de GameController.
         // Il a besoin de l'eventBus et du cameraModel, qui sont disponibles à ce moment-là.
@@ -439,6 +446,29 @@ class GameController {
         if (this.inputController && this.cameraController) {
             // Supposons que CameraController a une méthode pour définir son InputController si nécessaire
             // this.cameraController.setInputController(this.inputController);
+        }
+    }
+
+    /**
+     * Interprète les événements UI génériques et déclenche des actions sémantiques.
+     * @param {{type: string, x?: number, y?: number}} payload
+     */
+    handleUIEvent(payload) {
+        if (!payload || !payload.type) return;
+        switch (payload.type) {
+            case 'canvas_click':
+                // Exemple: si l’on souhaite basculer les contrôles assistés depuis un bouton UI
+                // Ici, sans map précise des boutons, on peut proposer un toggle via une zone fixe
+                // ou laisser un autre contrôleur décider. On expose un hook simple:
+                if (this.shouldToggleAssistedControlsOnClick && typeof this.shouldToggleAssistedControlsOnClick === 'function') {
+                    const shouldToggle = this.shouldToggleAssistedControlsOnClick(payload.x, payload.y);
+                    if (shouldToggle) {
+                        this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
+                    }
+                }
+                break;
+            default:
+                break;
         }
     }
     

@@ -10,8 +10,7 @@ class ThrusterPhysics {
         this.assistedAngularDamping = this.PHYSICS.ASSISTED_CONTROLS.ASSISTED_ANGULAR_DAMPING;
         this.rotationStabilityFactor = this.PHYSICS.ASSISTED_CONTROLS.ROTATION_STABILITY_FACTOR;
 
-        // Gestion du son du propulseur principal
-        this.mainThrusterSound = null;
+        // Gestion du son du propulseur principal via AudioManager global
         this.mainThrusterSoundPlaying = false;
     }
 
@@ -197,35 +196,20 @@ class ThrusterPhysics {
         if (this.physicsController.isHeadless) {
             return;
         }
-        
-        try {
-            if (!this.mainThrusterSound) {
-                this.mainThrusterSound = new Audio('assets/sound/rocketthrustmaxx.mp3');
-                this.mainThrusterSound.loop = true;
-                this.mainThrusterSound.volume = 0.7;
-            }
-            if (!this.mainThrusterSoundPlaying) {
-                this.mainThrusterSound.play().catch(error => {
-                    // Silencieux en mode headless
-                    if (!this.physicsController.isHeadless) {
-                        console.error("Erreur lors de la lecture du son du propulseur principal:", error);
-                    }
-                });
-                this.mainThrusterSoundPlaying = true;
-            }
-        } catch (error) {
-            // Silencieux en mode headless
-            if (!this.physicsController.isHeadless) {
-                console.error("Erreur lors de la création/lecture du son du propulseur principal:", error);
-            }
+        if (!window.audioManager) return;
+        // Précharger si pas déjà fait
+        window.audioManager.preload('thruster_main', 'assets/sound/rocketthrustmaxx.mp3', { loop: true, volume: 0.7 });
+        if (!this.mainThrusterSoundPlaying) {
+            window.audioManager.startLoop('thruster_main');
+            this.mainThrusterSoundPlaying = true;
         }
     }
 
     // Arrêter le son du propulseur principal
     stopMainThrusterSound() {
-        if (this.mainThrusterSoundPlaying && this.mainThrusterSound) {
-            this.mainThrusterSound.pause();
-            this.mainThrusterSound.currentTime = 0;
+        if (!window.audioManager) return;
+        if (this.mainThrusterSoundPlaying) {
+            window.audioManager.stop('thruster_main');
             this.mainThrusterSoundPlaying = false;
         }
     }

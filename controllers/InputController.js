@@ -273,26 +273,7 @@ class InputController {
                 this.isMouseDragging = false;
                 this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
             }
-
-            // Gérer les clics sur les boutons UI si ce n'était pas un drag
-            if (!wasDragging && e.button === 0) { // Clic gauche et pas un drag
-                // Assurez-vous que this.uiView est disponible et correctement initialisé.
-                // Normalement, il est passé via GameSetupController -> GameController -> InputController.
-                // Pour l'instant, nous allons supposer qu'il est accessible via une référence globale
-                // ou qu'il sera injecté correctement. L'idéal serait une injection de dépendance.
-                // TODO: Remplacer window.uiView par une véritable injection de dépendance.
-                const uiView = window.uiView; // TEMPORAIRE: en attendant une meilleure injection
-
-                if (uiView && typeof uiView.getAssistedControlsButtonBounds === 'function') {
-                    const bounds = uiView.getAssistedControlsButtonBounds();
-                    if (bounds && 
-                        e.clientX >= bounds.x && e.clientX <= bounds.x + bounds.width &&
-                        e.clientY >= bounds.y && e.clientY <= bounds.y + bounds.height) {
-                        console.log('[InputController] Clic détecté sur le bouton des contrôles assistés.'); // AJOUT D'UN LOG
-                        this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
-                    }
-                }
-            }
+            // Découplage UI: la détection des clics UI est gérée par UIView via EventBus.
         };
         this._mouseHandlers.mouseup = mouseUpHandler;
         // Écouter sur window pour capturer même si la souris sort du canvas
@@ -638,7 +619,7 @@ class InputController {
                             this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: RENDER.CAMERA_ZOOM_BUTTON_FACTOR });
                             break;
                         case 'centerCamera': // Bouton View/Back
-                            this.eventBus.emit(EVENTS.CAMERA.CENTER_CAMERA_ON_ROCKET);
+                            this.eventBus.emit(EVENTS.CAMERA.CENTER_ON_ROCKET);
                             break;
                         case 'pauseGame': // Bouton Menu/Start
                             this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);

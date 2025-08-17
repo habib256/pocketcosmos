@@ -15,15 +15,31 @@ const PHYSICS = {
     COLLISION_DELAY: 2000,      // Délai avant d'activer les collisions (ms)
     REPULSION_STRENGTH: 0.05,   // Force de répulsion lors des collisions
     COLLISION_DAMPING: 0.7,     // Facteur d'amortissement des collisions
-    IMPACT_DAMAGE_FACTOR: 10,   // Facteur de dommages lors des impacts
+    IMPACT_DAMAGE_FACTOR: 10,   // Facteur de dommages lors des impacts (appliqué sur la vitesse d'impact)
     RESTITUTION: 0.2,           // Coefficient de restitution (rebond)
-    CRASH_SPEED_THRESHOLD: 2500, // Vitesse max pour atterrissage (m/s)
-    // Nouveaux seuils pour atterrissage/crash plus fins
-    LANDING_MAX_SPEED: 2500,           // Vitesse verticale max pour atterrir (m/s)
-    LANDING_MAX_ANGLE_DEG: 30,        // Angle max par rapport à la verticale (degrés)
-    LANDING_MAX_ANGULAR_VELOCITY: 400,// Vitesse angulaire max pour atterrir (rad/s)
-    CRASH_ANGLE_DEG: 45,              // Angle de crash par rapport à la verticale (degrés)
-    CRASH_ANGULAR_VELOCITY: 400,      // Vitesse angulaire de crash (rad/s)
+
+    // ————————————————————————————————————————————————
+    // Seuils de détection atterrissage/crash (utilisés par CollisionHandler)
+    // Remarque importante: on vise des valeurs « jouables ». NE PAS modifier sans test gameplay.
+    // Un atterrissage stable est détecté si TOUTES les conditions suivantes sont vraies:
+    //   - vitesse <= LANDING_MAX_SPEED
+    //   - |diffAngleAvecNormale| <= LANDING_MAX_ANGLE_DEG
+    //   - |vitesseAngulaire| <= LANDING_MAX_ANGULAR_VELOCITY
+    // Un crash est détecté si l’on est proche de la surface et qu’AU MOINS une condition de crash est vraie:
+    //   - vitesse >= CRASH_SPEED_THRESHOLD
+    //   - |diffAngleAvecNormale| >= CRASH_ANGLE_DEG
+    //   - |vitesseAngulaire| >= CRASH_ANGULAR_VELOCITY
+
+    CRASH_SPEED_THRESHOLD: 2500, // Seuil de vitesse scalaire d'impact au-delà duquel on considère un crash (unités du monde/sec)
+
+    // Seuils d'atterrissage (tous doivent être respectés)
+    LANDING_MAX_SPEED: 2500,            // Vitesse scalaire max pour atterrir (utilisation actuelle: vitesse totale, pas verticale)
+    LANDING_MAX_ANGLE_DEG: 30,          // Différence angulaire max vs normale de surface (degrés)
+    LANDING_MAX_ANGULAR_VELOCITY: 400,  // Vitesse angulaire max pour atterrir (rad/s)
+
+    // Seuils de crash (si l’un est dépassé et proximité surface => crash)
+    CRASH_ANGLE_DEG: 45,                // Différence angulaire max vs normale de surface (degrés)
+    CRASH_ANGULAR_VELOCITY: 400,        // Vitesse angulaire de crash (rad/s)
     TAKEOFF_THRUST_THRESHOLD_PERCENT: 50, // Seuil de poussée (en %) pour considérer un décollage actif
     // Ajout des catégories de collision
     COLLISION_CATEGORIES: {
@@ -56,6 +72,8 @@ const RENDER = {
     ZOOM_SPEED: 0.2,            // Vitesse de zoom avec la molette 
     MIN_ZOOM: 0.005,              // Zoom minimum
     MAX_ZOOM: 6.0,              // Zoom maximum 
+    // Facteur de zoom pour les boutons (LT/RT gamepad)
+    CAMERA_ZOOM_BUTTON_FACTOR: 1.1,
     
     // Vecteur de gravité
     GRAVITY_VECTOR_SCALE: 150,  // Échelle du vecteur de gravité pour le rendu

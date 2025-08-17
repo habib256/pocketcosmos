@@ -62,6 +62,13 @@ function init() {
         return; // Arrêter l'initialisation si le canvas n'est pas trouvé.
     }
 
+    // Précharger les sons SFX connus
+    if (window.audioManager) {
+        window.audioManager.preload('countdown', 'assets/sound/4321.mp3', { volume: 1.0 });
+        window.audioManager.preload('collision', 'assets/sound/collision.mp3', { volume: 0.6 });
+        window.audioManager.preload('thruster_main', 'assets/sound/rocketthrustmaxx.mp3', { loop: true, volume: 0.7 });
+    }
+
     // Initialisation des contrôleurs et modèles principaux
     // L'ordre d'instanciation peut être important pour les dépendances injectées via constructeur.
     const missionManager = new MissionManager(eventBus);
@@ -178,16 +185,16 @@ function cleanup() {
  * Typiquement appelé après la fermeture des instructions initiales.
  */
 function playCountdownSound() {
+    // Utiliser AudioManager si disponible et PRÉCHARGÉ (sinon fallback tout de suite dans le même geste utilisateur)
+    if (window.audioManager && window.audioManager.cache && window.audioManager.cache.has('countdown')) {
+        window.audioManager.play('countdown');
+        return;
+    }
     try {
-        // Crée un objet Audio pour le son.
-        const countdownSound = new Audio('assets/sound/4321.mp3');
-        countdownSound.volume = 1.0; // Met le volume au maximum.
-        // Lance la lecture du son.
-        countdownSound.play().catch(error => {
-            console.error("Erreur lors de la lecture du son de compte à rebours:", error);
-        });
+        const fallback = new Audio('assets/sound/4321.mp3');
+        fallback.volume = 1.0;
+        fallback.play().catch(() => {});
     } catch (error) {
-        // Gère les erreurs potentielles lors de la création ou lecture de l'audio.
         console.error("Erreur lors de la création/lecture du fichier 4321.mp3:", error);
     }
 }

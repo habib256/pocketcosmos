@@ -52,7 +52,6 @@
 ├── main.js           # Point d'entrée : Initialisation de l'application et des composants
 ├── train.js          # Scripts de démonstration et d'entraînement IA (console et programmation)
 ├── training-interface.html # Interface web complète pour l'entraînement et le monitoring de l'IA
-├── AI_TRAINING_GUIDE.md    # Guide complet d'utilisation du système d'entraînement IA
 ├── README.md         # Informations générales sur le projet
 ├── .gitignore        # Fichiers et dossiers ignorés par Git
 ├── LICENSE           # Licence du projet
@@ -77,7 +76,7 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **TrainingVisualizer.js** : Visualiseur temps réel pour l'entraînement avec trajectoires multiples et contrôles de caméra
 - **training-interface.html** : Interface web complète avec monitoring temps réel, graphiques et contrôles
 - **train.js** : Scripts de démonstration et fonctions utilitaires pour l'entraînement
-- **AI_TRAINING_GUIDE.md** : Documentation complète du système d'entraînement
+ 
 
 ### Fonctionnalités IA
 - **Entraînement DQN** : Algorithme d'apprentissage par renforcement profond
@@ -127,11 +126,11 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 
 ## Vues principales (`views/`)
 - **RocketView.js** : Affiche la fusée et ses états (propulseurs, image, crash).
-- **VectorsView.js** : Affiche tous les vecteurs physiques : poussée (rouge), vitesse, accélération totale F/m (orange, « a=F/m »), gravité, missions, etc. Centralise tout l'affichage vectoriel, indépendamment de RocketView. L'affichage des vecteurs est activable/désactivable dynamiquement (touche V, toggle global via RenderingController).
-- **Champ de gravité et équipotentielles** : VectorsView.js calcule et affiche le champ de gravité généré par tous les corps célestes, soit sous forme de flèches (champ), soit sous forme de lignes équipotentielles (potentiel gravitationnel). Le mode d'affichage se toggle avec la touche G (géré globalement par RenderingController).
+- **VectorsView.js** : Affiche tous les vecteurs physiques : poussée (rouge), vitesse, accélération totale F/m (orange, « a=F/m »), gravité, missions, etc. Centralise tout l'affichage vectoriel, indépendamment de RocketView. L'affichage des vecteurs est activable/désactivable via `V` (événement `RENDER_TOGGLE_VECTORS` géré par `RenderingController`).
+- **Champ de gravité et équipotentielles** : VectorsView.js calcule et affiche le champ de gravité généré par tous les corps célestes, soit sous forme de flèches (champ), soit sous forme de lignes équipotentielles (potentiel gravitationnel). Le mode d'affichage se bascule avec `G` (événement `RENDER_TOGGLE_GRAVITY_FIELD` géré par `RenderingController`).
 - **UniverseView.js** : Affiche le fond, les étoiles, et coordonne le dessin des corps célestes.
 - **CelestialBodyView.js** : Affiche un corps céleste individuel.
-- **TraceView.js** : Affiche la trajectoire de la fusée.
+- **TraceView.js** : Affiche la trajectoire de la fusée (toggle via `T` → événement `RENDER_TOGGLE_TRACES`).
 - **ParticleView.js** : Affiche les particules (propulsion, débris, effets).
 - **UIView.js** : Affiche l'interface utilisateur (infos, missions, cargo, messages).
 
@@ -147,8 +146,9 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **GameController.js** : Chef d'orchestre, boucle de jeu, gestion globale. Coordonne les autres contrôleurs (y compris `CameraController` pour la gestion de la caméra) et délègue la logique spécifique (par ex. à `RocketController`). Gère l'état du jeu (pause, etc.) et la logique de mission de haut niveau.
 - **GameSetupController.js** : Responsable de l'initialisation et de la configuration de tous les composants majeurs du jeu au démarrage, y compris les modèles, les vues et les autres contrôleurs.
 - **InputController.js** : Entrées clavier/souris/joystick, publie sur EventBus.
+  Ne doit pas dépendre de `window.uiView`. Les interactions UI (ex: bascule des contrôles assistés) doivent transiter par l'EventBus via des événements `EVENTS.UI.*` (p. ex. `UI_TOGGLE_ASSISTED_CONTROLS`) émis par la vue/contrôleur UI, et non par détection de bounding boxes dans l'InputController.
 - **RocketController.js** : Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée. Met à jour `RocketModel` et `ParticleSystemModel`.
-- **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère le toggle d'affichage des vecteurs (touche V) et du champ de gravité/équipotentielles (touche G).
+- **RenderingController.js** : Coordonne toutes les vues pour le rendu. Gère les toggles des vecteurs (V), du champ gravitationnel/équipotentielles (G) et des traces (T).
 - **PhysicsController.js** : Gère le moteur Matter.js et la simulation physique globale.
 - **SynchronizationManager.js** : Synchronise l'état logique (modèles) et physique (moteur Matter.js) entre eux, en particulier pour la fusée (atterrissage, décollage, attachement) et les corps célestes. Gère l'émission d'événements clés comme `ROCKET_LANDED`.
 - **ThrusterPhysics.js** : Applique les forces des propulseurs de la fusée au moteur physique.
@@ -170,21 +170,22 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **training-interface.html** : Interface dédiée à l'entraînement IA.
 - **train.js** : Scripts d'entraînement pour la console.
 - **GameController.js** : Boucle de jeu, gestion des états principaux.
-- **RenderingController.js** : Rendu global, gestion du toggle des vecteurs.
+- **RenderingController.js** : Rendu global, gestion des toggles des vecteurs (`V`), du champ gravitationnel/équipotentielles (`G`) et des traces (`T`).
 - **TrainingOrchestrator.js** : Point d'entrée pour l'entraînement IA.
 
-## Événements IA (EventTypes.js étendu)
-- **Contrôle** : `AI_TOGGLE_CONTROL`, `AI_CONTROL_CHANGED`
-- **Entraînement** : `AI_START_TRAINING`, `AI_STOP_TRAINING`, `AI_PAUSE_TRAINING`, `AI_RESUME_TRAINING`
-- **États** : `AI_TRAINING_STARTED`, `AI_TRAINING_COMPLETED`, `AI_TRAINING_ERROR`, `AI_TRAINING_PROGRESS`
-- **Évaluation** : `AI_EVALUATION_COMPLETED`, `AI_MODEL_SAVED`, `AI_MODEL_LOADED`
+## Événements IA (définis dans `EventTypes.js`)
+- **Contrôle** : `AI_TOGGLE_CONTROL`, `AI_TOGGLE_TRAINING`, `AI_CONTROL_CHANGED`, `AI_TRAINING_CHANGED`, `AI_CONTROL_ACTION`
+- **Commandes d'entraînement** : `AI_START_TRAINING`, `AI_STOP_TRAINING`, `AI_PAUSE_TRAINING`, `AI_RESUME_TRAINING`, `AI_UPDATE_CONFIG`
+- **États d'entraînement** : `AI_TRAINING_STARTED`, `AI_TRAINING_STOPPED`, `AI_TRAINING_PAUSED`, `AI_TRAINING_RESUMED`, `AI_TRAINING_COMPLETED`, `AI_TRAINING_ERROR`, `AI_TRAINING_PROGRESS`
+- **Évaluation** : `AI_EVALUATION_STARTED`, `AI_EVALUATION_COMPLETED`, `AI_MODEL_SAVED`, `AI_MODEL_LOADED`
+- **Visualisation** : `AI_TRAINING_STEP`, `AI_EPISODE_STARTED`, `AI_EPISODE_ENDED`
 
 ## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
 ## NOTES TRES IMPORTANTES : IMPORTANT : IMPORTANT : IMPORTANT
 - ** IL N'Y A PAS DE PROBLEME AVEC MATTER.JS et son plugin **
 - **Chargement des scripts** : !!IMPORTANT!! Tous les scripts sont chargés via `<script>` dans `index.html` et `training-interface.html`. L'ordre d'inclusion est crucial. Il ne doit pas y avoir d'import ES6
 - **Système IA** : L'entraînement fonctionne avec les vrais composants (TrainingOrchestrator, RocketAI, HeadlessRocketEnvironment, TrainingVisualizer). L'interface web est maintenant connectée aux vrais événements d'entraînement avec visualisation temps réel.
-- **Calculs physiques** : !! L'accélération F/m est calculée dans `PhysicsController` (méthode `calculateGravityAccelerationAt`) avant l'appel à `Engine.update()` de Matter.js. Le plugin `matter-attractors` gère ensuite l'application de la gravité. Matter.js reste responsable des collisions et du mouvement. Pour les planètes et les lunes, les collisions sont gérées par Matter.js tandis que `SynchronizationManager.js` traite les états ou la fusée est détruite ou posée.
+- **Calculs physiques** : La gravité est appliquée par le plugin `matter-attractors` pendant `Engine.update()` de Matter.js (collisions et mouvement inclus). La méthode `calculateGravityAccelerationAt` de `PhysicsController` est utilisée pour les calculs/visualisations (ex. `VectorsView`) et le debug, pas pour appliquer la force de gravité au moteur. Pour les planètes et les lunes, les collisions sont gérées par Matter.js tandis que `SynchronizationManager.js` traite les états où la fusée est détruite ou posée.
 - **EventBus** : Comprendre les événements échangés est essentiel pour le debug ou l'ajout de fonctionnalités. EventBus sert pour découpler le système MVC afin de l'interfacer avec le système IA. Surtout pas d'imports ES6 on utilise window.EVENTS dans tous les contrôleurs et ailleurs pour accéder à l'EventBus.
 - **Entraînement IA** : Utilise TensorFlow.js avec algorithme DQN. Trois méthodes d'entraînement disponibles : interface web, console, et programmation directe.
 - **Performance** : L'environnement headless permet un entraînement rapide sans rendu graphique. Métriques temps réel disponibles.
@@ -219,5 +220,10 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - Comparaison de modèles et A/B testing
 - Export des données d'entraînement pour analyse externe
 - Intégration avec TensorBoard pour visualisations avancées
+
+
+Notes de cohérence
+- Les scripts restent en mode global (pas d’ES modules). `window.EVENTS` et EventBus sont la source de vérité pour les événements.
+- La gravité est appliquée par `matter-attractors` durant `Engine.update()`. Les méthodes de calcul gravitationnel côté contrôleurs sont destinées à la visualisation et au debug.
 
 

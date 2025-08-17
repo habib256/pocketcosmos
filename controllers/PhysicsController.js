@@ -324,7 +324,7 @@ class PhysicsController {
         if (Math.abs(ax) > 0 || Math.abs(ay) > 0) {
            // console.log(`[GravityField] G@(${x.toFixed(0)},${y.toFixed(0)}) = {ax: ${ax.toExponential(2)}, ay: ${ay.toExponential(2)}}`);
         }
-        return { ax, ay };
+        return { x: ax, y: ay };
     }
 
     // Fonction pure : accélération gravitationnelle à une position donnée

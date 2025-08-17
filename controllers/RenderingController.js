@@ -19,8 +19,11 @@ class RenderingController {
         
         // Initialiser la taille et gérer le redimensionnement
         this.handleResize(); // Appel initial pour définir la taille
-        window.addEventListener('resize', () => this.handleResize());
-        // TODO: Ajouter le removeEventListener dans une méthode cleanup si nécessaire
+        this._boundResize = this.handleResize.bind(this);
+        window.addEventListener('resize', this._boundResize);
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(() => window.removeEventListener('resize', this._boundResize));
+        }
         
         // États des modèles pour le rendu
         this.rocketState = {
@@ -139,17 +142,7 @@ class RenderingController {
     }
     
     updateUniverseState(state) {
-        // Assurer que les corps célestes sont correctement préparés pour le rendu
-        if (state.celestialBodies) {
-            // Parcourir les corps célestes pour vérifier les lunes
-            for (const body of state.celestialBodies) {
-                // Si un corps a une lune, s'assurer qu'elle est également accessible pour le rendu
-                if (body.moon && !state.celestialBodies.includes(body.moon)) {
-                    console.log(`Ajout de la lune de ${body.name} à la liste des corps pour le rendu`);
-                }
-            }
-        }
-        
+        // Mise à jour simple de l'état de l'univers pour le rendu
         this.universeState = {
             ...this.universeState,
             ...state
@@ -384,11 +377,6 @@ class RenderingController {
             // ou utilisez une constante d'événement appropriée (ex: EVENTS.RENDER.CANVAS_RESIZED)
             if (this.eventBus && window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED) { 
                 this.eventBus.emit(window.EVENTS.SYSTEM.CANVAS_RESIZED, { 
-                    width: this.canvas.width, 
-                    height: this.canvas.height 
-                });
-            } else if (this.eventBus && window.EVENTS && window.EVENTS.RENDER && window.EVENTS.RENDER.CANVAS_RESIZED) { // Fallback si RENDER.CANVAS_RESIZED existe
-                 this.eventBus.emit(window.EVENTS.RENDER.CANVAS_RESIZED, { 
                     width: this.canvas.width, 
                     height: this.canvas.height 
                 });
