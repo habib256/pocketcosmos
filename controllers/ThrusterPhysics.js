@@ -54,24 +54,26 @@ class ThrusterPhysics {
         let fuelConsumption = 0;
 
         // Calculer la force et la consommation de base
+        // Interpréter 'powerPercentage' comme un pourcentage (0..∞),
+        // pour conserver le comportement existant où MAIN peut dépasser 100% (jusqu'à 1000%).
+        const powerRatio = Math.max(0, powerPercentage / 100);
         switch (thrusterName) {
             case 'main':
-                // Force = Poussée de base * % puissance * Efficacité * Multiplicateur Global
-                thrustForce = this.ROCKET.MAIN_THRUST * (powerPercentage / 100)
-                              * this.ROCKET.THRUSTER_EFFECTIVENESS.MAIN // Utilisation de la constante
+                thrustForce = this.ROCKET.MAIN_THRUST * powerRatio
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.MAIN
                               * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.MAIN;
                 break;
             case 'rear':
-                thrustForce = this.ROCKET.REAR_THRUST * (powerPercentage / 100)
-                              * this.ROCKET.THRUSTER_EFFECTIVENESS.REAR // Utilisation de la constante
+                thrustForce = this.ROCKET.REAR_THRUST * powerRatio
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.REAR
                               * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.REAR;
                 break;
             case 'left':
             case 'right':
-                thrustForce = this.ROCKET.LATERAL_THRUST * (powerPercentage / 100)
-                              * this.ROCKET.THRUSTER_EFFECTIVENESS.LATERAL // Utilisation de la constante
+                thrustForce = this.ROCKET.LATERAL_THRUST * powerRatio
+                              * this.ROCKET.THRUSTER_EFFECTIVENESS.LATERAL
                               * this.PHYSICS.THRUST_MULTIPLIER;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.LATERAL;
                 break;
@@ -83,7 +85,7 @@ class ThrusterPhysics {
             thrustForce = 0;
         } else {
             // Calculer le carburant nécessaire pour cette frame
-            const fuelUsed = fuelConsumption * (powerPercentage / 100);
+            const fuelUsed = fuelConsumption * powerRatio;
             // Essayer de consommer le carburant via le modèle
             if (!rocketModel.consumeFuel(fuelUsed)) {
                 thrustForce = 0; // La consommation a échoué (plus assez de fuel)

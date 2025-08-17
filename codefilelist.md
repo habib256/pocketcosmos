@@ -13,6 +13,7 @@
 │   ├── CameraController.js     # Gère le zoom, le centrage et le drag de la caméra
 │   ├── CelestialBodyFactory.js # Crée les modèles de corps célestes et leurs corps physiques Matter.js
 │   ├── CollisionHandler.js     # Gère les collisions entre corps physiques, met à jour RocketModel
+│   ├── AudioManager.js         # Gestion centralisée de l'audio (préchargement, lecture, boucles, volume)
 │   ├── ControllerContainer.js  # Gère l'organisation ou l'accès aux contrôleurs
 │   ├── EventBus.js             # Système Publish/Subscribe pour la communication interne découplée
 │   ├── GameController.js       # Orchestrateur principal, boucle de jeu, gestion des états globaux
@@ -193,6 +194,21 @@ Le projet suit une architecture MVC étendue avec système d'IA intégré :
 - **Interface Web** : training-interface.html est maintenant une interface complète avec 6 panneaux : configuration, métriques temps réel, visualisation pleine largeur, graphiques, métriques de concurrence et statistiques d'entraînement.
 - **Nettoyage** : Supprimer les fichiers obsolètes ou redondants dès que possible pour garder la base de code la plus propre possible.
 - **Test manette** : Pour identifier les axes/boutons du gamepad, utiliser https://hardwaretester.com/gamepad.
+
+### Notes de cohérence (physique/propulseurs/collisions)
+- **Puissance des propulseurs**: `rocketModel.thrusters.*.power` est une valeur absolue dans \[0 .. `THRUSTER_POWER.*`\]. Les calculs de poussée/consommation utilisent la fraction `power / maxPower`.
+- **Seuil de décollage**: `PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT` est comparé au pourcentage réel de poussée du principal: `(thrusters.main.power / thrusters.main.maxPower) * 100`.
+- **Seuils Atterrissage/Crash**: Utiliser les constantes `PHYSICS.LANDING_MAX_SPEED`, `PHYSICS.LANDING_MAX_ANGLE_DEG`, `PHYSICS.LANDING_MAX_ANGULAR_VELOCITY`, `PHYSICS.CRASH_SPEED_THRESHOLD`, `PHYSICS.CRASH_ANGLE_DEG`, `PHYSICS.CRASH_ANGULAR_VELOCITY`. L'UI (barre vitesse) se base sur `PHYSICS.CRASH_SPEED_THRESHOLD`.
+- **Catégories de collision**: `PHYSICS.COLLISION_CATEGORIES` sont appliquées dans `BodyFactory` via `collisionFilter.category/mask` pour limiter les collisions (fusée vs corps célestes uniquement).
+- **Audio**: `AudioManager` gère `preload/play/startLoop/stop`. Précharger au lancement les sons clés (ex: `thruster_main`, `collision`) pour éviter la latence à la première lecture.
+
+### Bogue corrigé (Décollage bloqué)
+- **Symptôme**: le décollage ne se produisait plus malgré une poussée principale élevée.
+- **Cause**: après refactor, `thrusters.main.power` (valeur absolue) était comparé directement au seuil en %, et la poussée/consommation dans `ThrusterPhysics` utilisait un mauvais référentiel (% vs valeur brute), empêchant une impulsion efficace.
+- **Correctifs**:
+  - `SynchronizationManager`: comparaison en pourcentage réel `(power/maxPower)*100` contre `PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT`; application d'une impulsion immédiate via `ThrusterPhysics.handleLiftoff()` lors d'une tentative de décollage détectée.
+  - `ThrusterPhysics`: force et consommation basées sur un ratio cohérent (interprétation correcte du paramètre de puissance), assurant une poussée suffisante.
+  - `UIView`: correction de l'usage de `PHYSICS.CRASH_SPEED_THRESHOLD` et remplacement de `crashedOn` par `attachedTo || landedOn` pour l’affichage.
 
 ////////  PROCHAINES ETAPES ENVISAGEABLES ///////
 

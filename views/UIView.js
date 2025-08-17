@@ -289,8 +289,9 @@ class UIView {
         // Afficher la raison du crash si disponible (déjà dans _renderFlightStatus, mais on le spécialise ici)
         let reason = '';
         if (rocketModel && rocketModel.isDestroyed) {
-            const crashedOn = rocketModel.crashedOn ? ` sur ${rocketModel.crashedOn}` : '';
-            reason = `Crashé${crashedOn}`;
+            const bodyName = rocketModel.attachedTo || rocketModel.landedOn;
+            const crashedOnText = bodyName ? ` sur ${bodyName}` : '';
+            reason = `Crashé${crashedOnText}`;
             ctx.font = `20px ${this.fontFamily}`;
             ctx.fillStyle = this.colors.white;
             ctx.fillText(reason, canvas.width / 2, canvas.height / 2 + 20);
@@ -404,7 +405,7 @@ class UIView {
 
         // Couleur basée sur la vitesse *absolue* (pas le ratio affiché)
         let barColor;
-        const speedPercentage = (Math.abs(speed) / ROCKET.CRASH_SPEED_THRESHOLD) * 100; // Comparer à un seuil significatif
+        const speedPercentage = (Math.abs(speed) / PHYSICS.CRASH_SPEED_THRESHOLD) * 100; // Comparer à un seuil significatif
 
         if (speedPercentage < 30) { // Vitesse très sûre
             barColor = this.colors.green;
@@ -439,7 +440,8 @@ class UIView {
             ctx.fillText('Utilisez les propulseurs pour décoller', canvas.width / 2, 60);
 
         } else if (rocketModel.isDestroyed) {
-            const crashedOn = rocketModel.crashedOn ? ` sur ${rocketModel.crashedOn}` : '';
+            const bodyName = rocketModel.attachedTo || rocketModel.landedOn;
+            const crashedOn = bodyName ? ` sur ${bodyName}` : '';
             // Message principal
             ctx.font = `24px ${this.fontFamily}`;
             ctx.fillStyle = this.colors.danger;

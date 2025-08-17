@@ -1,6 +1,17 @@
 // Point d'entrée principal de l'application de simulation de fusée.
 // Ce fichier initialise tous les composants majeurs et démarre la boucle de jeu.
 
+// Réduction du bruit de logs en production (DEBUG=false): désactiver console.debug/log
+if (typeof window !== 'undefined' && window.DEBUG === false) {
+    if (!console._debugPatched) {
+        console._debugPatched = true;
+        console._origLog = console.log;
+        console._origDebug = console.debug;
+        console.debug = function() {};
+        console.log = function() {};
+    }
+}
+
 /**
  * @type {GameController | null}
  * Instance globale du contrôleur principal du jeu.

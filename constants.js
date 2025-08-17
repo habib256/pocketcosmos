@@ -2,6 +2,11 @@
  * Fichier de constantes centralisées pour la simulation de fusée
  */
 
+// Drapeau global de debug (désactive les logs verbeux si false)
+if (typeof window !== 'undefined' && typeof window.DEBUG === 'undefined') {
+    window.DEBUG = false;
+}
+
 // Constantes physiques
 const PHYSICS = {
     // Gravité
