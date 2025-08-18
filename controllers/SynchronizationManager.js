@@ -215,7 +215,13 @@ class SynchronizationManager {
 
                 // Mettre à jour la position ET l'angle du corps physique des débris
                 this.Body.setPosition(rocketBody, rocketModel.position);
-                this.Body.setAngle(rocketBody, rocketModel.angle);
+                // Aligner l'angle perpendiculairement à la surface du corps
+                const angleToBodyForDebris = Math.atan2(
+                    rocketBody.position.y - attachedToModel.position.y,
+                    rocketBody.position.x - attachedToModel.position.x
+                );
+                const correctDebrisAngle = angleToBodyForDebris + Math.PI / 2;
+                this.Body.setAngle(rocketBody, correctDebrisAngle);
 
                 // Les débris attachés devraient aussi suivre la vélocité du parent
                 this.Body.setVelocity(rocketBody, parentVelocity);
@@ -227,12 +233,18 @@ class SynchronizationManager {
                  rocketModel.velocity.x = parentVelocity.x;
                  rocketModel.velocity.y = parentVelocity.y;
             } else if (attachedToModel) {
-                 // Attaché à un corps statique: juste s'assurer que la physique ne bouge pas
+                 // Attaché à un corps statique: s'assurer que la physique ne bouge pas
                  this.Body.setVelocity(rocketBody, { x: 0, y: 0 });
                  this.Body.setAngularVelocity(rocketBody, 0);
                  // S'assurer que la position physique correspond au modèle (qui ne devrait pas changer)
                  this.Body.setPosition(rocketBody, rocketModel.position);
-                 this.Body.setAngle(rocketBody, rocketModel.angle);
+                 // Aligner l'angle perpendiculairement à la surface
+                 const angleToBodyStaticDebris = Math.atan2(
+                     rocketBody.position.y - attachedToModel.position.y,
+                     rocketBody.position.x - attachedToModel.position.x
+                 );
+                 const correctStaticDebrisAngle = angleToBodyStaticDebris + Math.PI / 2;
+                 this.Body.setAngle(rocketBody, correctStaticDebrisAngle);
             }
         } // fin if(rocketModel.isDestroyed)
     }

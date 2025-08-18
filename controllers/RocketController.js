@@ -82,6 +82,12 @@ class RocketController {
 
     handleThrustForwardStart() {
         if (!this.eventBus || !this.rocketModel) return;
+        // Si la fusée est détruite (écran rouge crashé), utiliser le même bouton (boost)
+        // pour relancer immédiatement au lieu d'activer les propulseurs.
+        if (this.rocketModel.isDestroyed) {
+            this.eventBus.emit(EVENTS.ROCKET.RESET);
+            return;
+        }
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
         this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
         if (this.particleSystemModel) {

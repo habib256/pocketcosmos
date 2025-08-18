@@ -9,6 +9,7 @@ class TrainingOrchestrator {
         this.eventBus = eventBus;
         this.isTraining = false;
         this.isPaused = false;
+        this._unsubs = [];
         
         // Configuration par défaut
         this.config = {
@@ -69,12 +70,22 @@ class TrainingOrchestrator {
     }
     
     setupEventListeners() {
+        // Helper d'abonnement avec tracking/cleanup
+        const trackSub = (eventType, handler) => {
+            const unsub = this.eventBus.subscribe(eventType, handler);
+            if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+                window.controllerContainer.track(unsub);
+            } else {
+                this._unsubs.push(unsub);
+            }
+        };
+
         // Écouter les commandes d'entraînement
-        this.eventBus.subscribe(window.EVENTS.AI.START_TRAINING, (data) => this.startTraining(data));
-        this.eventBus.subscribe(window.EVENTS.AI.STOP_TRAINING, () => this.stopTraining());
-        this.eventBus.subscribe(window.EVENTS.AI.PAUSE_TRAINING, () => this.pauseTraining());
-        this.eventBus.subscribe(window.EVENTS.AI.RESUME_TRAINING, () => this.resumeTraining());
-        this.eventBus.subscribe(window.EVENTS.AI.UPDATE_CONFIG, (config) => this.updateConfig(config));
+        trackSub(window.EVENTS.AI.START_TRAINING, (data) => this.startTraining(data));
+        trackSub(window.EVENTS.AI.STOP_TRAINING, () => this.stopTraining());
+        trackSub(window.EVENTS.AI.PAUSE_TRAINING, () => this.pauseTraining());
+        trackSub(window.EVENTS.AI.RESUME_TRAINING, () => this.resumeTraining());
+        trackSub(window.EVENTS.AI.UPDATE_CONFIG, (config) => this.updateConfig(config));
     }
     
     /**
@@ -675,6 +686,30 @@ class TrainingOrchestrator {
         this.isPaused = false;
         console.log('[TrainingOrchestrator] Entraînement arrêté');
         this.eventBus.emit(window.EVENTS.AI.TRAINING_STOPPED, this.metrics);
+    }
+
+    /**
+     * Nettoie proprement les abonnements et références pour éviter les fuites
+     */
+    cleanup() {
+        try {
+            if (this.isTraining) {
+                this.stopTraining();
+            }
+        } catch (e) {}
+
+        // Désabonner les listeners enregistrés localement si ControllerContainer indisponible
+        if (this._unsubs && this._unsubs.length > 0) {
+            for (const unsub of this._unsubs) {
+                try { typeof unsub === 'function' && unsub(); } catch (e) {}
+            }
+            this._unsubs = [];
+        }
+
+        // Libérer les références lourdes
+        this.trainingEnv = null;
+        this.evaluationEnv = null;
+        this.rocketAI = null;
     }
     
     /**

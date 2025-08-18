@@ -137,7 +137,7 @@ class InputController {
                 8: 'centerCamera',      // Ex: Xbox View/Back / PS Select
                 9: 'pauseGame',         // Ex: Xbox Menu / PS Start
                 10: 'resetRocket',      // Ex: Bouton Stick Gauche Press
-                // 11: // Bouton Stick Droit Press (non mappé)
+                11: 'centerCamera',     // Bouton Stick Droit Press (R3) pour centrer la caméra
                 // D-pad (peut être axes ou boutons selon le gamepad)
                 // 12: 'thrustForward', // D-pad Up
                 // 13: 'thrustBackward',// D-pad Down
