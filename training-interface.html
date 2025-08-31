@@ -473,7 +473,7 @@
                     { name: 'Matter.js', check: () => typeof Matter !== 'undefined' },
                     { name: 'Matter Attractors', check: () => typeof MatterAttractors !== 'undefined' },
                     { name: 'EVENTS', check: () => typeof window.EVENTS !== 'undefined' },
-                    { name: 'ROCKET constants', check: () => typeof ROCKET !== 'undefined' && ROCKET.FUEL_MAX !== 'undefined' },
+                    { name: 'ROCKET constants', check: () => typeof ROCKET !== 'undefined' && typeof ROCKET.FUEL_MAX !== 'undefined' },
                     { name: 'PHYSICS constants', check: () => typeof PHYSICS !== 'undefined' },
                     { name: 'EventBus', check: () => typeof EventBus !== 'undefined' },
                     { name: 'TrainingOrchestrator', check: () => typeof TrainingOrchestrator !== 'undefined' },

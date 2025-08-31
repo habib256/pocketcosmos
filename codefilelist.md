@@ -20,10 +20,11 @@ Ce document est votre guide central pour comprendre, naviguer et contribuer effi
 L'**`EventBus`** est le cœur de la communication découplée du projet. Il permet aux différents modules (jeu, UI, IA) de communiquer sans avoir de dépendances directes les uns envers les autres.
 
 - **Implémentation** : `EventBus.js`.
-- **Accès Global** : L'instance est accessible via `window.EVENTS`.
+- **Accès Global** : Les clés d'événements sont exposées via `window.EVENTS`. L'instance du bus est `eventBus` (aussi accessible via `window.eventBus`).
 - **Utilisation** :
-  - **Émettre un événement** : `window.EVENTS.publish('EVENT_NAME', data);`
-  - **S'abonner à un événement** : `window.EVENTS.subscribe('EVENT_NAME', (data) => { /* ... */ });`
+  - **Émettre** : `eventBus.emit(window.EVENTS.ROCKET.RESET, data)`
+  - **S'abonner** : `const unsub = eventBus.subscribe(window.EVENTS.ROCKET.RESET, (data) => { /* ... */ });`
+  - **Wildcard** : `eventBus.subscribe('PHYSICS.*', (data) => { /* ... */ });`
 - **Référence des Événements** : Tous les noms d'événements sont centralisés dans `EventTypes.js`.
 
 ## 3. Workflows Clés
@@ -41,8 +42,8 @@ Comprendre ces flux de données est essentiel pour toute modification.
 
 ### b. De l'Entrée Utilisateur à la Poussée de la Fusée
 1. **`InputController.js`** : Détecte une pression de touche (ex: Flèche Haut).
-2. **Émission d'événement** : Publie un événement `KEY_DOWN` sur l'EventBus.
-3. **`RocketController.js`** : S'abonne à `KEY_DOWN`, et si la touche correspond, il met à jour la puissance du propulseur dans `RocketModel.js`.
+2. **Émission d'événements sémantiques** : Émet `ROCKET_THRUST_*`, `INPUT_ROTATE_COMMAND`, `RENDER_*` sur l'EventBus.
+3. **`RocketController.js`** : S'abonne à ces événements et met à jour les puissances/rotations dans `RocketModel.js`.
 4. **`ThrusterPhysics.js`** : Dans la boucle de jeu, il lit la puissance du propulseur depuis `RocketModel` et applique la force correspondante au corps physique de la fusée dans le moteur Matter.js.
 
 ### c. Processus de Rendu
@@ -147,22 +148,23 @@ Voici une sélection des événements les plus importants circulant sur l'`Event
 
 | Événement                    | Description                                             | Publié par (typiquement)         | Consommé par (typiquement)          |
 |------------------------------|---------------------------------------------------------|-----------------------------------|--------------------------------------|
-| `KEY_DOWN` / `KEY_UP`        | Une touche du clavier est pressée/relâchée.             | `InputController`                 | `RocketController`, `CameraController` |
+| `INPUT_ROTATE_COMMAND` / `INPUT_ZOOM_COMMAND` | Entrées continues de rotation/zoom.              | `InputController`                 | `RocketController`, `CameraController` |
 | `RENDER_TOGGLE_VECTORS`      | Demande d'affichage/masquage des vecteurs.              | `InputController` (touche V)      | `RenderingController`                |
 | `ROCKET_LANDED` / `ROCKET_CRASHED` | La fusée a atterri ou s'est écrasée.             | `CollisionHandler`                | `GameController`, `AudioManager`     |
 | `ROCKET_LIFTOFF`             | La fusée a décollé.                                     | `SynchronizationManager`          | `AudioManager`                       |
 | `AI_START_TRAINING`          | Démarre une session d'entraînement de l'IA.             | `training-interface.html` (UI)    | `TrainingOrchestrator`               |
 | `AI_EPISODE_ENDED`           | Un épisode d'entraînement est terminé.                  | `TrainingOrchestrator`            | `TrainingVisualizer`, UI             |
-| `AI_CONTROL_ACTION`          | L'IA envoie une commande de contrôle à la fusée.        | `RocketAI`                        | `RocketController`                   |
+| `AI_CONTROL_ACTION`          | Trace/diagnostic d'une action IA.                       | `RocketAI`                        | UI / Logs                            |
+| `ROCKET_SET_THRUSTER_POWER`  | Fixe la puissance d'un propulseur (idempotent).         | `InputController`, `RocketAI`     | `RocketController`                   |
 
 ## 8. Notes Techniques et Conventions
 
 ### Environnement d'Exécution
 - **Pas de Modules ES6** : Le projet utilise des scripts globaux chargés via des balises `<script>` dans les fichiers HTML. L'ordre de chargement est crucial. **N'utilisez pas `import`/`export`**.
-- **Accès Global** : Les instances clés comme l'EventBus (`window.EVENTS`) sont accessibles globalement.
+- **Accès Global** : Les clés d'événements via `window.EVENTS`. Le bus d'événements via `window.eventBus`.
 
 ### Moteur Physique (Matter.js)
-- **Version** : Le plugin `matter-attractors@0.1.4` est compatible avec `matter-js@0.19.0`; cette combinaison est testée et stable.
+- **Version** : Le plugin `matter-attractors@0.1.4` et `matter-attractors@0.1.6` sont compatibles avec `matter-js@0.19.0`; cette combinaison est testée et stable.
 - **Gravité** : La force de gravité est appliquée directement par le plugin `matter-attractors` durant la mise à jour du moteur physique.
 - **Calculs manuels** : Les fonctions comme `calculateGravityAccelerationAt` sont utilisées pour la visualisation (ex: `VectorsView`) ou le debug, **pas** pour appliquer la force dans la simulation.
 - **Collisions** : Gérées par Matter.js, filtrées par catégories (`PHYSICS.COLLISION_CATEGORIES`) pour que la fusée n'interagisse qu'avec les corps célestes.

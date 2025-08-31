@@ -905,14 +905,47 @@ class RocketAI {
         }
     }
     
-    // Émettre une commande de contrôle (comme si c'était une entrée utilisateur)
+    // Émettre une commande de contrôle mappée vers des événements sémantiques
     emitControl(action) {
-        if (!this.isActive) return;
-        
-        // Émettre l'action comme si elle venait du contrôleur d'entrée
-        this.eventBus.emit(window.EVENTS.INPUT.KEYDOWN, { action, key: 'AI' });
-        
-        // Émettre aussi un événement spécifique à l'IA pour affichage/débogage
+        if (!this.isActive || !this.eventBus || !window.EVENTS) return;
+
+        // Par défaut, on remet à zéro les propulseurs continus non ciblés (sécurité)
+        const resetContinuousThrusters = () => {
+            this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'main', power: 0 });
+            this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'rear', power: 0 });
+            this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
+            this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
+        };
+
+        switch (action) {
+            case 'thrustForward':
+                // Utiliser SET_THRUSTER_POWER pour être idempotent et éviter les START/STOP multiples
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'main', power: ROCKET.THRUSTER_POWER.MAIN });
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'rear', power: 0 });
+                break;
+            case 'thrustBackward':
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'rear', power: ROCKET.THRUSTER_POWER.REAR });
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'main', power: 0 });
+                break;
+            case 'rotateLeft': {
+                const power = ROCKET.THRUSTER_POWER.LEFT;
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power });
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power: 0 });
+                break;
+            }
+            case 'rotateRight': {
+                const power = ROCKET.THRUSTER_POWER.RIGHT;
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'right', power });
+                this.eventBus.emit(window.EVENTS.ROCKET.SET_THRUSTER_POWER, { thrusterId: 'left', power: 0 });
+                break;
+            }
+            case 'noAction':
+            default:
+                resetContinuousThrusters();
+                break;
+        }
+
+        // Événement d'audit/débogage
         this.eventBus.emit(window.EVENTS.AI.CONTROL_ACTION, { action });
     }
     

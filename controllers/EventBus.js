@@ -181,7 +181,7 @@ class EventBus {
         // Warning si aucun listener (sauf pour les événements internes connus)
         const silentEvents = [
             'rocket:internalStateChanged',
-            'ai:training:progress',
+            'AI_TRAINING_PROGRESS',
             'physics:debug:acceleration'
         ];
         
