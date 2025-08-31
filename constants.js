@@ -75,7 +75,7 @@ const RENDER = {
     CAMERA_SMOOTHING: 2,      // Facteur de lissage du mouvement de caméra
     ZOOM_SMOOTHING: 0.1,        // Facteur de lissage du zoom
     ZOOM_SPEED: 0.2,            // Vitesse de zoom avec la molette 
-    MIN_ZOOM: 0.005,              // Zoom minimum
+    MIN_ZOOM: 0.0025,              // Zoom minimum
     MAX_ZOOM: 6.0,              // Zoom maximum 
     // Facteur de zoom pour les boutons (LT/RT gamepad)
     CAMERA_ZOOM_BUTTON_FACTOR: 1.1,
@@ -199,6 +199,42 @@ const CELESTIAL_BODY = {
     },
     // --- Fin Paramètres Mars ---
 
+    // --- Paramètres spécifiques à Jupiter ---
+    JUPITER: {
+      MASS: 1.0e12,            // Masse approximative de Jupiter (simulation)
+      RADIUS: 1000,            // Rayon approximatif de Jupiter (simulation)
+      ORBIT_DISTANCE: 45000,   // Distance orbitale Jupiter-Soleil (simulation)
+      ORBIT_SPEED: 0.0000      // Vitesse orbitale (simulation)
+    },
+    // --- Fin Paramètres Jupiter ---
+
+    // --- Paramètres spécifiques à Saturne ---
+    SATURN: {
+      MASS: 8.0e11,            // Masse approximative de Saturne (simulation)
+      RADIUS: 900,             // Rayon approximatif de Saturne (simulation)
+      ORBIT_DISTANCE: 60000,   // Distance orbitale Saturne-Soleil (simulation)
+      ORBIT_SPEED: 0.0000      // Vitesse orbitale (simulation)
+    },
+    // --- Fin Paramètres Saturne ---
+
+    // --- Paramètres spécifiques à Uranus ---
+    URANUS: {
+      MASS: 5.0e11,            // Masse approximative d'Uranus (simulation)
+      RADIUS: 800,             // Rayon approximatif d'Uranus (simulation)
+      ORBIT_DISTANCE: 75000,   // Distance orbitale Uranus-Soleil (simulation)
+      ORBIT_SPEED: 0.0000      // Vitesse orbitale (simulation)
+    },
+    // --- Fin Paramètres Uranus ---
+
+    // --- Paramètres spécifiques à Neptune ---
+    NEPTUNE: {
+      MASS: 5.5e11,            // Masse approximative de Neptune (simulation)
+      RADIUS: 820,             // Rayon approximatif de Neptune (simulation)
+      ORBIT_DISTANCE: 90000,   // Distance orbitale Neptune-Soleil (simulation)
+      ORBIT_SPEED: 0.0000      // Vitesse orbitale (simulation)
+    },
+    // --- Fin Paramètres Neptune ---
+
     // --- Lunes de Mars ---
     PHOBOS: {
         MASS: 8e8,           // Masse très faible (simulation)
@@ -213,6 +249,48 @@ const CELESTIAL_BODY = {
         ORBIT_SPEED: 0.4,    // Vitesse orbitale plus lente (simulation)
     },
     // --- Fin Lunes de Mars ---
+
+    // --- Lunes de Jupiter ---
+    IO: {
+        MASS: 5e9,
+        RADIUS: 120,
+        ORBIT_DISTANCE: 2200,
+        ORBIT_SPEED: 0.03
+    },
+    EUROPE: {
+        MASS: 4e9,
+        RADIUS: 110,
+        ORBIT_DISTANCE: 2600,
+        ORBIT_SPEED: 0.024
+    },
+    GANYMEDE: {
+        MASS: 6e9,
+        RADIUS: 160,
+        ORBIT_DISTANCE: 3200,
+        ORBIT_SPEED: 0.019
+    },
+    CALLISTO: {
+        MASS: 5e9,
+        RADIUS: 150,
+        ORBIT_DISTANCE: 3800,
+        ORBIT_SPEED: 0.015
+    },
+    // --- Fin Lunes de Jupiter ---
+
+    // --- Lunes de Saturne ---
+    TITAN: {
+        MASS: 6e9,
+        RADIUS: 150,
+        ORBIT_DISTANCE: 3200,
+        ORBIT_SPEED: 0.02
+    },
+    ENCELADE: {
+        MASS: 1e9,
+        RADIUS: 70,
+        ORBIT_DISTANCE: 2400,
+        ORBIT_SPEED: 0.03
+    },
+    // --- Fin Lunes de Saturne ---
 
     // Propriétés de la lune (Lune terrestre)
     MOON: {

@@ -146,11 +146,9 @@ class CelestialBodyView {
      * @param {Camera} camera - L'objet caméra.
      */
     drawName(ctx, body, camera) {
-        // Ne pas afficher le nom pour Phobos et Deimos
-        if (body.name === 'Phobos' || body.name === 'Deimos') {
+        if (window.UI_STATE && window.UI_STATE.hideBodyNames) {
             return;
         }
-
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const fontSize = Math.max(12, 24 * camera.zoom);
         

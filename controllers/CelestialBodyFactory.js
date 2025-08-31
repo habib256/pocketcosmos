@@ -145,6 +145,151 @@ class CelestialBodyFactory {
             CELESTIAL_BODY.DEIMOS.ORBIT_SPEED
         );
 
+        // 9. Jupiter (Orbite autour du Soleil)
+        this._createAndAddCelestialBody(
+            celestialBodies,
+            'Jupiter',
+            CELESTIAL_BODY.JUPITER.MASS,
+            CELESTIAL_BODY.JUPITER.RADIUS,
+            null,
+            '#C68C53',
+            sun,
+            CELESTIAL_BODY.JUPITER.ORBIT_DISTANCE,
+            Math.random() * Math.PI * 2,
+            CELESTIAL_BODY.JUPITER.ORBIT_SPEED
+        );
+        const jupiter = celestialBodies.find(body => body.name === 'Jupiter');
+
+        // 10. Saturne (Orbite autour du Soleil)
+        this._createAndAddCelestialBody(
+            celestialBodies,
+            'Saturne',
+            CELESTIAL_BODY.SATURN.MASS,
+            CELESTIAL_BODY.SATURN.RADIUS,
+            null,
+            '#C2B280',
+            sun,
+            CELESTIAL_BODY.SATURN.ORBIT_DISTANCE,
+            Math.random() * Math.PI * 2,
+            CELESTIAL_BODY.SATURN.ORBIT_SPEED
+        );
+        const saturn = celestialBodies.find(body => body.name === 'Saturne');
+        if (saturn) {
+            saturn.hasRings = true;
+        }
+
+        // Lunes de Jupiter (Io, Europe, Ganymède, Callisto)
+        if (jupiter) {
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Io',
+                CELESTIAL_BODY.IO.MASS,
+                CELESTIAL_BODY.IO.RADIUS,
+                null,
+                '#D4AA00',
+                jupiter,
+                CELESTIAL_BODY.IO.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.IO.ORBIT_SPEED
+            );
+
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Europe',
+                CELESTIAL_BODY.EUROPE.MASS,
+                CELESTIAL_BODY.EUROPE.RADIUS,
+                null,
+                '#B0C4DE',
+                jupiter,
+                CELESTIAL_BODY.EUROPE.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.EUROPE.ORBIT_SPEED
+            );
+
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Ganymède',
+                CELESTIAL_BODY.GANYMEDE.MASS,
+                CELESTIAL_BODY.GANYMEDE.RADIUS,
+                null,
+                '#AAAAAA',
+                jupiter,
+                CELESTIAL_BODY.GANYMEDE.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.GANYMEDE.ORBIT_SPEED
+            );
+
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Callisto',
+                CELESTIAL_BODY.CALLISTO.MASS,
+                CELESTIAL_BODY.CALLISTO.RADIUS,
+                null,
+                '#888888',
+                jupiter,
+                CELESTIAL_BODY.CALLISTO.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.CALLISTO.ORBIT_SPEED
+            );
+        }
+
+        // Lunes de Saturne (Titan, Encelade)
+        if (saturn) {
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Titan',
+                CELESTIAL_BODY.TITAN.MASS,
+                CELESTIAL_BODY.TITAN.RADIUS,
+                null,
+                '#D2B48C',
+                saturn,
+                CELESTIAL_BODY.TITAN.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.TITAN.ORBIT_SPEED
+            );
+
+            this._createAndAddCelestialBody(
+                celestialBodies,
+                'Encelade',
+                CELESTIAL_BODY.ENCELADE.MASS,
+                CELESTIAL_BODY.ENCELADE.RADIUS,
+                null,
+                '#E0FFFF',
+                saturn,
+                CELESTIAL_BODY.ENCELADE.ORBIT_DISTANCE,
+                Math.random() * Math.PI * 2,
+                CELESTIAL_BODY.ENCELADE.ORBIT_SPEED
+            );
+        }
+
+        // 11. Uranus (Orbite autour du Soleil)
+        this._createAndAddCelestialBody(
+            celestialBodies,
+            'Uranus',
+            CELESTIAL_BODY.URANUS.MASS,
+            CELESTIAL_BODY.URANUS.RADIUS,
+            null,
+            '#7FB3D5',
+            sun,
+            CELESTIAL_BODY.URANUS.ORBIT_DISTANCE,
+            Math.random() * Math.PI * 2,
+            CELESTIAL_BODY.URANUS.ORBIT_SPEED
+        );
+
+        // 12. Neptune (Orbite autour du Soleil)
+        this._createAndAddCelestialBody(
+            celestialBodies,
+            'Neptune',
+            CELESTIAL_BODY.NEPTUNE.MASS,
+            CELESTIAL_BODY.NEPTUNE.RADIUS,
+            null,
+            '#4169E1',
+            sun,
+            CELESTIAL_BODY.NEPTUNE.ORBIT_DISTANCE,
+            Math.random() * Math.PI * 2,
+            CELESTIAL_BODY.NEPTUNE.ORBIT_SPEED
+        );
+
         return celestialBodies;
     }
 

@@ -113,6 +113,7 @@ Comprendre ces flux de données est essentiel pour toute modification.
 #### Entités du Jeu
 - **`RocketController.js`**: Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée ou de l'IA.
 - **`CelestialBodyFactory.js`**: Crée les modèles et corps physiques pour les planètes et les lunes.
+ - **`CelestialBodyFactory.js`**: Crée les modèles et corps physiques pour les planètes et les lunes, y compris Jupiter, Saturne, Uranus et Neptune.
 - **`BodyFactory.js`**: Crée les corps physiques Matter.js plus génériques (comme la fusée).
 - **`MissionManager.js`**: Gère la logique des missions.
 - **`RocketCargo.js`**: Gère le cargo de la fusée.
