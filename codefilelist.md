@@ -88,11 +88,11 @@ Comprendre ces flux de données est essentiel pour toute modification.
 - **`ParticleModel.js`**: Propriétés d'une particule individuelle.
 
 ### Vues (`views/`) - Le Rendu Visuel
-*Lisents les données des modèles et les dessinent sur le canvas. Ne modifient jamais l'état.*
+*Lisent les données des modèles et les dessinent sur le canvas. Ne modifient jamais l'état.*
 - **`RocketView.js`**: Affiche la fusée, ses propulseurs et son état (crashé ou non).
 - **`UniverseView.js`**: Affiche le fond étoilé et coordonne le dessin des corps célestes.
 - **`CelestialBodyView.js`**: Affiche un corps céleste individuel.
-- **`VectorsView.js`**: Affiche les vecteurs physiques (poussée, vitesse, gravité). Gère aussi l'affichage du champ de gravité et des équipottentielles.
+- **`VectorsView.js`**: Affiche les vecteurs physiques (poussée, vitesse, gravité). Gère aussi l'affichage du champ de gravité et des équipotentielles.
 - **`TraceView.js`**: Affiche la trajectoire de la fusée.
 - **`UIView.js`**: Affiche l'interface utilisateur (infos, missions, messages).
 - **`ParticleView.js`**: Affiche les particules.
@@ -113,7 +113,6 @@ Comprendre ces flux de données est essentiel pour toute modification.
 #### Entités du Jeu
 - **`RocketController.js`**: Gère la logique spécifique à la fusée (propulsion, rotation) en réponse aux événements d'entrée ou de l'IA.
 - **`CelestialBodyFactory.js`**: Crée les modèles et corps physiques pour les planètes et les lunes.
- - **`CelestialBodyFactory.js`**: Crée les modèles et corps physiques pour les planètes et les lunes, y compris Jupiter, Saturne, Uranus et Neptune.
 - **`BodyFactory.js`**: Crée les corps physiques Matter.js plus génériques (comme la fusée).
 - **`MissionManager.js`**: Gère la logique des missions.
 - **`RocketCargo.js`**: Gère le cargo de la fusée.
@@ -163,7 +162,7 @@ Voici une sélection des événements les plus importants circulant sur l'`Event
 - **Accès Global** : Les instances clés comme l'EventBus (`window.EVENTS`) sont accessibles globalement.
 
 ### Moteur Physique (Matter.js)
-- **Version** : le plugin matter-attractors@0.1.4 FONCTIONNE PARFAITEMENT avec matter-js@0.19.0. CE N'EST PAS UN PROBLEME, TOUT FONCTIONNE BIEN.
+- **Version** : Le plugin `matter-attractors@0.1.4` est compatible avec `matter-js@0.19.0`; cette combinaison est testée et stable.
 - **Gravité** : La force de gravité est appliquée directement par le plugin `matter-attractors` durant la mise à jour du moteur physique.
 - **Calculs manuels** : Les fonctions comme `calculateGravityAccelerationAt` sont utilisées pour la visualisation (ex: `VectorsView`) ou le debug, **pas** pour appliquer la force dans la simulation.
 - **Collisions** : Gérées par Matter.js, filtrées par catégories (`PHYSICS.COLLISION_CATEGORIES`) pour que la fusée n'interagisse qu'avec les corps célestes.
