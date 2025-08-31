@@ -3,8 +3,8 @@
  */
 
 // Drapeau global de debug (désactive les logs verbeux si false)
-if (typeof window !== 'undefined' && typeof window.DEBUG === 'undefined') {
-    window.DEBUG = false;
+if (typeof globalThis !== 'undefined' && typeof globalThis.DEBUG === 'undefined') {
+    globalThis.DEBUG = false;
 }
 
 // Constantes physiques

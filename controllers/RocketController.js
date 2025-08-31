@@ -18,7 +18,9 @@ class RocketController {
         this.cameraModel = cameraModel; // Stocker cameraModel
 
         // Constante pour le nouvel événement que RocketController émettra
-        this.ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged';
+        this.ROCKET_INTERNAL_STATE_CHANGED_EVENT = (window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.INTERNAL_STATE_CHANGED)
+            ? window.EVENTS.ROCKET.INTERNAL_STATE_CHANGED
+            : 'rocket:internalStateChanged';
     }
 
     update(deltaTime) {

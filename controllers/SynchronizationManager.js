@@ -22,8 +22,8 @@ class SynchronizationManager {
             }
         });
 
-        // Synchronisation réactive Physics → Model après chaque update
-        this.Events.on(this.world, 'afterUpdate', () => {
+        // Synchronisation réactive Physics → Model après chaque update (écouter l'engine, pas le world)
+        this.Events.on(this.engine, 'afterUpdate', () => {
             this.syncModelWithPhysics(this.physicsController.rocketModel);
         });
 

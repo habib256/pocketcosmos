@@ -369,15 +369,15 @@ class PhysicsController {
 
     // Nouvelle méthode pour ajuster le multiplicateur de poussée global
     adjustGlobalThrustMultiplier(factor) {
-        const currentMultiplier = PHYSICS.THRUST_MULTIPLIER;
+        const currentMultiplier = this.PHYSICS.THRUST_MULTIPLIER;
         let newMultiplier = currentMultiplier * factor;
         
         // Assurer que this.PHYSICS est la référence globale ou que la modification est propagée
         const minMultiplier = 0.1;
         const maxMultiplier = 1000;
         
-        PHYSICS.THRUST_MULTIPLIER = Math.max(minMultiplier, Math.min(maxMultiplier, newMultiplier));
-        console.log(`[PhysicsController] THRUST_MULTIPLIER ajusté à: ${PHYSICS.THRUST_MULTIPLIER}`);
+        this.PHYSICS.THRUST_MULTIPLIER = Math.max(minMultiplier, Math.min(maxMultiplier, newMultiplier));
+        console.log(`[PhysicsController] THRUST_MULTIPLIER ajusté à: ${this.PHYSICS.THRUST_MULTIPLIER}`);
 
         // Réinitialiser le cache ou l'état pertinent dans ThrusterPhysics si nécessaire
         if (this.thrusterPhysics && typeof this.thrusterPhysics.resetThrustCalculationCache === 'function') {

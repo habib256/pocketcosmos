@@ -132,7 +132,9 @@ class GameController {
         }));
 
         // NOUVEL ÉVÉNEMENT pour mettre à jour l'état global lorsque RocketController modifie la fusée
-        const ROCKET_INTERNAL_STATE_CHANGED_EVENT = 'rocket:internalStateChanged'; // Doit correspondre à celui dans RocketController
+        const ROCKET_INTERNAL_STATE_CHANGED_EVENT = (window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.INTERNAL_STATE_CHANGED)
+            ? window.EVENTS.ROCKET.INTERNAL_STATE_CHANGED
+            : 'rocket:internalStateChanged';
         window.controllerContainer.track(this.eventBus.subscribe(ROCKET_INTERNAL_STATE_CHANGED_EVENT, () => this.emitUpdatedStates()));
 
         // Événements sémantiques pour le jeu et l'UI
@@ -168,9 +170,7 @@ class GameController {
         // S'abonner à l'événement de redimensionnement du canvas
         const canvasResizedEventName = (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED)
             ? window.EVENTS.SYSTEM.CANVAS_RESIZED 
-            : (window.EVENTS && window.EVENTS.RENDER && window.EVENTS.RENDER.CANVAS_RESIZED)
-              ? window.EVENTS.RENDER.CANVAS_RESIZED
-              : null;
+            : null;
 
         if (canvasResizedEventName) {
             // Déplacé vers CameraController
@@ -521,7 +521,10 @@ class GameController {
     gameLoop(timestamp) {
         // console.log('[GameController.gameLoop] Entrée dans gameLoop, timestamp:', timestamp); // SUPPRESSION DE LOG
 
-        const deltaTime = (timestamp - this.lastTimestamp) / 1000; // deltaTime en secondes
+        let deltaTime = (timestamp - this.lastTimestamp) / 1000; // deltaTime en secondes
+        // Clamp du deltaTime pour éviter les spikes (ex: retour d'onglet)
+        if (deltaTime > 0.05) deltaTime = 0.05;
+        if (deltaTime < 0) deltaTime = 0;
         this.lastTimestamp = timestamp;
         this.elapsedTime += deltaTime;
 
