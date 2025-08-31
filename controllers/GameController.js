@@ -880,7 +880,7 @@ class GameController {
                         let diff = outwardAngle - s.angle;
                         diff = (diff + Math.PI) % (Math.PI * 2) - Math.PI;
                         // Convertir tolérance de distance en tolérance angulaire approximative
-                        const radius = host.radius + (typeof STATIONS !== 'undefined' ? STATIONS.SURFACE_OFFSET : 4);
+                        const radius = host.radius - (typeof STATIONS !== 'undefined' && STATIONS.SURFACE_INSET !== undefined ? STATIONS.SURFACE_INSET : -(typeof STATIONS !== 'undefined' ? STATIONS.SURFACE_OFFSET : 4));
                         const baseTol = (typeof STATIONS !== 'undefined' ? STATIONS.DOCKING_DISTANCE_TOLERANCE : 40);
                         const angularTolerance = Math.min(Math.PI / 12, baseTol / Math.max(1, radius));
                         return Math.abs(diff) <= angularTolerance;

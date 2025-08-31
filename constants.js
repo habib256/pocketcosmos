@@ -348,11 +348,13 @@ const PARTICLES = {
 // Constantes des stations (ravitaillement, etc.)
 const STATIONS = {
     // Tolerance de distance (en mètres du monde) pour considérer l'accostage réussi
-    DOCKING_DISTANCE_TOLERANCE: 40,
+    DOCKING_DISTANCE_TOLERANCE: 80,
     // Couleur de rendu par défaut
     COLOR: '#00FFCC',
     // Taille de l'icône à l'écran (en pixels, sera multipliée par zoom)
-    ICON_SIZE: 8,
-    // Décalage radial optionnel au-dessus de la surface pour dessiner l'icône
-    SURFACE_OFFSET: 4
+    ICON_SIZE: 240,
+    // Décalage radial historique au-dessus de la surface (non utilisé, conservé pour compat)
+    SURFACE_OFFSET: 1,
+    // Nouvel inset: dessiner la station légèrement SOUS la surface (rayon - inset)
+    SURFACE_INSET: -60
 };

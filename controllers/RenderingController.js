@@ -212,13 +212,19 @@ class RenderingController {
             for (const st of universeModel.stations) {
                 const host = universeModel.celestialBodies.find(b => b.name === st.hostName);
                 if (!host) continue;
-                const r = host.radius + (STATIONS ? STATIONS.SURFACE_OFFSET : 4);
+                // Positionner la station juste SOUS la surface: rayon - inset (fallback sur +offset si ancien champ)
+                const r = host.radius - (STATIONS && STATIONS.SURFACE_INSET !== undefined ? STATIONS.SURFACE_INSET : -(STATIONS ? STATIONS.SURFACE_OFFSET : 4));
                 const worldX = host.position.x + Math.cos(st.angle) * r;
                 const worldY = host.position.y + Math.sin(st.angle) * r;
                 const screen = this.universeView.worldToScreen(worldX, worldY, camera);
                 if (this.universeView.isPointVisible(screen.x, screen.y, camera)) {
-                    const size = (STATIONS ? STATIONS.ICON_SIZE : 8) * Math.max(0.5, Math.min(2.5, camera.zoom));
-                    this.stationView.drawStation(ctx, screen.x, screen.y, size, st.color || (STATIONS ? STATIONS.COLOR : '#00FFCC'), st.name);
+                    // Taille proportionnelle au zoom; devient minuscule puis invisible quand on dé-zoom fortement
+                    const baseSize = (STATIONS ? STATIONS.ICON_SIZE : 8);
+                    const size = baseSize * camera.zoom;
+                    if (size < 1) { // Trop petit: on ne dessine pas
+                        continue;
+                    }
+                    this.stationView.drawStation(ctx, screen.x, screen.y, size, st.color || (STATIONS ? STATIONS.COLOR : '#00FFCC'), st.name, st.angle);
                 }
             }
         }
