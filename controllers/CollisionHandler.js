@@ -27,45 +27,7 @@ class CollisionHandler {
         /** @type {Object.<string, boolean>} - Stocke le dernier état d'atterrissage connu pour chaque corps céleste (par leur label). */
         this._lastLandedState = {};
 
-        // --- Ajout pour détection mission accomplie ---
-        if (this.physicsController.eventBus && window.EVENTS && window.EVENTS.MISSION && window.EVENTS.MISSION.COMPLETED) {
-            window.controllerContainer.track( // Assurer le suivi pour le nettoyage
-                this.physicsController.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
-                    // Déclencher la célébration Mission Réussie (texte doré + explosion festive)
-                    const gameController = window.gameController; // Accès global, pourrait être amélioré
-                    if (gameController && gameController.particleController && gameController.particleController.createMissionSuccessCelebration && gameController.canvas) {
-                        gameController.particleController.createMissionSuccessCelebration(
-                            gameController.canvas.width,
-                            gameController.canvas.height
-                        );
-                    }
-                    // Déclencher l'affichage du texte dans l'UI
-                    // TODO: Idéalement, UIView s'abonnerait à cet événement ou à un événement UI spécifique.
-                    if (typeof window !== 'undefined') {
-                       window._missionSuccessTextTime = Date.now(); 
-                    }
-                    
-                    // Déclencher un effet d'explosion via l'EventBus interne si disponible
-                    const rocketModel = this.physicsController.rocketModel;
-                    if (rocketModel && this.physicsController.eventBus && window.EVENTS && window.EVENTS.PARTICLES && window.EVENTS.PARTICLES.CREATE_EXPLOSION) {
-                        this.physicsController.eventBus.emit(window.EVENTS.PARTICLES.CREATE_EXPLOSION, {
-                            x: rocketModel.position.x,
-                            y: rocketModel.position.y,
-                            count: 120,
-                            speed: 8,
-                            size: 10,
-                            lifetime: 2.5,
-                            colorStart: '#FFDD00',
-                            colorEnd: '#FF3300'
-                        });
-                    }
-                    
-                    console.log('[CollisionHandler] Mission accomplie détectée, célébration Mission Réussie déclenchée');
-                })
-            );
-        } else {
-            console.warn('[CollisionHandler] eventBus ou EVENTS.MISSION.COMPLETED non trouvé, impossible de s\'abonner.');
-        }
+        // Suppression: la célébration mission est gérée de façon découplée par ParticleController (abonnement à EVENTS.MISSION.COMPLETED)
     }
 
     /**

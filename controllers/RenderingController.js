@@ -213,7 +213,10 @@ class RenderingController {
         
         // Rendre les particules en découplé
         if (this.particleView) {
-            this.particleView.renderParticles(ctx, this.particleSystemState, camera, this.rocketState);
+            // Utiliser le modèle passé (live) si disponible, sinon retomber sur l'état interne
+            const particlesSource = particleSystemModel || this.particleSystemState;
+            const rocketSource = rocketModel || this.rocketState;
+            this.particleView.renderParticles(ctx, particlesSource, camera, rocketSource);
         }
         
         // Utiliser directement rocketModel (l'argument frais de GameController) pour les données de la fusée

@@ -162,6 +162,7 @@ Voici une sélection des événements les plus importants circulant sur l'`Event
 - **Accès Global** : Les instances clés comme l'EventBus (`window.EVENTS`) sont accessibles globalement.
 
 ### Moteur Physique (Matter.js)
+- **Version** : le plugin matter-attractors@0.1.4 FONCTIONNE PARFAITEMENT avec matter-js@0.19.0. CE N'EST PAS UN PROBLEME, TOUT FONCTIONNE BIEN.
 - **Gravité** : La force de gravité est appliquée directement par le plugin `matter-attractors` durant la mise à jour du moteur physique.
 - **Calculs manuels** : Les fonctions comme `calculateGravityAccelerationAt` sont utilisées pour la visualisation (ex: `VectorsView`) ou le debug, **pas** pour appliquer la force dans la simulation.
 - **Collisions** : Gérées par Matter.js, filtrées par catégories (`PHYSICS.COLLISION_CATEGORIES`) pour que la fusée n'interagisse qu'avec les corps célestes.

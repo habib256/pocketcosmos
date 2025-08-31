@@ -350,4 +350,47 @@ class PhysicsVectors {
 
         return surfaceDistance;
     }
+
+    // Nouveau: centraliser tous les calculs de vecteurs utilisés par l'UI/rendu
+    // Retourne { gravityVector, thrustVectors, totalThrustVector, accelerationVector, lunarAttraction, earthAttraction }
+    static calculateAllVectors(rocketModel, universeModel, physicsConstants, rocketConstants) {
+        if (!rocketModel) {
+            return {
+                gravityVector: null,
+                thrustVectors: null,
+                totalThrustVector: null,
+                accelerationVector: { x: 0, y: 0 },
+                lunarAttraction: null,
+                earthAttraction: null
+            };
+        }
+
+        const gravityVector = PhysicsVectors.calculateGravityVector(rocketModel, universeModel, physicsConstants.G);
+        const thrustVectors = PhysicsVectors.calculateThrustVectors(rocketModel, physicsConstants);
+        const totalThrustVector = PhysicsVectors.calculateTotalThrustVector(rocketModel, rocketConstants, physicsConstants);
+
+        let ax = 0;
+        let ay = 0;
+        if (gravityVector) {
+            ax += gravityVector.x;
+            ay += gravityVector.y;
+        }
+        if (totalThrustVector && rocketModel.mass > 0) {
+            ax += totalThrustVector.x / rocketModel.mass;
+            ay += totalThrustVector.y / rocketModel.mass;
+        }
+
+        const accelerationVector = { x: ax, y: ay };
+        const lunarAttraction = PhysicsVectors.calculateLunarAttractionVector(rocketModel, universeModel);
+        const earthAttraction = PhysicsVectors.calculateEarthAttractionVector(rocketModel, universeModel);
+
+        return {
+            gravityVector,
+            thrustVectors,
+            totalThrustVector,
+            accelerationVector,
+            lunarAttraction,
+            earthAttraction
+        };
+    }
 } 

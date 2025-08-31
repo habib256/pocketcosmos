@@ -21,6 +21,9 @@ class ParticleController {
         this.rocketModel = null; // Référence au modèle de la fusée, mise à jour via la méthode update()
         this.activeExplosionParticlesCount = 0;
         this.explosionInProgress = false; // Pour savoir si une explosion a été déclenchée
+        this._canvasSize = { width: 0, height: 0 };
+        this._cameraSnapshot = null; // { x, y, zoom, offsetX, offsetY }
+        this._lastMissionCelebrationAt = 0; // Throttle anti-spam
 
         // S'abonner aux événements de pause et de reprise du jeu via l'EventBus.
         if (this.eventBus && window.EVENTS && window.EVENTS.GAME) {
@@ -77,6 +80,53 @@ class ParticleController {
                         const colorStart = typeof p.colorStart === 'string' ? p.colorStart : '#FFDD00';
                         const colorEnd = typeof p.colorEnd === 'string' ? p.colorEnd : '#FF3300';
                         this.createExplosion(p.x, p.y, count, speed, size, lifetime, colorStart, colorEnd);
+                    })
+                );
+            }
+
+            // S'abonner à la réussite de mission pour déclencher la célébration via EventBus (découplé de CollisionHandler)
+            if (window.EVENTS && window.EVENTS.MISSION && window.EVENTS.MISSION.COMPLETED) {
+                window.controllerContainer.track(
+                    this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => {
+                        this._triggerMissionCelebration();
+                    })
+                );
+            }
+
+            // Fallback: déclencher aussi à la mise à jour des crédits (récompense mission)
+            if (window.EVENTS && window.EVENTS.UI && window.EVENTS.UI.CREDITS_UPDATED) {
+                window.controllerContainer.track(
+                    this.eventBus.subscribe(window.EVENTS.UI.CREDITS_UPDATED, () => {
+                        this._triggerMissionCelebration();
+                    })
+                );
+            }
+
+            // Suivre les dimensions du canvas pour positionner correctement les effets de célébration
+            if (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED) {
+                window.controllerContainer.track(
+                    this.eventBus.subscribe(window.EVENTS.SYSTEM.CANVAS_RESIZED, ({ width, height }) => {
+                        if (typeof width === 'number' && typeof height === 'number') {
+                            this._canvasSize = { width, height };
+                        }
+                    })
+                );
+            }
+
+            // Suivre l'état de la caméra pour projeter les coordonnées écran -> monde
+            if (window.EVENTS && window.EVENTS.SIMULATION && window.EVENTS.SIMULATION.UPDATED) {
+                window.controllerContainer.track(
+                    this.eventBus.subscribe(window.EVENTS.SIMULATION.UPDATED, (sim) => {
+                        if (sim && sim.camera) {
+                            const c = sim.camera;
+                            this._cameraSnapshot = {
+                                x: typeof c.x === 'number' ? c.x : 0,
+                                y: typeof c.y === 'number' ? c.y : 0,
+                                zoom: typeof c.zoom === 'number' && c.zoom > 0 ? c.zoom : 1,
+                                offsetX: typeof c.offsetX === 'number' ? c.offsetX : 0,
+                                offsetY: typeof c.offsetY === 'number' ? c.offsetY : 0
+                            };
+                        }
                     })
                 );
             }
@@ -353,22 +403,25 @@ class ParticleController {
      * @param {number} canvasHeight - Hauteur du canvas (non utilisée directement pour le positionnement vertical ici, mais pourrait l'être).
      */
     createMissionSuccessCelebration(canvasWidth, canvasHeight) {
-        // 1. Configure l'affichage du texte "Mission réussie" via le ParticleSystemModel.
-        // La vue (UIView ou ParticleView) sera responsable de dessiner ce texte.
+        // Coordonnées écran: centré et légèrement en dessous du texte (UIView: y=150)
+        const screenCenterX = (canvasWidth && canvasWidth > 0) ? (canvasWidth / 2) : (this._cameraSnapshot ? this._cameraSnapshot.offsetX : 0);
+        const screenCenterY = 190;
+
+        // 1. Optionnel: stocker un état UI côté particules (non utilisé par UIView directement)
         this.particleSystemModel.missionSuccessText = {
             visible: true,
-            time: Date.now(), // Utilisé pour gérer la durée d'affichage.
-            duration: 2500, // en millisecondes
-            x: canvasWidth / 2,
-            y: 80, // Position verticale fixe en haut du canvas.
-            color: '#FFD700', // Doré
+            time: Date.now(),
+            duration: 2500,
+            x: screenCenterX, // Ecran
+            y: screenCenterY,
+            color: '#FFD700',
             font: 'bold 48px Impact, Arial, sans-serif',
             shadow: true
         };
 
-        // 2. Crée une explosion de particules festives autour de la position du texte.
-        const centerX = canvasWidth / 2;
-        const centerY = 80;
+        // 2. Crée des particules festives en COORDONNÉES ÉCRAN (dessinées en screen-space)
+        const centerX = screenCenterX;
+        const centerY = screenCenterY;
         const count = 120; // Nombre de particules pour l'effet.
         const colors = ['#FFD700', '#FF69B4', '#00E5FF', '#FF3300', '#00FF66', '#FF00CC', '#FFFACD', '#FFA500']; // Palette de couleurs festives.
         
@@ -393,6 +446,7 @@ class ParticleController {
                 alpha: 1,
                 age: 0,
                 lifetime: lifetime * 60, // Converti en frames.
+                screenSpace: true,
                 isActive: true, // Propriété pour compatibilité avec la logique de suppression.
                 /** Met à jour la particule de célébration. */
                 update() {
@@ -412,6 +466,37 @@ class ParticleController {
             }
             this.particleSystemModel.celebrationParticles.push(particle);
         }
+
+        // Retourner le centre écran pour information
+        return { x: centerX, y: centerY };
+    }
+
+    /**
+     * Déclenche la célébration de mission (texte + explosion autour du texte), avec anti-spam.
+     * @private
+     */
+    _triggerMissionCelebration() {
+        const now = Date.now();
+        if (now - this._lastMissionCelebrationAt < 800) {
+            return; // éviter le spam si plusieurs événements successifs
+        }
+        this._lastMissionCelebrationAt = now;
+
+        const w = (this._canvasSize && this._canvasSize.width) ? this._canvasSize.width : 0;
+        const h = (this._canvasSize && this._canvasSize.height) ? this._canvasSize.height : 0;
+        const center = this.createMissionSuccessCelebration(w, h);
+        const explosionX = center && typeof center.x === 'number' ? center.x : (this._cameraSnapshot ? this._cameraSnapshot.x : (this.rocketModel && this.rocketModel.position ? this.rocketModel.position.x : 0));
+        const explosionY = center && typeof center.y === 'number' ? center.y : (this._cameraSnapshot ? this._cameraSnapshot.y : (this.rocketModel && this.rocketModel.position ? this.rocketModel.position.y : 0));
+        this.createExplosion(
+            explosionX,
+            explosionY,
+            150, // un peu plus dense pour un effet festif
+            7,
+            12,
+            2.2,
+            '#FFD700',
+            '#FF3300'
+        );
     }
 
     /**

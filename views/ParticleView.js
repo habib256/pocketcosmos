@@ -27,11 +27,11 @@ class ParticleView {
         ctx.save(); // Sauvegarde l'état global du contexte (transformations, styles, etc.)
 
         // --- Application de la Transformation Caméra ---
-        // Ces transformations permettent de dessiner les particules dans le "monde"
-        // et de les voir correctement à travers la caméra (position et zoom).
-        ctx.translate(camera.offsetX, camera.offsetY); // Centre la vue
-        ctx.scale(camera.zoom, camera.zoom);          // Applique le zoom
-        ctx.translate(-camera.x, -camera.y);          // Positionne la caméra sur le monde
+        // Ces transformations permettent de dessiner les particules dans le "monde".
+        // ATTENTION: les particules marquées screenSpace doivent être dessinées après reset transform.
+        ctx.translate(camera.offsetX, camera.offsetY);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
 
         // --- Rendu des Particules des Émetteurs (Propulsion, etc.) ---
         // Conditionnel : N'affiche les particules des émetteurs (ex: propulsion)
@@ -48,9 +48,10 @@ class ParticleView {
         // Toujours affichées, même si la fusée est détruite.
         this.render(ctx, particleSystemModel.debrisParticles);
 
-        // --- Rendu des Particules Texte (ex: "Mission Réussie") ---
-        // Gère le rendu spécifique de particules textuelles.
+        // --- Rendu des Particules Texte (ex: "Mission Réussie") en screen-space ---
         if (particleSystemModel.textParticles && particleSystemModel.textParticles.length > 0) {
+            // Reset transform pour le screen-space
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             // Note : Ce rendu est spécifique et n'utilise pas la méthode `render` générale.
             for (const p of particleSystemModel.textParticles) {
                 ctx.save(); // Isoler les styles de texte
@@ -68,31 +69,30 @@ class ParticleView {
             }
         }
 
-        // --- Rendu et Mise à Jour des Particules de Célébration ---
-        // Gère le rendu et, fait inhabituel, la mise à jour/suppression de ces particules ici.
+        // --- Rendu des Particules de Célébration ---
         if (particleSystemModel.celebrationParticles && particleSystemModel.celebrationParticles.length > 0) {
-             // Itération en sens inverse pour permettre la suppression sûre (splice) pendant l'itération.
-            for (let i = particleSystemModel.celebrationParticles.length - 1; i >= 0; i--) {
-                const p = particleSystemModel.celebrationParticles[i];
-                ctx.save(); // Isoler les styles/effets de cette particule
-                ctx.globalAlpha = p.alpha; // Transparence
-                ctx.beginPath(); // Commencer le dessin de la particule (cercle)
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); // Définir le cercle
-                ctx.fillStyle = p.color; // Couleur de remplissage
-                // Effet de lueur simple via shadowBlur
-                ctx.shadowColor = p.color;
-                ctx.shadowBlur = 16;
-                ctx.fill(); // Dessiner la particule
-                ctx.restore(); // Restaurer les styles/effets
-
-                // --- Point Important : Mise à jour dans la boucle de rendu ---
-                // La méthode `update` de la particule est appelée ici. Si elle retourne `false`
-                // (indiquant que la particule a expiré), elle est retirée du tableau.
-                // C'est atypique, la mise à jour est souvent séparée du rendu.
-                // SUPPRESSION DE LA LOGIQUE DE MISE A JOUR ICI
-                // if (!p.update()) {
-                //     particleSystemModel.celebrationParticles.splice(i, 1);
-                // }
+            // Séparer world-space et screen-space
+            const worldParticles = [];
+            const screenParticles = [];
+            for (const p of particleSystemModel.celebrationParticles) {
+                if (p.screenSpace) screenParticles.push(p); else worldParticles.push(p);
+            }
+            // Dessiner world-space avec transform actuelle
+            this.render(ctx, worldParticles);
+            // Dessiner screen-space après reset transform (dessin direct, sans getCurrentColor)
+            if (screenParticles.length > 0) {
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                for (const p of screenParticles) {
+                    ctx.save();
+                    ctx.globalAlpha = p.alpha;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    ctx.shadowColor = p.color;
+                    ctx.shadowBlur = 16;
+                    ctx.fill();
+                    ctx.restore();
+                }
             }
         }
 

@@ -261,28 +261,13 @@ class GameController {
         // Ou si GameController a une instance, par exemple this.physicsVectorsInstance
         // Pour l'instant, on suppose que PhysicsVectors est une classe globale avec des méthodes statiques.
 
-        const gravityVector = PhysicsVectors.calculateGravityVector(this.rocketModel, this.universeModel, PHYSICS.G);
-        const thrustVectors = PhysicsVectors.calculateThrustVectors(this.rocketModel, PHYSICS); // PHYSICS contient MAIN_THRUST, REAR_THRUST
-        const totalThrustVector = PhysicsVectors.calculateTotalThrustVector(this.rocketModel, ROCKET, PHYSICS); // ROCKET et PHYSICS contiennent les constantes nécessaires
-
-        const lunarAttraction = PhysicsVectors.calculateLunarAttractionVector(this.rocketModel, this.universeModel);
-        const earthAttraction = PhysicsVectors.calculateEarthAttractionVector(this.rocketModel, this.universeModel);
-        // calculateEarthDistance n'est pas directement utilisé dans emitUpdatedStates, donc pas d'appel ici.
-
-        let calculatedAccelerationX = 0;
-        let calculatedAccelerationY = 0;
-
-        if (gravityVector) {
-            calculatedAccelerationX += gravityVector.x;
-            calculatedAccelerationY += gravityVector.y;
-        }
-
-        if (totalThrustVector && this.rocketModel && this.rocketModel.mass > 0) {
-            calculatedAccelerationX += totalThrustVector.x / this.rocketModel.mass;
-            calculatedAccelerationY += totalThrustVector.y / this.rocketModel.mass;
-        }
-        
-        const accelerationVector = { x: calculatedAccelerationX, y: calculatedAccelerationY };
+        const vectors = PhysicsVectors.calculateAllVectors(this.rocketModel, this.universeModel, PHYSICS, ROCKET);
+        const gravityVector = vectors.gravityVector;
+        const thrustVectors = vectors.thrustVectors;
+        const totalThrustVector = vectors.totalThrustVector;
+        const accelerationVector = vectors.accelerationVector;
+        const lunarAttraction = vectors.lunarAttraction;
+        const earthAttraction = vectors.earthAttraction;
 
         const rocketStateForEvent = this.rocketModel ? {
             ...this.rocketModel,
