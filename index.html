@@ -126,12 +126,17 @@
     
     <!-- Contrôles audio -->
     <div id="audioControls">
-        <button id="toggleAudio">🔇</button>
-        <span id="audioTitle" style="cursor: pointer;" title="Cliquer pour changer de musique">Musique spatiale</span>
-        <label style="display:flex; align-items:center; gap:4px; margin-left:8px;">
-            <input type="checkbox" id="toggleNames" />
-            <span>📛 Cacher les noms</span>
-        </label>
+        <button id="openOptions" title="Options">⚙️</button>
+        <div id="optionsPanel" style="display:none; position:absolute; bottom:40px; right:0; background: rgba(0,0,0,0.9); border: 1px solid #555; border-radius: 6px; padding: 8px; min-width: 220px; z-index: 200;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                <button id="toggleAudio">🔇</button>
+                <span id="audioTitle" style="cursor: pointer;" title="Cliquer pour changer de musique">Musique spatiale</span>
+            </div>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="toggleNames" checked />
+                <span>📛 Cacher les noms</span>
+            </label>
+        </div>
     </div>
     
     <!-- Script d'initialisation du plugin Matter Attractors -->
@@ -200,6 +205,8 @@
         const toggleButton = document.getElementById('toggleAudio');
         const audioTitle = document.getElementById('audioTitle');
         const toggleNames = document.getElementById('toggleNames');
+        const openOptions = document.getElementById('openOptions');
+        const optionsPanel = document.getElementById('optionsPanel');
         
         // Tri alphabétique des sons pour une meilleure organisation (optionnel)
         ambientSounds.sort();
@@ -216,7 +223,8 @@
 
         // Gestion du toggle d'affichage des noms des corps
         if (typeof window.UI_STATE === 'undefined') window.UI_STATE = {};
-        window.UI_STATE.hideBodyNames = false;
+        // Initialiser en fonction de l'état de la case (caché par défaut)
+        window.UI_STATE.hideBodyNames = !!toggleNames.checked;
         toggleNames.addEventListener('change', (e) => {
             window.UI_STATE.hideBodyNames = !!e.target.checked;
         });
@@ -240,6 +248,23 @@
             setTimeout(() => {
                 audioTitle.style.opacity = 1;
             }, 300);
+        });
+
+        // Affichage/fermeture du panneau d'options
+        let optionsOpen = false;
+        openOptions.addEventListener('click', (e) => {
+            e.stopPropagation();
+            optionsOpen = !optionsOpen;
+            optionsPanel.style.display = optionsOpen ? 'block' : 'none';
+        });
+        // Fermer si clic en dehors
+        document.addEventListener('click', (e) => {
+            if (!optionsOpen) return;
+            const target = e.target;
+            if (!optionsPanel.contains(target) && target !== openOptions) {
+                optionsOpen = false;
+                optionsPanel.style.display = 'none';
+            }
         });
 
         // Activation audio sur premier clic/clavier (déblocage autoplay)

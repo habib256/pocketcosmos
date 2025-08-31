@@ -305,7 +305,7 @@ const CELESTIAL_BODY = {
 // Constantes pour les particules
 const PARTICLES = {
     STAR_COUNT: 800,           // Nombre d'étoiles dans l'espace
-    VISIBLE_RADIUS: 50000,      // Rayon visible de l'espace (augmenté x2)
+    VISIBLE_RADIUS: 100000,      // Rayon visible de l'espace (doublé)
     
     // Propriétés des émetteurs de particules
     EMITTER: {
