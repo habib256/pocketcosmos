@@ -229,6 +229,27 @@
                 audioTitle.style.opacity = 1;
             }, 300);
         });
+
+        // Activation audio sur premier clic/clavier (déblocage autoplay)
+        function setupAudioUnlock() {
+            const onUserGesture = () => {
+                // S'assurer qu'une source est chargée
+                if (!audioElement.src) {
+                    loadNextSound();
+                }
+                audioElement.play().then(() => {
+                    toggleButton.textContent = '🔊';
+                    window.removeEventListener('pointerdown', onUserGesture);
+                    window.removeEventListener('keydown', onUserGesture);
+                }).catch(() => {
+                    // Si rejeté, on laisse les listeners en place pour réessayer au prochain geste
+                });
+            };
+            window.addEventListener('pointerdown', onUserGesture);
+            window.addEventListener('keydown', onUserGesture);
+        }
+        // Initialiser le déblocage après chargement des ressources
+        window.addEventListener('load', setupAudioUnlock);
     </script>
     
     <!-- Overlay pour afficher les erreurs JavaScript -->
