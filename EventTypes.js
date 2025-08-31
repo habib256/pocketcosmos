@@ -135,4 +135,9 @@ window.EVENTS = {
     CREATE_EXPLOSION: 'particles:createExplosion',
     EXPLOSION_COMPLETED: 'particles:explosionCompleted'
   }
+  ,
+  STATION: {
+    DOCKED: 'STATION_DOCKED',
+    REFUELED: 'STATION_REFUELED'
+  }
 }; 

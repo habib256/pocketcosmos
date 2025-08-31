@@ -867,6 +867,39 @@ class GameController {
         
         // La vérification `!this.rocketModel` est déjà couverte par la condition ci-dessus.
 
+        // Ravitaillement si une station est présente exactement au point d'atterrissage
+        try {
+            if (this.universeModel && Array.isArray(this.universeModel.stations)) {
+                const hostName = data.landedOn;
+                const host = this.universeModel.celestialBodies && this.universeModel.celestialBodies.find(b => b.name === hostName);
+                if (host && this.rocketModel.relativePosition && typeof this.rocketModel.relativePosition.angleToBody === 'number') {
+                    const outwardAngle = this.rocketModel.relativePosition.angleToBody; // angle radial depuis le centre vers la fusée
+                    const stationsOnHost = this.universeModel.stations.filter(s => s.hostName === hostName);
+                    const match = stationsOnHost.find(s => {
+                        // normaliser l'écart angulaire dans [-PI, PI]
+                        let diff = outwardAngle - s.angle;
+                        diff = (diff + Math.PI) % (Math.PI * 2) - Math.PI;
+                        // Convertir tolérance de distance en tolérance angulaire approximative
+                        const radius = host.radius + (typeof STATIONS !== 'undefined' ? STATIONS.SURFACE_OFFSET : 4);
+                        const baseTol = (typeof STATIONS !== 'undefined' ? STATIONS.DOCKING_DISTANCE_TOLERANCE : 40);
+                        const angularTolerance = Math.min(Math.PI / 12, baseTol / Math.max(1, radius));
+                        return Math.abs(diff) <= angularTolerance;
+                    });
+                    if (match) {
+                        // Rechargement complet du carburant
+                        this.rocketModel.fuel = ROCKET.FUEL_MAX;
+                        // Émettre les événements de station
+                        if (window.EVENTS && window.EVENTS.STATION) {
+                            this.eventBus.emit(EVENTS.STATION.DOCKED, { host: hostName, station: match.name });
+                            this.eventBus.emit(EVENTS.STATION.REFUELED, { host: hostName, station: match.name });
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[GameController.handleRocketLanded] Erreur ravitaillement station:', e);
+        }
+
         if (this.missionManager && this.rocketModel.cargo) {
             // Vérifie si des missions sont complétées avec la cargaison actuelle et le lieu d'atterrissage.
             const completedMissions = this.missionManager.checkMissionCompletion(this.rocketModel.cargo, data.landedOn);

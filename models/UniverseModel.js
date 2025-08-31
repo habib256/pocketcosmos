@@ -25,6 +25,13 @@ class UniverseModel {
         this.stars = [];
 
         /**
+         * @type {Array<{hostName: string, angle: number, name: string, color?: string}>}
+         * Liste des stations ancrées à la surface des corps célestes.
+         * angle en radians, 0 le long de +X, croissant anti-horaire, positionnée sur surface+offset.
+         */
+        this.stations = [];
+
+        /**
          * @type {number} Largeur théorique de l'univers, basée sur MAX_COORDINATE.
          * Pourrait être utilisée pour définir des limites ou optimiser le rendu.
          */
@@ -101,6 +108,17 @@ class UniverseModel {
      */
     addCelestialBody(body) {
         this.celestialBodies.push(body);
+    }
+
+    /**
+     * Ajoute une station attachée à un corps céleste par son nom d’hôte.
+     * @param {string} hostName - Nom du corps céleste hôte.
+     * @param {number} angle - Angle en radians autour du centre du corps.
+     * @param {string} name - Nom de la station.
+     * @param {string} [color] - Couleur d’affichage optionnelle.
+     */
+    addStation(hostName, angle, name, color) {
+        this.stations.push({ hostName, angle, name, color });
     }
 
     /**

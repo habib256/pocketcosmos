@@ -136,6 +136,23 @@ class GameSetupController {
             }
             
             particleSystemModel = new ParticleSystemModel();
+            // Ajouter quelques stations par défaut sur des angles précis (ex: Terre et Lune)
+            try {
+                universeModel.addStation('Terre', Math.PI / 6, 'Terre-Station-A');
+                universeModel.addStation('Terre', Math.PI, 'Terre-Station-B');
+                universeModel.addStation('Lune', Math.PI / 3, 'Lune-Alpha');
+                universeModel.addStation('Mars', Math.PI * 0.8, 'Mars-Delta');
+                universeModel.addStation('Mercure', Math.PI / 2, 'Mercure-Alpha');
+                universeModel.addStation('Vénus', Math.PI * 1.2, 'Vénus-Station');
+                universeModel.addStation('Ganymède', Math.PI * 0.25, 'Ganymède-1');
+                universeModel.addStation('Io', Math.PI * 1.75, 'Io-1');
+                universeModel.addStation('Uranus', Math.PI * 0.6, 'Uranus-Station');
+                universeModel.addStation('Neptune', Math.PI * 1.4, 'Neptune-Station');
+                universeModel.addStation('Titan', Math.PI * 0.9, 'Titan-Station');
+            } catch (e) {
+                // Sécuriser au cas où addStation ne serait pas dispo
+                console.warn('Ajout des stations par défaut a échoué:', e);
+            }
             // Configuration initiale des angles des émetteurs de particules.
             // Ces valeurs pourraient être définies comme constantes ou dans la configuration du ParticleSystemModel.
             particleSystemModel.updateEmitterAngle('main', Math.PI/2); // Vers le "haut" de la fusée

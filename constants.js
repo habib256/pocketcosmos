@@ -344,3 +344,15 @@ const PARTICLES = {
         COLORS: ['#FF4500', '#FF6347', '#FF8C00', '#FFD700']
     }
 }; 
+
+// Constantes des stations (ravitaillement, etc.)
+const STATIONS = {
+    // Tolerance de distance (en mètres du monde) pour considérer l'accostage réussi
+    DOCKING_DISTANCE_TOLERANCE: 40,
+    // Couleur de rendu par défaut
+    COLOR: '#00FFCC',
+    // Taille de l'icône à l'écran (en pixels, sera multipliée par zoom)
+    ICON_SIZE: 8,
+    // Décalage radial optionnel au-dessus de la surface pour dessiner l'icône
+    SURFACE_OFFSET: 4
+};

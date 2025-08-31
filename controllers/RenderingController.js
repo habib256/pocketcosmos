@@ -12,6 +12,7 @@ class RenderingController {
         this.particleView = null;
         this.traceView = null;
         this.uiView = null;
+        this.stationView = new StationView();
         this.vectorsView = new VectorsView(); // Nouvelle vue pour les vecteurs
         this.showVectors = false; // Par défaut désactivé
         this.showGravityField = false; // Par défaut désactivé
@@ -204,6 +205,22 @@ class RenderingController {
         // Rendre les corps célestes
         if (this.universeView && this.celestialBodyView && universeModel && universeModel.celestialBodies) {
             this.universeView.renderCelestialBodies(ctx, camera, universeModel.celestialBodies);
+        }
+
+        // Rendre les stations si présentes
+        if (universeModel && universeModel.stations && universeModel.celestialBodies && this.stationView) {
+            for (const st of universeModel.stations) {
+                const host = universeModel.celestialBodies.find(b => b.name === st.hostName);
+                if (!host) continue;
+                const r = host.radius + (STATIONS ? STATIONS.SURFACE_OFFSET : 4);
+                const worldX = host.position.x + Math.cos(st.angle) * r;
+                const worldY = host.position.y + Math.sin(st.angle) * r;
+                const screen = this.universeView.worldToScreen(worldX, worldY, camera);
+                if (this.universeView.isPointVisible(screen.x, screen.y, camera)) {
+                    const size = (STATIONS ? STATIONS.ICON_SIZE : 8) * Math.max(0.5, Math.min(2.5, camera.zoom));
+                    this.stationView.drawStation(ctx, screen.x, screen.y, size, st.color || (STATIONS ? STATIONS.COLOR : '#00FFCC'), st.name);
+                }
+            }
         }
         
         // Rendre la trace de la fusée
