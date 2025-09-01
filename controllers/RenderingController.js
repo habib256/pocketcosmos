@@ -191,20 +191,9 @@ class RenderingController {
             return; 
         }
         
-        // Rendre le fond et les corps séparément, en utilisant uniquement les états internes
+        // Rendu unifié de l'univers (fond + étoiles + corps)
         if (this.universeView) {
-            this.universeView.renderBackground(ctx, camera);
-            this.universeView.render(ctx, camera, this.universeState.stars, [], time);
-        }
-        
-        // Rendre les étoiles
-        if (this.universeView && this.universeState.stars) {
-            this.universeView.renderStars(ctx, camera, this.universeState.stars);
-        }
-        
-        // Rendre les corps célestes
-        if (this.universeView && this.celestialBodyView && universeModel && universeModel.celestialBodies) {
-            this.universeView.renderCelestialBodies(ctx, camera, universeModel.celestialBodies);
+            this.universeView.render(ctx, camera, this.universeState.stars, universeModel ? universeModel.celestialBodies : [] , time);
         }
 
         // Rendre les stations si présentes
@@ -309,7 +298,7 @@ class RenderingController {
             totalThrustVector: calculatedVectorsFromEvent.totalThrustVector,
             accelerationVector: calculatedVectorsFromEvent.accelerationVector, // C'est le a=F/m global
             lunarAttraction: calculatedVectorsFromEvent.lunarAttraction,
-            earth: calculatedVectorsFromEvent.earth,
+            earthAttractionVector: calculatedVectorsFromEvent.earthAttraction,
             // Ajouter les vecteurs de mission calculés localement
             missionStartVector,
             missionTargetVector

@@ -193,7 +193,7 @@ class PhysicsVectors {
         return { x: totalGravityX, y: totalGravityY };
     }
 
-    static calculateThrustVectors(rocketModel, physicsConstants) { // physicsConstants = { MAIN_THRUST, REAR_THRUST }
+    static calculateThrustVectors(rocketModel, rocketConstants) { // rocketConstants = ROCKET
         if (!rocketModel) return null;
 
         const thrustVectors = {};
@@ -215,11 +215,11 @@ class PhysicsVectors {
                 switch (thrusterName) {
                     case 'main':
                         thrustAngle = rocketModel.angle + Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = physicsConstants.MAIN_THRUST * (thruster.power / thruster.maxPower);
+                        thrustMagnitude = rocketConstants.MAIN_THRUST * (thruster.power / thruster.maxPower) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
                         break;
                     case 'rear':
                         thrustAngle = rocketModel.angle - Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = physicsConstants.REAR_THRUST * (thruster.power / thruster.maxPower);
+                        thrustMagnitude = rocketConstants.REAR_THRUST * (thruster.power / thruster.maxPower) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
                         break;
                 }
 
@@ -366,7 +366,7 @@ class PhysicsVectors {
         }
 
         const gravityVector = PhysicsVectors.calculateGravityVector(rocketModel, universeModel, physicsConstants.G);
-        const thrustVectors = PhysicsVectors.calculateThrustVectors(rocketModel, physicsConstants);
+        const thrustVectors = PhysicsVectors.calculateThrustVectors(rocketModel, rocketConstants);
         const totalThrustVector = PhysicsVectors.calculateTotalThrustVector(rocketModel, rocketConstants, physicsConstants);
 
         let ax = 0;

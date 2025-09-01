@@ -38,7 +38,7 @@ class BodyFactory {
                 // signifie plus de résistance au changement de vitesse angulaire (plus difficile à faire tourner ou à arrêter).
                 // L'approximation ici (masse * 1.5) est une simplification pour un rectangle.
                 inertia: this.ROCKET.MASS * 1.5,
-                friction: 0.8, // Friction standard lors de contacts (utile pour l'atterrissage).
+                friction: this.ROCKET.FRICTION, // Utiliser la friction définie dans constants.js
                 restitution: 0.05, // Très peu de rebond lors des collisions (coefficients entre 0 et 1).
                 frictionAir: 0.1, // Simule une légère résistance du milieu (air ou vide spatial). Ralentit le mouvement linéaire et la rotation.
                 // L'amortissement angulaire ('angularDamping') est géré dynamiquement

@@ -283,19 +283,8 @@ class UniverseView {
        // 3. Dessiner les étoiles (ignore la transformation caméra actuelle, utilise worldToScreen)
        this.renderStars(ctx, camera, stars);
 
-       // --- Début du dessin des éléments du MONDE ---
-       // Sauvegarde l'état actuel du contexte (avant transformation)
-       ctx.save();
-
-       // 4. Appliquer la transformation de la caméra pour dessiner les objets du monde
-       this.applyCameraTransform(ctx, camera);
-
-       // 5. Dessiner les corps célestes (utilisent maintenant le repère du monde transformé)
+       // 4. Dessiner les corps célestes directement (les vues utilisent worldToScreen)
        this.renderCelestialBodies(ctx, camera, celestialBodies);
-
-       // --- Fin du dessin des éléments du MONDE ---
-       // Restaure l'état du contexte (supprime la transformation caméra)
-       ctx.restore();
 
        // Note: Le rendu de la trace (TraceView) est généralement géré séparément
        // car il se superpose à tout le reste et travaille en coordonnées écran.

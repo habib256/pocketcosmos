@@ -18,6 +18,12 @@ class CameraController {
         this.gameController = gameController; // Pour accéder à isPaused et rocketModel
 
         /**
+         * Indique si le jeu est en pause selon les événements de la FSM.
+         * @type {boolean}
+         */
+        this.isSystemPaused = false;
+
+        /**
          * Indique si un glissement de la caméra est en cours.
          * @type {boolean}
          */
@@ -65,6 +71,16 @@ class CameraController {
         // Nouvel abonnement pour la commande de zoom générique (par exemple, depuis un joystick)
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.INPUT.ZOOM_COMMAND, (data) => this.handleZoomCommand(data)));
 
+        // Suivre les événements de pause/reprise pour piloter localement l'état
+        if (window.EVENTS && window.EVENTS.GAME) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_PAUSED, () => { this.isSystemPaused = true; })
+            );
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.GAME.GAME_RESUMED, () => { this.isSystemPaused = false; })
+            );
+        }
+
         // S'abonner à l'événement de redimensionnement du canvas
         const canvasResizedEventName = (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED)
             ? window.EVENTS.SYSTEM.CANVAS_RESIZED
@@ -87,7 +103,7 @@ class CameraController {
      * Ne fait rien si le jeu est en pause.
      */
     handleZoomIn() {
-        if (this.gameController.isPaused) return;
+        if (this.isSystemPaused) return;
         this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
     }
 
@@ -97,7 +113,7 @@ class CameraController {
      * Ne fait rien si le jeu est en pause.
      */
     handleZoomOut() {
-        if (this.gameController.isPaused) return;
+        if (this.isSystemPaused) return;
         this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
     }
 
@@ -110,7 +126,7 @@ class CameraController {
      *                               Un facteur > 1 zoome (agrandit), un facteur < 1 dézoome (réduit).
      */
     handleCameraZoomAdjust(data) {
-        if (this.gameController.isPaused || !data || typeof data.factor !== 'number') return;
+        if (this.isSystemPaused || !data || typeof data.factor !== 'number') return;
 
         // Le facteur est appliqué directement. Il est attendu que InputController
         // envoie un facteur correct : > 1 pour zoomer, < 1 pour dézoomer.
@@ -129,7 +145,7 @@ class CameraController {
      *                            Une valeur négative est interprétée comme un zoom avant, positive comme un zoom arrière.
      */
     handleZoomCommand(data) {
-        if (!this.cameraModel || this.gameController.isPaused) return;
+        if (!this.cameraModel || this.isSystemPaused) return;
         
         const zoomValue = data.value; // Valeur brute de l'axe du joystick
         const zoomSpeed = (RENDER.ZOOM_SPEED || 0.01); // Vitesse de zoom de base
@@ -160,7 +176,7 @@ class CameraController {
      * Ne fait rien si le jeu est en pause.
      */
     handleCenterCamera() {
-        if (this.gameController.isPaused) return;
+        if (this.isSystemPaused) return;
 
         if (this.cameraModel && this.gameController.rocketModel) {
             // Vérifier si la caméra suit actuellement la fusée

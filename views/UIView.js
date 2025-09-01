@@ -219,10 +219,7 @@ class UIView {
              this._renderFlightStatus(ctx, canvas, rocketModel);
         }
 
-        // Afficher les infos contextuelles (Lune)
-        if (universeModel && rocketModel) {
-            this._renderMoonInfo(ctx, canvas, rocketModel, universeModel);
-        }
+        // (Affichage distance/proximité Lune supprimé)
 
         // Afficher les missions, le cargo et les crédits
         this._renderMissionAndCargoBox(ctx, canvas, rocketModel, activeMissions, totalCreditsEarned);
@@ -463,10 +460,8 @@ class UIView {
     _renderMoonInfo(ctx, canvas, rocketModel, universeModel) {
         if (!this.showMoonInfo || !universeModel.celestialBodies) return;
 
-        const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
-        if (!earth || !earth.moon) return;
-
-        const moon = earth.moon;
+        const moon = universeModel.celestialBodies.find(body => body.name === 'Lune');
+        if (!moon) return;
 
         const dx = rocketModel.position.x - moon.position.x;
         const dy = rocketModel.position.y - moon.position.y;
