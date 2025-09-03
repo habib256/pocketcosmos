@@ -160,7 +160,7 @@ const CELESTIAL_BODY = {
 
     // --- Paramètres spécifiques au Soleil (Nouvelle section) ---
     SUN: {
-      MASS: 6e12, // Masse 1000x celle de la Terre (simulation)
+      MASS:1e13, // Masse 1000x celle de la Terre (simulation)
       RADIUS: 1400 // Rayon plus grand pour le Soleil (simulation)
     },
     // --- Fin Paramètres Soleil ---
@@ -352,9 +352,17 @@ const STATIONS = {
     // Couleur de rendu par défaut
     COLOR: '#00FFCC',
     // Taille de l'icône à l'écran (en pixels, sera multipliée par zoom)
-    ICON_SIZE: 240,
+    ICON_SIZE: 100,
     // Décalage radial historique au-dessus de la surface (non utilisé, conservé pour compat)
     SURFACE_OFFSET: 1,
     // Nouvel inset: dessiner la station légèrement SOUS la surface (rayon - inset)
-    SURFACE_INSET: -60
+    SURFACE_INSET: -20
+};
+
+// Icônes de l'UI (utilisées pour l'étiquetage des options, etc.)
+const UI = {
+    ICONS: {
+        PLANET: '🪐', // Utilisé pour l'option d'affichage des noms de planètes
+        GAS: '⛽'     // Utilisé pour l'option d'affichage des stations (carburant)
+    }
 };

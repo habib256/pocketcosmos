@@ -50,14 +50,46 @@ class StationView {
         }
         ctx.restore();
 
-        const hideNames = (typeof window !== 'undefined' && window.UI_STATE && window.UI_STATE.hideBodyNames) ? true : false;
-        if (name && !hideNames) {
+        // L'affichage du nom des stations est piloté par UI_STATE.showStations
+        const showLabels = (typeof window !== 'undefined' && window.UI_STATE && window.UI_STATE.showStations) ? true : false;
+        if (name && showLabels) {
+            // Simplifier le nom: garder la partie avant le premier tiret
+            let base = name;
+            if (typeof name === 'string') {
+                const parts = name.split('-');
+                if (parts.length > 0) {
+                    base = parts[0] || name;
+                }
+                // Déterminer un suffixe numérique si le nom encode plusieurs stations (ex: Terre-Station-A / -B / -3)
+                let suffix = '';
+                const last = parts[parts.length - 1];
+                const prev = parts.length >= 2 ? parts[parts.length - 2] : '';
+                if (/^[A-Z]$/.test(last)) {
+                    // Lettre unique -> numéro (A→1, B→2, ...)
+                    suffix = String(last.charCodeAt(0) - 64);
+                } else if (/^\d+$/.test(last)) {
+                    suffix = last;
+                } else if (/^Station$/i.test(last) && /^[A-Z]$/.test(prev)) {
+                    suffix = String(prev.charCodeAt(0) - 64);
+                }
+                // Concaténer sans espace entre l'icône et le nom
+                const display = `⛽${base}${suffix}`;
+                ctx.save();
+                ctx.font = `${Math.max(10, size)}px Arial`;
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(display, x, y + size * 0.8);
+                ctx.restore();
+                return;
+            }
+            const fallbackDisplay = `⛽${base}`;
             ctx.save();
             ctx.font = `${Math.max(10, size)}px Arial`;
             ctx.fillStyle = 'white';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.fillText(name, x, y + size * 0.8);
+            ctx.fillText(fallbackDisplay, x, y + size * 0.8);
             ctx.restore();
         }
     }

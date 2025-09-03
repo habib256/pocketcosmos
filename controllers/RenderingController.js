@@ -196,7 +196,7 @@ class RenderingController {
             this.universeView.render(ctx, camera, this.universeState.stars, universeModel ? universeModel.celestialBodies : [] , time);
         }
 
-        // Rendre les stations si présentes
+        // Rendre les stations si présentes (toujours l'icône) ; labels contrôlés dans StationView via UI_STATE.showStations
         if (universeModel && universeModel.stations && universeModel.celestialBodies && this.stationView) {
             for (const st of universeModel.stations) {
                 const host = universeModel.celestialBodies.find(b => b.name === st.hostName);
@@ -207,12 +207,9 @@ class RenderingController {
                 const worldY = host.position.y + Math.sin(st.angle) * r;
                 const screen = this.universeView.worldToScreen(worldX, worldY, camera);
                 if (this.universeView.isPointVisible(screen.x, screen.y, camera)) {
-                    // Taille proportionnelle au zoom; devient minuscule puis invisible quand on dé-zoom fortement
+                    // Taille proportionnelle au zoom; toujours dessiner l'icône, même très petite
                     const baseSize = (STATIONS ? STATIONS.ICON_SIZE : 8);
-                    const size = baseSize * camera.zoom;
-                    if (size < 1) { // Trop petit: on ne dessine pas
-                        continue;
-                    }
+                    const size = Math.max(0.5, baseSize * camera.zoom);
                     this.stationView.drawStation(ctx, screen.x, screen.y, size, st.color || (STATIONS ? STATIONS.COLOR : '#00FFCC'), st.name, st.angle);
                 }
             }

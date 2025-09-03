@@ -133,8 +133,12 @@
                 <span id="audioTitle" style="cursor: pointer;" title="Cliquer pour changer de musique">Musique spatiale</span>
             </div>
             <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" id="toggleNames" checked />
-                <span>📛 Cacher les noms</span>
+                <input type="checkbox" id="showNamesCheckbox" />
+                <span id="labelShowNames">Afficher les noms</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="showStationsCheckbox" />
+                <span id="labelShowStations">Afficher les stations</span>
             </label>
         </div>
     </div>
@@ -204,7 +208,10 @@
         const audioElement = document.getElementById('ambientAudio');
         const toggleButton = document.getElementById('toggleAudio');
         const audioTitle = document.getElementById('audioTitle');
-        const toggleNames = document.getElementById('toggleNames');
+        const showNamesCheckbox = document.getElementById('showNamesCheckbox');
+        const showStationsCheckbox = document.getElementById('showStationsCheckbox');
+        const labelShowNames = document.getElementById('labelShowNames');
+        const labelShowStations = document.getElementById('labelShowStations');
         const openOptions = document.getElementById('openOptions');
         const optionsPanel = document.getElementById('optionsPanel');
         
@@ -221,12 +228,29 @@
             audioElement.volume = 0.3;
         });
 
-        // Gestion du toggle d'affichage des noms des corps
+        // Gestion des options d'affichage (noms et stations)
         if (typeof window.UI_STATE === 'undefined') window.UI_STATE = {};
-        // Initialiser en fonction de l'état de la case (caché par défaut)
-        window.UI_STATE.hideBodyNames = !!toggleNames.checked;
-        toggleNames.addEventListener('change', (e) => {
-            window.UI_STATE.hideBodyNames = !!e.target.checked;
+        // Cases décochées par défaut => ne pas afficher (donc cacher les noms)
+        window.UI_STATE.hideBodyNames = !showNamesCheckbox.checked;
+        window.UI_STATE.showStations = !!showStationsCheckbox.checked;
+        // Synchroniser les libellés avec les icônes définies dans constants.js (UI.ICONS)
+        function updateOptionLabels() {
+            try {
+                const planetIcon = (typeof UI !== 'undefined' && UI.ICONS && UI.ICONS.PLANET) ? UI.ICONS.PLANET : '🪐';
+                const gasIcon = (typeof UI !== 'undefined' && UI.ICONS && UI.ICONS.GAS) ? UI.ICONS.GAS : '⛽';
+                if (labelShowNames) labelShowNames.textContent = `${planetIcon} Afficher les noms`;
+                if (labelShowStations) labelShowStations.textContent = `${gasIcon} Afficher les stations`;
+            } catch (e) {}
+        }
+        updateOptionLabels();
+
+        showNamesCheckbox.addEventListener('change', (e) => {
+            window.UI_STATE.hideBodyNames = !e.target.checked;
+            updateOptionLabels();
+        });
+        showStationsCheckbox.addEventListener('change', (e) => {
+            window.UI_STATE.showStations = !!e.target.checked;
+            updateOptionLabels();
         });
         
         // Gestion du bouton mute/unmute
