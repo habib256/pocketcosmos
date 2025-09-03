@@ -1,0 +1,196 @@
+{
+    "seed": 1001,
+    "physics": {
+      "G": 0.0001,
+      "timeStepMs": 16.6667
+    },
+    "bodies": [
+      {
+        "name": "Gliese 166 C",  
+        "mass": 10000000000000,  
+        "radius": 400,  
+        "position": { "x": 0, "y": 0 },  
+        "color": "#FF8C00"  
+      },
+      {
+        "name": "Moho",
+        "mass": 100000000000,  
+        "radius": 300,  
+        "color": "#8B4513",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 5000,
+        "initialOrbitAngle": 0.0,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Eve",
+        "mass": 220000000000,  
+        "radius": 650,  
+        "color": "#8A2BE2",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 10000,
+        "initialOrbitAngle": 1.0,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Gilly",
+        "mass": 500000000,  
+        "radius": 30,  
+        "color": "#D2B48C",
+        "parentName": "Eve",
+        "orbitDistance": 600,
+        "initialOrbitAngle": 0.4,
+        "orbitSpeed": 0.8
+      },
+      {
+        "name": "Kerbin",
+        "mass": 200000000000,  
+        "radius": 600,  
+        "color": "#1E88E5",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 15000,
+        "initialOrbitAngle": 2.0,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Mun",
+        "mass": 10000000000,  
+        "radius": 180,  
+        "color": "#CCCCCC",
+        "parentName": "Kerbin",
+        "orbitDistance": 2000,
+        "initialOrbitAngle": 1.0472,
+        "orbitSpeed": 0.005
+      },
+      {
+        "name": "Minmus",
+        "mass": 5000000000,  
+        "radius": 60,  
+        "color": "#7FFFD4",
+        "parentName": "Kerbin",
+        "orbitDistance": 4700,
+        "initialOrbitAngle": 3.8,
+        "orbitSpeed": 0.002
+      },
+      {
+        "name": "Duna",
+        "mass": 120000000000,  
+        "radius": 400,  
+        "color": "#E57373",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 20000,
+        "initialOrbitAngle": 4.5,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Ike",
+        "mass": 8000000000,  
+        "radius": 120,  
+        "color": "#888888",
+        "parentName": "Duna",
+        "orbitDistance": 1200,
+        "initialOrbitAngle": 0.6,
+        "orbitSpeed": 0.01
+      },
+      {
+        "name": "Dres",
+        "mass": 8000000000,  
+        "radius": 150,  
+        "color": "#B0B0B0",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 25000,
+        "initialOrbitAngle": 2.0,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Jool",
+        "mass": 500000000000,  
+        "radius": 1000,  
+        "color": "#32CD32",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 30000,
+        "initialOrbitAngle": 5.0,
+        "orbitSpeed": 0.0
+      },
+      {
+        "name": "Laythe",
+        "mass": 5000000000,  
+        "radius": 180,  
+        "color": "#00BFFF",
+        "parentName": "Jool",
+        "orbitDistance": 1200,
+        "initialOrbitAngle": 0.2,
+        "orbitSpeed": 0.03
+      },
+      {
+        "name": "Vall",
+        "mass": 3000000000,  
+        "radius": 120,  
+        "color": "#AFEEEE",
+        "parentName": "Jool",
+        "orbitDistance": 2000,
+        "initialOrbitAngle": 1.1,
+        "orbitSpeed": 0.025
+      },
+      {
+        "name": "Tylo",
+        "mass": 6000000000,  
+        "radius": 200,  
+        "color": "#AAAAAA",
+        "parentName": "Jool",
+        "orbitDistance": 3200,
+        "initialOrbitAngle": 2.8,
+        "orbitSpeed": 0.02
+      },
+      {
+        "name": "Bop",
+        "mass": 1000000000,  
+        "radius": 80,  
+        "color": "#8B4513",
+        "parentName": "Jool",
+        "orbitDistance": 5000,
+        "initialOrbitAngle": 4.0,
+        "orbitSpeed": 0.015
+      },
+      {
+        "name": "Pol",
+        "mass": 500000000,  
+        "radius": 50,  
+        "color": "#DAA520",
+        "parentName": "Jool",
+        "orbitDistance": 7000,
+        "initialOrbitAngle": 5.5,
+        "orbitSpeed": 0.01
+      },
+      {
+        "name": "Eeloo",
+        "mass": 5000000000,  
+        "radius": 210,  
+        "color": "#FFFFFF",
+        "parentName": "Gliese 166 C",
+        "orbitDistance": 40000,
+        "initialOrbitAngle": 2.5,
+        "orbitSpeed": 0.0
+      }
+    ],
+    "stations": [
+      { "hostName": "Kerbin", "angle": 0.0, "name": "Kerbin-Station-1", "color": "#00FFCC" },
+      { "hostName": "Kerbin", "angle": 3.1416, "name": "Kerbin-Station-2", "color": "#00FFCC" },
+      { "hostName": "Mun",    "angle": 1.0472, "name": "Mun-Base-Alpha",   "color": "#00FFCC" },
+      { "hostName": "Duna",   "angle": 2.5133, "name": "Duna-Station",     "color": "#00FFCC" },
+      { "hostName": "Eve",    "angle": 0.7854, "name": "Eve-Station",      "color": "#00FFCC" },
+      { "hostName": "Laythe", "angle": 4.1888, "name": "Laythe-Station",   "color": "#00FFCC" }
+    ],
+    "rocket": {
+      "spawn": {
+        "hostName": "Kerbin",
+        "angle": 0.3491
+      }
+    },
+    "asteroidBelts": [
+      { 
+        "innerRadius": 23000, "outerRadius": 27000, "count": 500, "seed": 34567,
+        "sizeRange": { "min": 1, "max": 2 }, "color": "#9AA3A7", "brightness": 0.85 
+      }
+    ]
+  }

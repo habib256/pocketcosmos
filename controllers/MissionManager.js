@@ -113,6 +113,7 @@ class MissionManager {
                     // const cargoString = mission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', '); // Variable non utilisée
                     
                     mission.status = "completed";
+                    mission.completedAt = Date.now();
                     completedMissions.push(mission);
                 } 
             }
@@ -127,6 +128,26 @@ class MissionManager {
      */
     getActiveMissions() {
         return this.missions.filter(mission => mission.status === "pending");
+    }
+
+    /**
+     * Retourne la dernière mission complétée (selon timestamp) si disponible.
+     * @returns {MissionObjet|null}
+     */
+    getLastCompletedMission() {
+        const completed = this.missions.filter(m => m.status === 'completed' && typeof m.completedAt === 'number');
+        if (completed.length === 0) return null;
+        completed.sort((a, b) => b.completedAt - a.completedAt);
+        return completed[0];
+    }
+
+    /**
+     * Retourne le lieu d'arrivée de la dernière mission complétée ou null.
+     * @returns {string|null}
+     */
+    getLastCompletedDestination() {
+        const last = this.getLastCompletedMission();
+        return last ? last.to : null;
     }
 
     /**

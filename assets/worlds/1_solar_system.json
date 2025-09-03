@@ -150,7 +150,8 @@
       "parentName": "Soleil",
       "orbitDistance": 60000,
       "initialOrbitAngle": 3.6,
-      "orbitSpeed": 0.0
+      "orbitSpeed": 0.0,
+      "hasRings": true
     },
     {
       "name": "Titan",

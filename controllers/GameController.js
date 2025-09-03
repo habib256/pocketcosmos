@@ -556,6 +556,13 @@ class GameController {
      */
     resetRocket() {
         let startLocation = 'Terre';
+        // Si une mission a été récemment complétée, redémarrer depuis sa destination
+        if (this.missionManager && typeof this.missionManager.getLastCompletedDestination === 'function') {
+            const dest = this.missionManager.getLastCompletedDestination();
+            if (typeof dest === 'string' && dest.length > 0) {
+                startLocation = dest;
+            }
+        }
         
         if (this.crashResetTimer) {
             clearTimeout(this.crashResetTimer);
@@ -576,17 +583,18 @@ class GameController {
         this.rocketModel.cargo = new RocketCargo(); 
         this.totalCreditsEarned = 10;
 
-        const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
-        if (earth) {
-            const angleVersSoleil = Math.atan2(earth.position.y - this.universeModel.celestialBodies[0].position.y, 
-                                             earth.position.x - this.universeModel.celestialBodies[0].position.x);
-            const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-            const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
+        const host = this.universeModel.celestialBodies.find(body => body.name === startLocation) 
+                   || this.universeModel.celestialBodies.find(body => body.name === 'Terre');
+        if (host) {
+            const sun = this.universeModel.celestialBodies[0];
+            const angleVersSoleil = Math.atan2(host.position.y - sun.position.y, host.position.x - sun.position.x);
+            const rocketStartX = host.position.x + Math.cos(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
+            const rocketStartY = host.position.y + Math.sin(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
             this.rocketModel.setPosition(rocketStartX, rocketStartY);
-            this.rocketModel.setVelocity(earth.velocity.x, earth.velocity.y);
+            this.rocketModel.setVelocity(host.velocity.x, host.velocity.y);
             this.rocketModel.setAngle(angleVersSoleil); 
             this.rocketModel.isLanded = true;
-            this.rocketModel.landedOn = 'Terre';
+            this.rocketModel.landedOn = host.name;
 
             if (this.cameraModel) {
                 // console.log("[GameController.resetRocket] Avant cameraModel.setPosition:", 
@@ -596,7 +604,7 @@ class GameController {
                 //     { camPos: { x: this.cameraModel.x, y: this.cameraModel.y } }); // SUPPRESSION DE LOG
             }
         } else {
-            console.error("Impossible de trouver la Terre pour repositionner la fusée.");
+            console.error("Impossible de trouver le corps d'accueil pour repositionner la fusée.");
             startLocation = null;
         }
 
@@ -631,7 +639,7 @@ class GameController {
             this.renderingController.resetTrace(null);
         }
 
-        if(startLocation && this.missionManager){
+        if (startLocation && this.missionManager) {
             this.missionManager.loadCargoForCurrentLocationMission(startLocation, this.rocketModel);
         }
 

@@ -215,6 +215,9 @@ class UniverseView {
             return;
         }
 
+        // Trouver le Soleil pour orienter l'ombre
+        const sunBody = celestialBodies.find(b => b && b.name === 'Soleil');
+
         for (const body of celestialBodies) {
             // Vérification basique de l'existence et de la position
             if (!body || typeof body.position?.x !== 'number' || typeof body.position?.y !== 'number') {
@@ -223,7 +226,7 @@ class UniverseView {
             }
             // Vérifie la visibilité avant de déléguer le rendu
             if (this.isVisible(body.position.x, body.position.y, body.radius, camera)) {
-                 this.celestialBodyView.render(ctx, body, camera);
+                 this.celestialBodyView.render(ctx, body, camera, sunBody);
             }
         }
     }

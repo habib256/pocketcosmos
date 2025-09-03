@@ -368,6 +368,10 @@ class CelestialBodyFactory {
                 typeof cfg.initialOrbitAngle === 'number' ? cfg.initialOrbitAngle : 0,
                 cfg.orbitSpeed || 0
             );
+            // Propriétés additionnelles optionnelles
+            if (cfg.hasRings) {
+                body.hasRings = !!cfg.hasRings;
+            }
             created.push(body);
             nameToBody[cfg.name] = body;
         }
