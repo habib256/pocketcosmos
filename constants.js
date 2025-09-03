@@ -114,7 +114,7 @@ const ROCKET = {
     CARGO_CAPACITY: 10,         // Capacité maximale du cargo
     
     // Carburant
-    FUEL_MAX: 5000,             // Quantité maximale de carburant
+    FUEL_MAX: 6000,            // Quantité maximale de carburant (doublée)
     FUEL_CONSUMPTION: {
         MAIN: 0.2,              // Consommation du propulseur principal
         REAR: 0.2,              // Consommation du propulseur arrière
@@ -348,7 +348,7 @@ const PARTICLES = {
 // Constantes des stations (ravitaillement, etc.)
 const STATIONS = {
     // Tolerance de distance (en mètres du monde) pour considérer l'accostage réussi
-    DOCKING_DISTANCE_TOLERANCE: 80,
+    DOCKING_DISTANCE_TOLERANCE: 100,
     // Couleur de rendu par défaut
     COLOR: '#00FFCC',
     // Taille de l'icône à l'écran (en pixels, sera multipliée par zoom)

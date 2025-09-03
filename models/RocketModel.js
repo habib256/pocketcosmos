@@ -425,20 +425,21 @@ class RocketModel {
             return; // Pas d'autre mise à jour si détruite
         }
 
-        // Consommation de carburant basée sur la puissance des propulseurs
+        // Consommation de carburant: source unique ici
+        // Alignée sur l'ancienne échelle (puissance absolue * taux * deltaTime)
         let fuelConsumedThisFrame = 0;
         for (const thrusterName in this.thrusters) {
             const thruster = this.thrusters[thrusterName];
             if (thruster.power > 0) {
-                // La consommation dépend de la puissance et du type de propulseur (via ROCKET.FUEL_CONSUMPTION)
-                const consumptionRate = ROCKET.FUEL_CONSUMPTION[thrusterName.toUpperCase()] || ROCKET.FUEL_CONSUMPTION.DEFAULT;
-                fuelConsumedThisFrame += thruster.power * consumptionRate * deltaTime;
+                let rate = 0;
+                if (thrusterName === 'main') rate = ROCKET.FUEL_CONSUMPTION.MAIN;
+                else if (thrusterName === 'rear') rate = ROCKET.FUEL_CONSUMPTION.REAR;
+                else if (thrusterName === 'left' || thrusterName === 'right') rate = ROCKET.FUEL_CONSUMPTION.LATERAL;
+                // Accumuler la conso frame
+                fuelConsumedThisFrame += thruster.power * (rate || 0) * deltaTime;
             }
         }
-
-        if (fuelConsumedThisFrame > 0) {
-            this.consumeFuel(fuelConsumedThisFrame);
-        }
+        if (fuelConsumedThisFrame > 0) this.consumeFuel(fuelConsumedThisFrame);
 
         // Si plus de carburant, couper tous les propulseurs
         if (this.fuel <= 0) {
@@ -455,4 +456,4 @@ class RocketModel {
         // - Si la physique n'est pas entièrement gérée par Matter.js pour ce modèle,
         //   des mises à jour de position/vélocité pourraient avoir lieu ici, mais c'est moins probable.
     }
-} 
+}

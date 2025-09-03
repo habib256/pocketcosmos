@@ -79,17 +79,10 @@ class ThrusterPhysics {
                 break;
         }
 
-        // Vérifier s'il reste du carburant et en consommer
-        // Si le réservoir est vide, la poussée est nulle
+        // Vérifier s'il reste du carburant
+        // La consommation est gérée exclusivement dans RocketModel.update(deltaTime) pour éviter la double-décrémentation
         if (rocketModel.fuel <= 0) {
             thrustForce = 0;
-        } else {
-            // Calculer le carburant nécessaire pour cette frame
-            const fuelUsed = fuelConsumption * powerRatio;
-            // Essayer de consommer le carburant via le modèle
-            if (!rocketModel.consumeFuel(fuelUsed)) {
-                thrustForce = 0; // La consommation a échoué (plus assez de fuel)
-            }
         }
 
         // Gérer le son du propulseur principal
