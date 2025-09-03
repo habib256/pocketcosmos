@@ -169,11 +169,12 @@ class ParticleController {
         }
         
         // Mettre à jour chaque émetteur de particules.
+        const noFuel = !!(this.rocketModel && this.rocketModel.fuel <= 0);
         for (const emitterName in this.particleSystemModel.emitters) {
             const emitter = this.particleSystemModel.emitters[emitterName];
             
-            // Si l'émetteur est actif, générer de nouvelles particules.
-            if (emitter.isActive) {
+            // Si l'émetteur est actif et qu'il reste du carburant, générer de nouvelles particules.
+            if (emitter.isActive && !noFuel) {
                 this.emitParticles(emitter);
             }
             
