@@ -25,6 +25,12 @@ class UniverseModel {
         this.stars = [];
 
         /**
+         * @type {Array<{x:number,y:number,size?:number,color?:string,brightness?:number}>}
+         * Particules de fond (ex: ceinture d'astéroïdes) rendues hors Matter.js.
+         */
+        this.asteroids = [];
+
+        /**
          * @type {Array<{hostName: string, angle: number, name: string, color?: string}>}
          * Liste des stations ancrées à la surface des corps célestes.
          * angle en radians, 0 le long de +X, croissant anti-horaire, positionnée sur surface+offset.

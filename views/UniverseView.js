@@ -273,7 +273,7 @@ class UniverseView {
      * @param {Array<CelestialBodyModel>} celestialBodies - Tableau des modèles de corps célestes.
      * @param {number} time - Le temps actuel pour l'animation du scintillement.
      */
-    render(ctx, camera, stars, celestialBodies, time) {
+    render(ctx, camera, stars, celestialBodies, time, asteroids = []) {
        // 1. Dessiner le fond (ignore la transformation caméra actuelle)
        this.renderBackground(ctx, camera);
 
@@ -286,8 +286,36 @@ class UniverseView {
        // 4. Dessiner les corps célestes directement (les vues utilisent worldToScreen)
        this.renderCelestialBodies(ctx, camera, celestialBodies);
 
+       // 5. Dessiner les astéroïdes (particules non physiques)
+       this.renderAsteroidBelt(ctx, camera, asteroids);
+
        // Note: Le rendu de la trace (TraceView) est généralement géré séparément
        // car il se superpose à tout le reste et travaille en coordonnées écran.
        // Son rendu serait appelé par le RenderingController *après* cette méthode.
+    }
+
+    /**
+     * Dessine des particules d'astéroïdes simples en dehors de matter.js.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {CameraModel} camera
+     * @param {Array<{x:number,y:number,size?:number,color?:string,brightness?:number}>} asteroids
+     */
+    renderAsteroidBelt(ctx, camera, asteroids) {
+        if (!asteroids || asteroids.length === 0) return;
+
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        for (const a of asteroids) {
+            const screen = this.worldToScreen(a.x, a.y, camera);
+            if (!this.isPointVisible(screen.x, screen.y, camera)) continue;
+            const size = Math.max(1, Math.min(5, a.size || 2));
+            ctx.fillStyle = a.color || 'rgba(180,180,180,0.9)';
+            ctx.globalAlpha = Math.max(0.2, Math.min(1, a.brightness || 1));
+            ctx.beginPath();
+            ctx.arc(Math.floor(screen.x), Math.floor(screen.y), size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
     }
 } 

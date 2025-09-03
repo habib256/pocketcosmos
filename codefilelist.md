@@ -53,7 +53,8 @@ Comprendre ces flux de données est essentiel pour toute modification.
    - Appelle `universeView.render()` pour dessiner le fond et les corps célestes.
    - Appelle `rocketView.render()` pour dessiner la fusée en se basant sur `RocketModel`.
    - Appelle les autres vues (`traceView`, `vectorsView`, `uiView`...) si elles sont actives.
-   - Gère les "toggles" d'affichage (Vecteurs, Traces, Grille de gravité) en réponse aux événements.
+   - Gère les "toggles" d'affichage (Vecteurs `RENDER_TOGGLE_VECTORS`, Traces `RENDER_TOGGLE_TRACES`, Champ de gravité `RENDER_TOGGLE_GRAVITY_FIELD`) en réponse aux événements.
+   - Tient compte de l'état de pause (`GAME_PAUSED`/`GAME_RESUMED`) pour n'afficher que l'UI pendant la pause.
 
 ### d. Logique de Collision
 1. **Matter.js** : Détecte une collision entre la fusée et un corps céleste.
@@ -61,6 +62,12 @@ Comprendre ces flux de données est essentiel pour toute modification.
 3. **Analyse de la collision** : Calcule la vitesse, l'angle, etc., au moment de l'impact.
 4. **Mise à jour du modèle** : Met à jour `rocketModel.isLanded` ou `rocketModel.isCrashed` en fonction des conditions de la collision.
 5. **`SynchronizationManager.js`** : Détecte le changement d'état dans `RocketModel` et crée une contrainte physique ("attache") dans Matter.js pour que la fusée "colle" au corps céleste sur lequel elle s'est posée.
+
+### e. Reload d'Univers (Preset/Procédural)
+1. **Déclencheur** : émission de `UNIVERSE_LOAD_REQUESTED` avec `{ source: 'preset'|'random', url?, seed? }`.
+2. **`GameController.handleUniverseLoadRequested`** : met la simulation en pause, charge/génère les données, appelle `resetWorld(data)`.
+3. **`GameSetupController.buildWorldFromData`** : construit un nouvel `UniverseModel` (corps, stations, étoiles, astéroïdes) et repositionne la fusée selon `rocket.spawn`.
+4. **Événements** : `UNIVERSE_STATE_UPDATED` puis `UNIVERSE_RELOAD_COMPLETED` sont émis pour informer vues/contrôleurs.
 
 ## 4. Structure des Dossiers
 
@@ -82,7 +89,7 @@ Comprendre ces flux de données est essentiel pour toute modification.
 ### Modèles (`models/`) - La Source de Vérité
 *Contiennent l'état brut des objets du jeu. Ne contiennent pas de logique complexe.*
 - **`RocketModel.js`**: État complet de la fusée (position, vitesse, fuel, orientation, état des propulseurs, crash/landed). **Fichier central.**
-- **`UniverseModel.js`**: Gère la collection de tous les corps célestes.
+- **`UniverseModel.js`**: Gère la collection des corps célestes et les ressources de fond (étoiles, ceintures d'astéroïdes, stations), ainsi que des dimensions et constants (ex: `gravitationalConstant`). Met à jour le scintillement des étoiles et les orbites à chaque frame.
 - **`CelestialBodyModel.js`**: Propriétés d'un corps céleste (masse, position, rayon).
 - **`CameraModel.js`**: Gère l'état de la caméra (position, zoom, cible suivie).
 - **`ParticleSystemModel.js`**: Modélise un système de particules (ex: propulsion).
@@ -91,12 +98,13 @@ Comprendre ces flux de données est essentiel pour toute modification.
 ### Vues (`views/`) - Le Rendu Visuel
 *Lisent les données des modèles et les dessinent sur le canvas. Ne modifient jamais l'état.*
 - **`RocketView.js`**: Affiche la fusée, ses propulseurs et son état (crashé ou non).
-- **`UniverseView.js`**: Affiche le fond étoilé et coordonne le dessin des corps célestes.
+- **`UniverseView.js`**: Affiche le fond étoilé (scintillement), coordonne le dessin des corps célestes, et rend les ceintures d'astéroïdes.
 - **`CelestialBodyView.js`**: Affiche un corps céleste individuel.
-- **`VectorsView.js`**: Affiche les vecteurs physiques (poussée, vitesse, gravité). Gère aussi l'affichage du champ de gravité et des équipotentielles.
+- **`VectorsView.js`**: Affiche les vecteurs physiques (poussée, vitesse, accélération, attractions) et peut afficher le champ de gravité en modes "flèches" ou "lignes".
 - **`TraceView.js`**: Affiche la trajectoire de la fusée.
-- **`UIView.js`**: Affiche l'interface utilisateur (infos, missions, messages).
+- **`UIView.js`**: Affiche l'interface utilisateur (infos, missions, cargo, crédits), gère des écrans modaux (Chargement, Pause, Game Over) et un effet "Mission Réussie".
 - **`ParticleView.js`**: Affiche les particules.
+ - **`StationView.js`**: Affiche des stations ancrées aux corps célestes (icônes/labels), utilisées par `RenderingController`.
 
 ### Contrôleurs (`controllers/`) - La Logique Applicative
 *Orchestrent la logique, la physique, les entrées et la synchronisation.*
@@ -119,7 +127,7 @@ Comprendre ces flux de données est essentiel pour toute modification.
 - **`RocketCargo.js`**: Gère le cargo de la fusée.
 
 #### Rendu et Caméra
-- **`RenderingController.js`**: Coordonne toutes les vues pour le rendu. Gère les toggles d'affichage (Vecteurs `V`, Gravité `G`, Traces `T`).
+- **`RenderingController.js`**: Coordonne toutes les vues pour le rendu. Gère les toggles d'affichage (Vecteurs `V`, Gravité `G`, Traces `T`), réagit à la pause (`GAME_PAUSED`/`GAME_RESUMED`), réinitialise la trace lors d'un `UNIVERSE_STATE_UPDATED`, et dessine aussi les stations via `StationView`.
 - **`CameraController.js`**: Gère la logique de la caméra (zoom, déplacement, suivi).
 
 #### Entrées et UI
@@ -150,12 +158,23 @@ Voici une sélection des événements les plus importants circulant sur l'`Event
 |------------------------------|---------------------------------------------------------|-----------------------------------|--------------------------------------|
 | `INPUT_ROTATE_COMMAND` / `INPUT_ZOOM_COMMAND` | Entrées continues de rotation/zoom.              | `InputController`                 | `RocketController`, `CameraController` |
 | `RENDER_TOGGLE_VECTORS`      | Demande d'affichage/masquage des vecteurs.              | `InputController` (touche V)      | `RenderingController`                |
+| `RENDER_TOGGLE_TRACES`       | Bascule l'affichage de la trace.                        | `InputController` (touche T)      | `RenderingController`                |
+| `RENDER_TOGGLE_GRAVITY_FIELD`| Bascule le mode du champ de gravité (off/flèches/lignes).| `InputController` (touche G)      | `RenderingController`                |
 | `ROCKET_LANDED` / `ROCKET_CRASHED` | La fusée a atterri ou s'est écrasée.             | `CollisionHandler`                | `GameController`, `AudioManager`     |
 | `ROCKET_LIFTOFF`             | La fusée a décollé.                                     | `SynchronizationManager`          | `AudioManager`                       |
 | `AI_START_TRAINING`          | Démarre une session d'entraînement de l'IA.             | `training-interface.html` (UI)    | `TrainingOrchestrator`               |
 | `AI_EPISODE_ENDED`           | Un épisode d'entraînement est terminé.                  | `TrainingOrchestrator`            | `TrainingVisualizer`, UI             |
 | `AI_CONTROL_ACTION`          | Trace/diagnostic d'une action IA.                       | `RocketAI`                        | UI / Logs                            |
 | `ROCKET_SET_THRUSTER_POWER`  | Fixe la puissance d'un propulseur (idempotent).         | `InputController`, `RocketAI`     | `RocketController`                   |
+| `SIMULATION_UPDATED`         | État global agrégé de la simulation (fusée/univers/UI). | `GameController`                  | `RenderingController`, UI            |
+| `GAME_STATE_CHANGED`         | Changement d'état du jeu (FSM).                         | `GameController`                  | UI                                   |
+| `UI_SHOW_*` / `UI_HIDE_*`    | Écrans UI (Chargement, Pause, Game Over).               | `GameController`                  | `UIView`                             |
+| `UNIVERSE_LOAD_REQUESTED`    | Demande de chargement d'un univers (preset/procédural). | UI/Debug/IA                       | `GameController`                     |
+| `UNIVERSE_STATE_UPDATED`     | Nouvel état d'univers prêt (modèles/states).            | `GameController`/Setup            | Vues/Contrôleurs                     |
+| `UNIVERSE_RELOAD_COMPLETED`  | Reload terminé et synchronisé.                          | `GameController`                  | Tous                                  |
+| `STATION_DOCKED` / `STATION_REFUELED` | Docking et ravitaillement à une station.       | `GameController`                  | UI/Audio                             |
+| `system:canvasResized`       | Redimensionnement du canvas.                            | `RenderingController`             | Caméra/Contrôleurs                   |
+| `particles:explosionCompleted`| Fin de l'animation d'explosion.                         | `ParticleController`              | `GameController`                     |
 
 ## 8. Notes Techniques et Conventions
 
@@ -258,6 +277,11 @@ Exemple de structure de preset (indicative):
 Notes:
 - Les constantes purement algorithmiques (seuils de crash, ratio de puissance) restent dans `constants.js`.
 - Les valeurs dépendantes d'un monde (masse/rayon/positions des corps, spawn) viennent des données.
+
+Champs additionnels supportés (optionnels):
+- `stations`: liste d'objets `{ hostName, angle, name, color? }` positionnés sur la surface des corps.
+- `asteroidBelts`: configuration(s) d'anneaux d'astéroïdes `{ innerRadius, outerRadius, count, seed?, sizeRange?, color?, brightness? }`.
+- `starsConfig`: génération compacte des étoiles d'arrière-plan `{ count, radius, seed }`.
 
 ### 10.5. Responsabilités lors d'un Reload
 

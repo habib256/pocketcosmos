@@ -391,9 +391,6 @@ class GameController {
         // this.missionManager.setModels(this.rocketModel, this.universeModel); // SUPPRIMÉ: MissionManager ne possède pas cette méthode
         // this.missionManager.loadMissions(initialConfig.missions); // COMMENTÉ: MissionManager ne possède pas cette méthode pour l'instant
         
-        // Réinitialiser la fusée pour la positionner correctement, etc.
-        this.resetRocket();
-        
         console.log("GameController initialisé (via GameSetupController). Tentative de démarrage de la boucle..."); // LOG MODIFIÉ
 
         // Toujours appeler start() pour mettre isRunning = true.
@@ -495,18 +492,7 @@ class GameController {
         // Il est préférable de le faire après que la boucle de jeu soit potentiellement démarrée
         // et que les systèmes d'UI soient prêts à écouter.
         // Si on est LOADING, l'UI de chargement devrait déjà être visible.
-        if (this.currentState === GameStates.LOADING) {
-            // Simuler la fin du chargement pour les tests et passer au menu principal
-            // Dans un vrai scénario, cela serait appelé par un gestionnaire d'assets.
-            console.log("[GameController.start] Simulation de la fin du chargement...");
-            setTimeout(() => {
-                this.changeState(GameStates.MAIN_MENU);
-            }, 100); // Petit délai pour simuler
-        } else {
-            // Si on n'est pas en LOADING, on s'assure que l'état actuel est bien notifié
-            console.log("Émission de :", EVENTS.GAME.STATE_CHANGED, "avec données :", { newState: this.currentState, oldState: null });
-             this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: null });
-        }
+        // Ne pas forcer MAIN_MENU: l'initialisation et le passage à PLAYING sont pilotés par le chargement JSON (resetWorld)
     }
     
     /**
@@ -1147,13 +1133,10 @@ class GameController {
                 if (this.physicsController) this.physicsController.stopSimulation(); // Méthode à créer dans PhysicsController
                 break;
             case GameStates.LEVEL_SETUP:
-                // Charger les données du niveau, positionner les objets, etc.
-                // Pour l'instant, on peut imaginer que `init` fait office de LEVEL_SETUP
-                // et qu'on transite ensuite vers PLAYING ou MISSION_BRIEFING
-                console.log("[GameController] État LEVEL_SETUP: Préparation du niveau...");
-                // Potentiellement appeler une fonction de reset spécifique au niveau ici
-                this.resetRocket(); // Par exemple, resetRocket fait partie de la mise en place
-                this.changeState(GameStates.PLAYING); // Transition auto vers PLAYING pour l'instant
+                // Le positionnement et la (re)construction sont gérés par le chargement JSON (resetWorld)
+                // Transiter simplement vers PLAYING si nécessaire
+                console.log("[GameController] État LEVEL_SETUP: Préparation du niveau via données JSON...");
+                this.changeState(GameStates.PLAYING);
                 break;
             case GameStates.PLAYING:
                 // Démarrer/reprendre la simulation physique, activer les contrôles

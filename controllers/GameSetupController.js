@@ -108,58 +108,10 @@ class GameSetupController {
     _setupModels(initialConfig) {
         let rocketModel, universeModel, particleSystemModel;
         try {
+            // Fallback supprimé: l'univers est désormais chargé via JSON (buildWorldFromData)
             universeModel = new UniverseModel();
-            const bodies = this.celestialBodyFactory.createCelestialBodies();
-            bodies.forEach(body => universeModel.addCelestialBody(body));
-
             rocketModel = new RocketModel();
-            const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
-            
-            // Positionnement initial de la fusée :
-            // La fusée est placée sur la "face éclairée" de la Terre (face au Soleil),
-            // légèrement au-dessus de sa surface.
-            if (earth) {
-                const sun = universeModel.celestialBodies.find(body => body.name === 'Soleil') || { position: { x: 0, y: 0 } }; // Fallback si Soleil non trouvé
-                // Calcul de l'angle entre la Terre et le Soleil pour déterminer le côté "éclairé"
-                const angleVersSoleil = Math.atan2(earth.position.y - sun.position.y, 
-                                                 earth.position.x - sun.position.x);
-                // Positionne la fusée à l'extérieur du rayon terrestre, sur l'axe Terre-Soleil
-                const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-                const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-                
-                rocketModel.setPosition(rocketStartX, rocketStartY);
-                rocketModel.setVelocity(earth.velocity.x, earth.velocity.y); // Vitesse initiale de la fusée = vitesse de la Terre
-                rocketModel.setAngle(angleVersSoleil); // Oriente la fusée vers le Soleil (ou l'extérieur de la Terre)
-            } else {
-                // console.error("GameSetupController: La Terre n'a pas été trouvée pour positionner la fusée initialement. Utilisation des positions par défaut.");
-                rocketModel.setPosition(ROCKET.INITIAL_X, ROCKET.INITIAL_Y); 
-            }
-            
             particleSystemModel = new ParticleSystemModel();
-            // Ajouter quelques stations par défaut sur des angles précis (ex: Terre et Lune)
-            try {
-                universeModel.addStation('Terre', Math.PI / 6, 'Terre-Station-A');
-                universeModel.addStation('Terre', Math.PI, 'Terre-Station-B');
-                universeModel.addStation('Lune', Math.PI / 3, 'Lune-Alpha');
-                universeModel.addStation('Mars', Math.PI * 0.8, 'Mars-Delta');
-                universeModel.addStation('Mercure', Math.PI / 2, 'Mercure-Alpha');
-                universeModel.addStation('Vénus', Math.PI * 1.2, 'Vénus-Station');
-                universeModel.addStation('Ganymède', Math.PI * 0.25, 'Ganymède-1');
-                universeModel.addStation('Io', Math.PI * 1.75, 'Io-1');
-                universeModel.addStation('Uranus', Math.PI * 0.6, 'Uranus-Station');
-                universeModel.addStation('Neptune', Math.PI * 1.4, 'Neptune-Station');
-                universeModel.addStation('Titan', Math.PI * 0.9, 'Titan-Station');
-            } catch (e) {
-                // Sécuriser au cas où addStation ne serait pas dispo
-                console.warn('Ajout des stations par défaut a échoué:', e);
-            }
-            // Configuration initiale des angles des émetteurs de particules.
-            // Ces valeurs pourraient être définies comme constantes ou dans la configuration du ParticleSystemModel.
-            particleSystemModel.updateEmitterAngle('main', Math.PI/2); // Vers le "haut" de la fusée
-            particleSystemModel.updateEmitterAngle('rear', -Math.PI/2); // Vers le "bas" de la fusée
-            particleSystemModel.updateEmitterAngle('left', 0); // Vers la "gauche" de la fusée (relativement à son orientation)
-            particleSystemModel.updateEmitterAngle('right', Math.PI); // Vers la "droite" de la fusée
-
         } catch (error) {
             // console.error("Erreur lors de l'initialisation des modèles (GameSetupController):", error);
             // Assurer que les modèles retournés sont au moins `null` ou des instances vides en cas d'erreur critique
@@ -194,10 +146,6 @@ class GameSetupController {
                 // Permettre à la factory d'accepter des configs en entrée
                 const bodies = this.celestialBodyFactory.createCelestialBodiesFromConfigs(data.bodies);
                 bodies.forEach(body => universeModel.addCelestialBody(body));
-            } else {
-                // Fallback: créer les corps par défaut
-                const bodies = this.celestialBodyFactory.createCelestialBodies();
-                bodies.forEach(body => universeModel.addCelestialBody(body));
             }
 
             // Appliquer les stations si fournies dans les données
@@ -209,12 +157,97 @@ class GameSetupController {
                 }
             }
 
+            // Appliquer les étoiles si fournies (x, y, brightness)
+            if (data && Array.isArray(data.stars)) {
+                universeModel.stars = [];
+                for (const s of data.stars) {
+                    if (s && typeof s.x === 'number' && typeof s.y === 'number') {
+                        universeModel.stars.push({
+                            x: s.x,
+                            y: s.y,
+                            brightness: typeof s.brightness === 'number' ? s.brightness : PARTICLES.STAR_BRIGHTNESS_BASE
+                        });
+                    }
+                }
+            } else if (data && data.starsConfig) {
+                // Générer les étoiles à partir d'une configuration compacte
+                const cfg = data.starsConfig;
+                const count = Math.max(1, Math.min(20000, cfg.count || PARTICLES.STAR_COUNT));
+                const radius = Math.max(1, cfg.radius || PARTICLES.VISIBLE_RADIUS);
+                const seed = (typeof cfg.seed === 'number' ? cfg.seed : (Date.now() % 2147483647)) >>> 0;
+                let state = seed || 1;
+                const rnd = () => (state = (state * 1664525 + 1013904223) >>> 0) / 4294967296;
+                universeModel.stars = [];
+                for (let i = 0; i < count; i++) {
+                    const angle = rnd() * Math.PI * 2;
+                    const dist = Math.sqrt(rnd()) * radius;
+                    universeModel.stars.push({
+                        x: Math.cos(angle) * dist,
+                        y: Math.sin(angle) * dist,
+                        brightness: PARTICLES.STAR_BRIGHTNESS_BASE + rnd() * PARTICLES.STAR_BRIGHTNESS_RANGE
+                    });
+                }
+            } else {
+                // Si non fourni, garde la génération par défaut de UniverseModel.initializeStars()
+            }
+
+            // Appliquer des particules d'astéroïdes si fournies
+            if (data && Array.isArray(data.asteroids)) {
+                universeModel.asteroids = [];
+                for (const a of data.asteroids) {
+                    if (a && typeof a.x === 'number' && typeof a.y === 'number') {
+                        universeModel.asteroids.push({
+                            x: a.x,
+                            y: a.y,
+                            size: typeof a.size === 'number' ? a.size : 2,
+                            color: a.color || '#888888',
+                            brightness: typeof a.brightness === 'number' ? a.brightness : 1.0
+                        });
+                    }
+                }
+            } else if (data && Array.isArray(data.asteroidBelts)) {
+                // Plusieurs ceintures
+                universeModel.asteroids = [];
+                for (const belt of data.asteroidBelts) {
+                    try {
+                        const gen = this._generateAsteroidBeltFromConfig(belt, universeModel) || [];
+                        universeModel.asteroids.push(...gen);
+                    } catch (e) {
+                        console.warn('[GameSetupController] Échec génération ceinture (liste):', e);
+                    }
+                }
+            } else if (data && data.asteroidBelt) {
+                // Générer une ceinture d'astéroïdes à partir d'une configuration compacte
+                try {
+                    universeModel.asteroids = this._generateAsteroidBeltFromConfig(data.asteroidBelt, universeModel);
+                } catch (e) {
+                    console.warn('[GameSetupController] Échec génération ceinture astéroïdes:', e);
+                }
+            }
+
             // Repositionner la fusée si demandé
             if (existingRocketModel) {
                 if (data && data.rocket && data.rocket.spawn && existingRocketModel.setPosition) {
                     const spawn = data.rocket.spawn;
+                    // Mode 1: hostName + angle (spécifie l'astre de départ et l'angle à la surface)
+                    if (spawn.hostName && typeof spawn.angle === 'number') {
+                        const host = universeModel.celestialBodies.find(b => b.name === spawn.hostName);
+                        if (host && host.position && typeof host.radius === 'number') {
+                            const r = host.radius + ROCKET.HEIGHT / 2 + 1;
+                            const x = host.position.x + Math.cos(spawn.angle) * r;
+                            const y = host.position.y + Math.sin(spawn.angle) * r;
+                            existingRocketModel.setPosition(x, y);
+                            existingRocketModel.setVelocity(host.velocity?.x || 0, host.velocity?.y || 0);
+                            existingRocketModel.setAngle(spawn.angle);
+                            existingRocketModel.isLanded = true;
+                            existingRocketModel.landedOn = host.name;
+                        }
+                    }
+                    // Mode 2: position/velocity/angle absolus
                     if (spawn.position) {
                         existingRocketModel.setPosition(spawn.position.x || 0, spawn.position.y || 0);
+                        existingRocketModel.isLanded = false;
+                        existingRocketModel.landedOn = null;
                     }
                     if (spawn.velocity && existingRocketModel.setVelocity) {
                         existingRocketModel.setVelocity(spawn.velocity.x || 0, spawn.velocity.y || 0);
@@ -222,28 +255,49 @@ class GameSetupController {
                     if (typeof spawn.angle === 'number' && existingRocketModel.setAngle) {
                         existingRocketModel.setAngle(spawn.angle);
                     }
-                    existingRocketModel.isLanded = false;
                     existingRocketModel.isDestroyed = false;
-                } else {
-                    // Si pas de spawn fourni, utiliser la logique par défaut de _setupModels pour la position initiale relative à la Terre
-                    const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
-                    if (earth) {
-                        const sun = universeModel.celestialBodies.find(body => body.name === 'Soleil') || { position: { x: 0, y: 0 } };
-                        const angleVersSoleil = Math.atan2(earth.position.y - sun.position.y, earth.position.x - sun.position.x);
-                        const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-                        const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
-                        existingRocketModel.setPosition(rocketStartX, rocketStartY);
-                        existingRocketModel.setVelocity(earth.velocity.x, earth.velocity.y);
-                        existingRocketModel.setAngle(angleVersSoleil);
-                        existingRocketModel.isLanded = true;
-                        existingRocketModel.landedOn = 'Terre';
-                    }
                 }
             }
         } catch (e) {
             console.error('[GameSetupController.buildWorldFromData] Erreur de construction:', e);
         }
         return { universeModel };
+    }
+
+    /**
+     * Génère une ceinture d'astéroïdes (particules non physiques) entre deux rayons.
+     * @param {{innerRadius:number, outerRadius:number, count:number, seed?:number, center?:{x:number,y:number}, sizeRange?:{min:number,max:number}, color?:string, brightness?:number}} cfg
+     * @param {UniverseModel} universeModel
+     * @returns {Array<{x:number,y:number,size:number,color:string,brightness:number}>}
+     */
+    _generateAsteroidBeltFromConfig(cfg, universeModel) {
+        const innerR = Math.max(1, cfg.innerRadius || 32000);
+        const outerR = Math.max(innerR + 1, cfg.outerRadius || 44000);
+        const count = Math.max(1, Math.min(20000, cfg.count || 1500));
+        const seed = (typeof cfg.seed === 'number' ? cfg.seed : (Date.now() % 2147483647)) >>> 0;
+        const center = cfg.center || { x: 0, y: 0 };
+        const sizeMin = (cfg.sizeRange && cfg.sizeRange.min) ? cfg.sizeRange.min : 1;
+        const sizeMax = (cfg.sizeRange && cfg.sizeRange.max) ? cfg.sizeRange.max : 3;
+        const color = cfg.color || '#9aa3a7';
+        const brightness = typeof cfg.brightness === 'number' ? cfg.brightness : 0.9;
+
+        // PRNG simple (LCG)
+        let randState = seed || 1;
+        const rand = () => (randState = (randState * 1664525 + 1013904223) >>> 0) / 4294967296;
+
+        const asteroids = [];
+        for (let i = 0; i < count; i++) {
+            const t = rand();
+            // Angle uniforme [0, 2PI)
+            const angle = t * Math.PI * 2 + rand() * 0.02; // léger bruit
+            // Rayon biaisé pour remplir l'anneau (racine pour homogénéité visuelle)
+            const r = Math.sqrt(innerR * innerR + (outerR * outerR - innerR * innerR) * rand());
+            const x = center.x + Math.cos(angle) * r;
+            const y = center.y + Math.sin(angle) * r;
+            const size = sizeMin + (sizeMax - sizeMin) * rand();
+            asteroids.push({ x, y, size, color, brightness });
+        }
+        return asteroids;
     }
 
     /**

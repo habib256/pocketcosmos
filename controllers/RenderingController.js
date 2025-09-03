@@ -194,7 +194,7 @@ class RenderingController {
         // Donc this.rocketState (mis à jour par SIMULATION.UPDATED) devrait être frais.
 
         if (!this.isSystemPaused) { // Seulement si le jeu n'est pas en pause
-            this.updateTrace(); // Mettre à jour les données de la trace
+            this.updateTrace(rocketModel); // Mettre à jour les données de la trace avec position la plus fraîche
         }
 
         // Effacer le canvas
@@ -212,7 +212,20 @@ class RenderingController {
         
         // Rendu unifié de l'univers (fond + étoiles + corps)
         if (this.universeView) {
-            this.universeView.render(ctx, camera, this.universeState.stars, universeModel ? universeModel.celestialBodies : [] , time);
+            const starsSource = universeModel && Array.isArray(universeModel.stars)
+                ? universeModel.stars
+                : (this.universeState.stars || []);
+            const asteroidsSource = universeModel && Array.isArray(universeModel.asteroids)
+                ? universeModel.asteroids
+                : (this.universeState.asteroids || []);
+            this.universeView.render(
+                ctx,
+                camera,
+                starsSource,
+                universeModel ? universeModel.celestialBodies : [],
+                time,
+                asteroidsSource
+            );
         }
 
         // Rendre les stations si présentes (toujours l'icône) ; labels contrôlés dans StationView via UI_STATE.showStations
@@ -355,21 +368,29 @@ class RenderingController {
     }
     
     // Mettre à jour la trace de la fusée
-    updateTrace() {
-        if (!this.traceView || !this.rocketState || !this.rocketState.position) {
+    updateTrace(rocketModel) {
+        if (!this.traceView) {
             return;
         }
-        
-        // S'assurer que la position est valide
-        if (this.rocketState.position.x === undefined || this.rocketState.position.y === undefined ||
-            isNaN(this.rocketState.position.x) || isNaN(this.rocketState.position.y)) {
-            // console.warn("[RenderingController] Position de la fusée invalide pour la trace:", this.rocketState.position);
+
+        // Préférer la position la plus fraîche du rocketModel passé au render
+        let pos = null;
+        if (rocketModel && rocketModel.position &&
+            typeof rocketModel.position.x === 'number' && typeof rocketModel.position.y === 'number' &&
+            !isNaN(rocketModel.position.x) && !isNaN(rocketModel.position.y)) {
+            pos = rocketModel.position;
+        } else if (this.rocketState && this.rocketState.position &&
+            typeof this.rocketState.position.x === 'number' && typeof this.rocketState.position.y === 'number' &&
+            !isNaN(this.rocketState.position.x) && !isNaN(this.rocketState.position.y)) {
+            // Fallback: dernière position reçue via SIMULATION.UPDATED
+            pos = this.rocketState.position;
+        }
+
+        if (!pos) {
             return;
         }
-        
-        // La logique complexe avec la lune n'est plus nécessaire car TraceView.update ne la prend plus en charge.
-        // Ajouter simplement le point de trace (coordonnées absolues uniquement)
-        this.traceView.update(this.rocketState.position);
+
+        this.traceView.update(pos);
     }
     
     // Ajout : méthode pour basculer l'affichage des vecteurs

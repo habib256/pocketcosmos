@@ -187,10 +187,7 @@ class UIView {
             return; // Ne rien afficher d'autre
         }
 
-        if (this.uiState.showMainMenuScreen) {
-            this._renderMainMenuScreen(ctx, canvas);
-            return; // Ne rien afficher d'autre
-        }
+        // Menu principal désactivé
 
         if (this.uiState.showGameOverScreen) {
             this._renderGameOverScreen(ctx, canvas, rocketModel); // rocketModel pour afficher des infos de score par ex.
@@ -254,23 +251,7 @@ class UIView {
         ctx.restore();
     }
 
-    /** @private Affiche l'écran du menu principal. */
-    _renderMainMenuScreen(ctx, canvas) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 20, 40, 0.9)'; // Un fond différent pour le menu
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = `48px ${this.fontFamily}`;
-        ctx.fillStyle = this.colors.gold;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('POCKET COSMOS', canvas.width / 2, canvas.height / 2 - 50);
-        
-        ctx.font = `24px ${this.fontFamily}`;
-        ctx.fillStyle = this.colors.white;
-        ctx.fillText('Appuyez sur ENTRÉE pour commencer', canvas.width / 2, canvas.height / 2 + 20);
-        // TODO: Ajouter d'autres options de menu (options, crédits, etc.)
-        ctx.restore();
-    }
+    // _renderMainMenuScreen supprimé (menu principal désactivé)
 
     /** @private Affiche l'écran de Game Over. */
     _renderGameOverScreen(ctx, canvas, rocketModel) {

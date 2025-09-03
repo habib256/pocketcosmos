@@ -83,6 +83,16 @@
       "orbitSpeed": 0.4
     },
     {
+      "name": "Cérès",
+      "mass": 2000000000,
+      "radius": 90,
+      "color": "#B0B0B0",
+      "parentName": "Soleil",
+      "orbitDistance": 37500,
+      "initialOrbitAngle": 0.8,
+      "orbitSpeed": 0.0
+    },
+    {
       "name": "Jupiter",
       "mass": 1000000000000,
       "radius": 1000,
@@ -174,12 +184,22 @@
     },
     {
       "name": "Neptune",
-      "mass": 550000000000,
+      "mass": 350000000000,
       "radius": 820,
       "color": "#4169E1",
       "parentName": "Soleil",
       "orbitDistance": 90000,
       "initialOrbitAngle": 5.0,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Pluton",
+      "mass": 20000000000,
+      "radius": 400,
+      "color": "#BDBDBD",
+      "parentName": "Soleil",
+      "orbitDistance": 120000,
+      "initialOrbitAngle": 0.4,
       "orbitSpeed": 0.0
     }
   ],
@@ -195,6 +215,21 @@
     { "hostName": "Uranus", "angle": 1.8849555922, "name": "Uranus-Station", "color": "#00FFCC" },
     { "hostName": "Neptune","angle": 4.3982297150, "name": "Neptune-Station","color": "#00FFCC" },
     { "hostName": "Titan", "angle": 2.8274333882, "name": "Titan-Station",   "color": "#00FFCC" }
-  ]
+  ],
+  "rocket": {
+    "spawn": {
+      "hostName": "Terre",
+      "angle": 0.3235987756
+    }
+  },
+  "asteroidBelts": [
+    { "innerRadius": 34500, "outerRadius": 40000, "count": 500, "seed": 12345, "sizeRange": { "min": 1, "max": 2 }, "color": "#9aa3a7", "brightness": 0.85 },
+    { "innerRadius": 135000, "outerRadius": 145000, "count": 500, "seed": 67890, "sizeRange": { "min": 1, "max": 2 }, "color": "#a7b0b3", "brightness": 0.8 }
+  ],
+  "starsConfig": {
+    "count": 800,
+    "radius": 150000,
+    "seed": 424242
+  }
 }
 
