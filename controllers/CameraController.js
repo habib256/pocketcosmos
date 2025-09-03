@@ -95,6 +95,24 @@ class CameraController {
         } else {
             console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. CameraController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
         }
+
+        // Recentrer caméra sur la fusée lors d'un reload d'univers
+        if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, (payload) => {
+                    try {
+                        if (this.cameraModel && this.gameController && this.gameController.rocketModel) {
+                            this.cameraModel.setTarget(this.gameController.rocketModel, 'rocket');
+                            if (this.gameController.rocketModel.position) {
+                                this.cameraModel.setPosition(this.gameController.rocketModel.position.x, this.gameController.rocketModel.position.y);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[CameraController] Erreur lors du traitement de UNIVERSE_STATE_UPDATED:', e);
+                    }
+                })
+            );
+        }
     }
 
     /**

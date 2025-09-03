@@ -1,0 +1,200 @@
+{
+  "seed": 1001,
+  "physics": {
+    "G": 0.0001,
+    "timeStepMs": 16.6667
+  },
+  "bodies": [
+    {
+      "name": "Soleil",
+      "mass": 10000000000000,
+      "radius": 1400,
+      "position": { "x": 0, "y": 0 },
+      "color": "#FFD700"
+    },
+    {
+      "name": "Terre",
+      "mass": 200000000000,
+      "radius": 720,
+      "color": "#1E88E5",
+      "parentName": "Soleil",
+      "orbitDistance": 22500,
+      "initialOrbitAngle": 0.0,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Lune",
+      "mass": 10000000000,
+      "radius": 180,
+      "color": "#CCCCCC",
+      "parentName": "Terre",
+      "orbitDistance": 2000,
+      "initialOrbitAngle": 3.926990716,
+      "orbitSpeed": 0.005
+    },
+    {
+      "name": "Mercure",
+      "mass": 120000000000,
+      "radius": 488,
+      "color": "#A9A9A9",
+      "parentName": "Soleil",
+      "orbitDistance": 13050,
+      "initialOrbitAngle": 0.5,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Vénus",
+      "mass": 200000000000,
+      "radius": 710,
+      "color": "#FFDEAD",
+      "parentName": "Soleil",
+      "orbitDistance": 18000,
+      "initialOrbitAngle": 1.3,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Mars",
+      "mass": 128000000000,
+      "radius": 580,
+      "color": "#E57373",
+      "parentName": "Soleil",
+      "orbitDistance": 30000,
+      "initialOrbitAngle": 2.0,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Phobos",
+      "mass": 800000000,
+      "radius": 40,
+      "color": "#8B4513",
+      "parentName": "Mars",
+      "orbitDistance": 1200,
+      "initialOrbitAngle": 0.0,
+      "orbitSpeed": 0.8
+    },
+    {
+      "name": "Deimos",
+      "mass": 500000000,
+      "radius": 30,
+      "color": "#D2B48C",
+      "parentName": "Mars",
+      "orbitDistance": 1800,
+      "initialOrbitAngle": 1.0,
+      "orbitSpeed": 0.4
+    },
+    {
+      "name": "Jupiter",
+      "mass": 1000000000000,
+      "radius": 1000,
+      "color": "#C68C53",
+      "parentName": "Soleil",
+      "orbitDistance": 45000,
+      "initialOrbitAngle": 2.8,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Io",
+      "mass": 5000000000,
+      "radius": 120,
+      "color": "#D4AA00",
+      "parentName": "Jupiter",
+      "orbitDistance": 2200,
+      "initialOrbitAngle": 0.3,
+      "orbitSpeed": 0.03
+    },
+    {
+      "name": "Europe",
+      "mass": 4000000000,
+      "radius": 110,
+      "color": "#B0C4DE",
+      "parentName": "Jupiter",
+      "orbitDistance": 2600,
+      "initialOrbitAngle": 1.1,
+      "orbitSpeed": 0.024
+    },
+    {
+      "name": "Ganymède",
+      "mass": 6000000000,
+      "radius": 160,
+      "color": "#AAAAAA",
+      "parentName": "Jupiter",
+      "orbitDistance": 3200,
+      "initialOrbitAngle": 2.0,
+      "orbitSpeed": 0.019
+    },
+    {
+      "name": "Callisto",
+      "mass": 5000000000,
+      "radius": 150,
+      "color": "#888888",
+      "parentName": "Jupiter",
+      "orbitDistance": 3800,
+      "initialOrbitAngle": 2.6,
+      "orbitSpeed": 0.015
+    },
+    {
+      "name": "Saturne",
+      "mass": 800000000000,
+      "radius": 900,
+      "color": "#C2B280",
+      "parentName": "Soleil",
+      "orbitDistance": 60000,
+      "initialOrbitAngle": 3.6,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Titan",
+      "mass": 6000000000,
+      "radius": 150,
+      "color": "#D2B48C",
+      "parentName": "Saturne",
+      "orbitDistance": 3200,
+      "initialOrbitAngle": 0.7,
+      "orbitSpeed": 0.02
+    },
+    {
+      "name": "Encelade",
+      "mass": 1000000000,
+      "radius": 70,
+      "color": "#E0FFFF",
+      "parentName": "Saturne",
+      "orbitDistance": 2400,
+      "initialOrbitAngle": 1.4,
+      "orbitSpeed": 0.03
+    },
+    {
+      "name": "Uranus",
+      "mass": 500000000000,
+      "radius": 800,
+      "color": "#7FB3D5",
+      "parentName": "Soleil",
+      "orbitDistance": 75000,
+      "initialOrbitAngle": 4.2,
+      "orbitSpeed": 0.0
+    },
+    {
+      "name": "Neptune",
+      "mass": 550000000000,
+      "radius": 820,
+      "color": "#4169E1",
+      "parentName": "Soleil",
+      "orbitDistance": 90000,
+      "initialOrbitAngle": 5.0,
+      "orbitSpeed": 0.0
+    }
+  ],
+  "stations": [
+    { "hostName": "Terre", "angle": 0.5235987756, "name": "Terre-Station-A", "color": "#00FFCC" },
+    { "hostName": "Terre", "angle": 3.1415926536, "name": "Terre-Station-B", "color": "#00FFCC" },
+    { "hostName": "Lune",  "angle": 1.0471975512, "name": "Lune-Alpha",     "color": "#00FFCC" },
+    { "hostName": "Mars",  "angle": 2.5132741229, "name": "Mars-Delta",     "color": "#00FFCC" },
+    { "hostName": "Mercure","angle": 1.5707963268, "name": "Mercure-Alpha",  "color": "#00FFCC" },
+    { "hostName": "Vénus", "angle": 3.7699111843, "name": "Vénus-Station",   "color": "#00FFCC" },
+    { "hostName": "Ganymède","angle": 0.7853981634, "name": "Ganymède-1",   "color": "#00FFCC" },
+    { "hostName": "Io",    "angle": 5.4977871438, "name": "Io-1",           "color": "#00FFCC" },
+    { "hostName": "Uranus", "angle": 1.8849555922, "name": "Uranus-Station", "color": "#00FFCC" },
+    { "hostName": "Neptune","angle": 4.3982297150, "name": "Neptune-Station","color": "#00FFCC" },
+    { "hostName": "Titan", "angle": 2.8274333882, "name": "Titan-Station",   "color": "#00FFCC" }
+  ]
+}
+

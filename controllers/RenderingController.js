@@ -112,6 +112,25 @@ class RenderingController {
         } else {
             console.warn("RenderingController: EVENTS.RENDER non disponible, les bascules de rendu pourraient ne pas fonctionner via EventBus.");
         }
+
+        // Réagir au nouvel état d'univers pour réinitialiser la trace et rafraîchir les caches
+        if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, (payload) => {
+                    try {
+                        if (payload && payload.rocketModel && payload.rocketModel.position) {
+                            this.resetTrace(payload.rocketModel.position);
+                        } else {
+                            this.resetTrace(null);
+                        }
+                        // Optionnel: vider les caches visuels liés à l'univers
+                        this.universeState = { celestialBodies: [], stars: [] };
+                    } catch (e) {
+                        console.warn('[RenderingController] Erreur lors du traitement de UNIVERSE_STATE_UPDATED:', e);
+                    }
+                })
+            );
+        }
     }
     
     // Initialiser les vues

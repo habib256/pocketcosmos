@@ -171,6 +171,82 @@ class GameSetupController {
     }
 
     /**
+     * Construit un nouvel UniverseModel et (optionnellement) repositionne la fusée à partir de données.
+     * @param {object} data - Données de monde, ex: { physics, bodies: [], rocket: { spawn: ... } }
+     * @param {RocketModel} [existingRocketModel] - Modèle de fusée à réutiliser/repositionner.
+     * @returns {{universeModel: UniverseModel}}
+     */
+    buildWorldFromData(data, existingRocketModel) {
+        // Appliquer les paramètres physiques spécifiques au monde avant de créer UniverseModel
+        try {
+            if (data && data.physics && typeof data.physics.G === 'number') {
+                PHYSICS.G = data.physics.G;
+            }
+        } catch (e) {
+            console.warn('[GameSetupController.buildWorldFromData] Impossible d\'appliquer physics.G depuis data:', e);
+        }
+
+        const universeModel = new UniverseModel();
+
+        try {
+            // Appliquer les corps célestes depuis data.bodies si présent
+            if (data && Array.isArray(data.bodies) && data.bodies.length > 0) {
+                // Permettre à la factory d'accepter des configs en entrée
+                const bodies = this.celestialBodyFactory.createCelestialBodiesFromConfigs(data.bodies);
+                bodies.forEach(body => universeModel.addCelestialBody(body));
+            } else {
+                // Fallback: créer les corps par défaut
+                const bodies = this.celestialBodyFactory.createCelestialBodies();
+                bodies.forEach(body => universeModel.addCelestialBody(body));
+            }
+
+            // Appliquer les stations si fournies dans les données
+            if (data && Array.isArray(data.stations)) {
+                for (const st of data.stations) {
+                    if (st && typeof st.hostName === 'string' && typeof st.angle === 'number' && typeof st.name === 'string') {
+                        universeModel.addStation(st.hostName, st.angle, st.name, st.color);
+                    }
+                }
+            }
+
+            // Repositionner la fusée si demandé
+            if (existingRocketModel) {
+                if (data && data.rocket && data.rocket.spawn && existingRocketModel.setPosition) {
+                    const spawn = data.rocket.spawn;
+                    if (spawn.position) {
+                        existingRocketModel.setPosition(spawn.position.x || 0, spawn.position.y || 0);
+                    }
+                    if (spawn.velocity && existingRocketModel.setVelocity) {
+                        existingRocketModel.setVelocity(spawn.velocity.x || 0, spawn.velocity.y || 0);
+                    }
+                    if (typeof spawn.angle === 'number' && existingRocketModel.setAngle) {
+                        existingRocketModel.setAngle(spawn.angle);
+                    }
+                    existingRocketModel.isLanded = false;
+                    existingRocketModel.isDestroyed = false;
+                } else {
+                    // Si pas de spawn fourni, utiliser la logique par défaut de _setupModels pour la position initiale relative à la Terre
+                    const earth = universeModel.celestialBodies.find(body => body.name === 'Terre');
+                    if (earth) {
+                        const sun = universeModel.celestialBodies.find(body => body.name === 'Soleil') || { position: { x: 0, y: 0 } };
+                        const angleVersSoleil = Math.atan2(earth.position.y - sun.position.y, earth.position.x - sun.position.x);
+                        const rocketStartX = earth.position.x + Math.cos(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
+                        const rocketStartY = earth.position.y + Math.sin(angleVersSoleil) * (earth.radius + ROCKET.HEIGHT / 2 + 1);
+                        existingRocketModel.setPosition(rocketStartX, rocketStartY);
+                        existingRocketModel.setVelocity(earth.velocity.x, earth.velocity.y);
+                        existingRocketModel.setAngle(angleVersSoleil);
+                        existingRocketModel.isLanded = true;
+                        existingRocketModel.landedOn = 'Terre';
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[GameSetupController.buildWorldFromData] Erreur de construction:', e);
+        }
+        return { universeModel };
+    }
+
+    /**
      * @private
      * Initialise les vues du jeu et les enregistre auprès du `RenderingController`.
      * Nécessite que le `RenderingController` soit disponible.

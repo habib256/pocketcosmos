@@ -344,4 +344,43 @@ class CelestialBodyFactory {
 
         bodiesArray.push(bodyModel);
     }
+
+    /**
+     * Crée des CelestialBodyModel à partir d'un tableau de configurations.
+     * Chaque config peut référencer un parent par name via parentName.
+     * @param {Array<{id?:string,name:string,mass:number,radius:number,position?:{x:number,y:number},color?:string,parentName?:string,orbitDistance?:number,initialOrbitAngle?:number,orbitSpeed?:number}>} configs
+     * @returns {CelestialBodyModel[]}
+     */
+    createCelestialBodiesFromConfigs(configs) {
+        const created = [];
+        const nameToBody = {};
+
+        // Première passe: créer les corps sans parent assigné
+        for (const cfg of configs) {
+            const body = new CelestialBodyModel(
+                cfg.name,
+                cfg.mass,
+                cfg.radius,
+                cfg.position || { x: 0, y: 0 },
+                cfg.color || '#FFFFFF',
+                null,
+                cfg.orbitDistance || 0,
+                typeof cfg.initialOrbitAngle === 'number' ? cfg.initialOrbitAngle : 0,
+                cfg.orbitSpeed || 0
+            );
+            created.push(body);
+            nameToBody[cfg.name] = body;
+        }
+
+        // Deuxième passe: lier les parents et faire une updateOrbit initiale si parent
+        for (let i = 0; i < configs.length; i++) {
+            const cfg = configs[i];
+            const body = created[i];
+            if (cfg.parentName && nameToBody[cfg.parentName]) {
+                body.parentBody = nameToBody[cfg.parentName];
+                body.updateOrbit(0);
+            }
+        }
+        return created;
+    }
 } 

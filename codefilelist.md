@@ -183,3 +183,126 @@ Voici une sélection des événements les plus importants circulant sur l'`Event
 - **Fonctionnalités de jeu** : Étendre le système de missions, ajouter un système de ressources, etc.
 
 
+
+## 10. Architecture Modulaire pour la Génération Procédurale et le Reload d'Univers
+
+Objectif: séparer les données de configuration du monde de la logique pour permettre le chargement de systèmes artisanaux (préconfigurés) ou générés de façon procédurale, sans refonte majeure.
+
+- **Principe clé**: les contrôleurs et vues ne doivent pas dépendre de données codées en dur. Ils doivent lire l'état exclusif depuis les modèles (ex: `UniverseModel`, `CelestialBodyModel`, `RocketModel`).
+- **Source des données**: fichiers JSON (présets) et/ou générateur procédural in-memory. Le projet n'utilisant pas les modules ES6, exposez les points d'entrée via `window.*` et chargez les JSON via `fetch`.
+
+### 10.1. Séparation Données vs Logique
+
+- **Données de monde** (statique ou générée):
+  - Emplacement recommandé: `assets/worlds/` (ex: `assets/worlds/starter-system.json`).
+  - Contenu: paramètres des corps célestes, points d'apparition, options de gravité/attracteurs, seed, missions initiales.
+- **Logique**: reste dans `controllers/` et `models/`.
+  - `GameSetupController` orchestre la création du monde à partir de données.
+  - `CelestialBodyFactory`/`BodyFactory` instancient les corps Matter.js à partir de données, sans lire de valeurs de monde depuis `constants.js`.
+  - `SynchronizationManager` relie l'état logique et physique après (re)construction.
+
+### 10.2. Événements `UNIVERSE_*` (EventBus)
+
+Définir des événements dédiés dans `EventTypes.js` pour décrire le cycle de vie d'un rechargement:
+
+- `UNIVERSE_LOAD_REQUESTED` — demande de chargement d'un nouveau monde (payload: `{ source: 'preset'|'random', url?, seed? }`).
+- `UNIVERSE_STATE_UPDATED` — un nouvel état d'univers est prêt et devient la source de vérité (payload: objets modèles/références nécessaires).
+- `UNIVERSE_RELOAD_COMPLETED` — tous les contrôleurs/vues ont consommé la mise à jour et sont synchronisés.
+
+Ces événements permettent aux composants d'être informés sans couplage direct et d'exécuter leurs propres routines de reset.
+
+### 10.3. Cycle de Vie de Reload (proposé)
+
+1. Un initiateur (UI, IA, debug) émet `UNIVERSE_LOAD_REQUESTED`.
+2. Un chargeur (ex: `UniverseLoader` ou `GameSetupController`) obtient les données (JSON ou génération procédurale) et construit des structures prêtes à l'emploi.
+3. Pause sûre du jeu: geler la boucle (`GameController`), stopper l'audio (`AudioManager`), désabonner temporairement les listeners sensibles.
+4. Teardown contrôlé: détruire les corps Matter.js existants, nettoyer les contraintes et traces, annuler les abonnements spécifiques au monde.
+5. Rebuild: créer les nouveaux `CelestialBodyModel` et leurs corps Matter.js via les factories, initialiser `UniverseModel`, positionner la `RocketModel` (spawn), recâbler la synchronisation.
+6. Émettre `UNIVERSE_STATE_UPDATED` avec les références des nouveaux modèles/ressources.
+7. Les consommateurs (vues/contrôleurs) se reconfigurent (références de modèles, caméras, caches, tracés) et confirment implicitement.
+8. Reprise: relancer la boucle et l'audio, puis émettre `UNIVERSE_RELOAD_COMPLETED`.
+
+### 10.4. Contrat de Données Minimal (JSON)
+
+Exemple de structure de preset (indicative):
+
+```json
+{
+  "seed": 123456,
+  "physics": {
+    "G": 6.674e-11,
+    "timeStepMs": 16.6667
+  },
+  "bodies": [
+    {
+      "id": "earth",
+      "name": "Earth",
+      "radius": 6.371e6,
+      "mass": 5.972e24,
+      "position": { "x": 0, "y": 0 },
+      "velocity": { "x": 0, "y": 0 },
+      "attractor": { "enabled": true }
+    }
+  ],
+  "rocket": {
+    "spawn": {
+      "position": { "x": 7.5e6, "y": 0 },
+      "velocity": { "x": 0, "y": 7800 },
+      "angle": 0
+    }
+  },
+  "missions": []
+}
+```
+
+Notes:
+- Les constantes purement algorithmiques (seuils de crash, ratio de puissance) restent dans `constants.js`.
+- Les valeurs dépendantes d'un monde (masse/rayon/positions des corps, spawn) viennent des données.
+
+### 10.5. Responsabilités lors d'un Reload
+
+- **`GameController`**: pause/reprise de la boucle; expose `resetWorld(data)`.
+- **`GameSetupController`**: `buildWorldFromData(data)`; gère le teardown/rebuild orchestré.
+- **`PhysicsController`**: réinitialise le monde Matter.js (vider le `World`, recréer contraintes, réappliquer attractors).
+- **`SynchronizationManager`**: recalcule attaches/états (landed/crashed), recrée les liens fusée-corps si nécessaire.
+- **`RenderingController`**: recrée les vues dépendantes de `UniverseModel`, purge caches (grilles/équipotentielles), reset des toggles si voulu.
+- **`CameraController`**: recale la caméra (target/zoom) sur le spawn ou la cible par défaut.
+- **`RocketController`**: remet à zéro les puissances/états, repositionne la fusée via `RocketModel`.
+- **`AudioManager`**: coupe/rejoue les ambiances en fonction du nouvel univers.
+
+### 10.6. Pseudo-code de Référence
+
+```js
+eventBus.subscribe(window.EVENTS.UNIVERSE_LOAD_REQUESTED, async (opts) => {
+  gameController.pause();
+  const data = opts.source === 'random'
+    ? window.ProceduralGenerator.generate(opts.seed)
+    : await fetch(opts.url).then(r => r.json());
+  gameController.resetWorld(data);
+});
+
+// Dans GameController
+window.gameController.resetWorld = function resetWorld(worldData) {
+  this.teardownWorld();
+  const models = window.GameSetupController.buildWorldFromData(worldData);
+  eventBus.emit(window.EVENTS.UNIVERSE_STATE_UPDATED, models);
+  this.resume();
+  eventBus.emit(window.EVENTS.UNIVERSE_RELOAD_COMPLETED, {});
+};
+```
+
+### 10.7. Règles de Conception
+
+- **Idempotence**: les setters d'état (ex: position de la fusée, puissances) doivent être sûrs lors d'appels répétés.
+- **Références fraîches**: évitez de conserver des références directes aux anciens modèles/corps; re-resolvez via `UniverseModel` après `UNIVERSE_STATE_UPDATED`.
+- **Agnosticisme**: les vues ne doivent lire que les modèles; aucune logique de génération ni d'accès direct aux `constants.js` spécifiques au monde.
+
+### 10.8. Chemin de Migration Progressif (conseillé)
+
+1. Extraire les paramètres des corps célestes hors de `constants.js` vers un preset JSON simple.
+2. Introduire les clés `UNIVERSE_*` dans `EventTypes.js` (stubs) et les exposer dans `window.EVENTS`.
+3. Ajouter `buildWorldFromData(data)` dans `GameSetupController` et faire l'initialisation initiale via ces données.
+4. Adapter `CelestialBodyFactory`/`BodyFactory` pour construire depuis `data` plutôt que des constantes codées en dur.
+5. Réinitialiser proprement `PhysicsController` et `SynchronizationManager` lors d'un reload.
+6. Exposer un déclencheur de debug (ex: touche `N`) qui émet `UNIVERSE_LOAD_REQUESTED` avec `{ source: 'random', seed: Date.now() }`.
+

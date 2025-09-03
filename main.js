@@ -113,6 +113,18 @@ function init() {
     };
     gameController.init(canvas, config); // Passer le canvas et la config ici
 
+    // Charger par défaut le preset d'univers si disponible
+    try {
+        if (window.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
+            window.eventBus.emit(window.EVENTS.UNIVERSE.LOAD_REQUESTED, {
+                source: 'preset',
+                url: 'assets/worlds/1_solar_system.json'
+            });
+        }
+    } catch (e) {
+        console.warn('[main] Échec de l\'émission UNIVERSE_LOAD_REQUESTED initiale:', e);
+    }
+
     // Afficher les instructions initiales à l'utilisateur
     showInstructions();
 

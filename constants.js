@@ -10,7 +10,10 @@ if (typeof globalThis !== 'undefined' && typeof globalThis.DEBUG === 'undefined'
 // Constantes physiques
 const PHYSICS = {
     // Gravité
-    G: 0.0001,                // Constante gravitationnelle (Ancien: 1)
+    G: 0.0001,                // Constante gravitationnelle
+                               // REMARQUE: si un preset JSON est chargé (assets/worlds/*.json),
+                               // GameSetupController.buildWorldFromData() écrase cette valeur
+                               // avec data.physics.G pour aligner la simulation sur le monde.
     
     // Limites et seuils
     MAX_SPEED: 10000.0,        // Vitesse maximale de la fusée
@@ -152,6 +155,10 @@ const ROCKET = {
 };
 
 // Constantes du corps céleste
+// IMPORTANT: Ces valeurs décrivent un monde par défaut (fallback) utilisé
+// uniquement si aucun preset JSON n'est chargé.
+// Le monde par défaut sera remplacé par assets/worlds/1_solar_system.json
+// lors de l'initialisation (voir main.js et GameController/Setup).
 const CELESTIAL_BODY = {
     // --- Propriétés Générales / Terre (par défaut) ---
     MASS: 2e11,                 // Masse de la Terre (valeur de base)

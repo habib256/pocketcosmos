@@ -181,6 +181,19 @@ class GameController {
             // CameraController affichera cet avertissement s'il ne trouve pas l'événement.
             // console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. GameController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
         }
+        // Rechargement d'univers: réagir à une demande de chargement
+        if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UNIVERSE.LOAD_REQUESTED, (opts) => this.handleUniverseLoadRequested(opts))
+            );
+        }
+
+        // Rechargement d'univers: réagir à une demande de chargement
+        if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UNIVERSE.LOAD_REQUESTED, (opts) => this.handleUniverseLoadRequested(opts))
+            );
+        }
     }
     
     // Gérer les événements d'entrée sémantiques
@@ -957,6 +970,97 @@ class GameController {
         // case GameStates.PLAYING: this.renderingController.renderGame(); break;
         // etc.
         // }
+    }
+
+    /**
+     * Gère la demande de chargement d'un nouvel univers depuis données (preset ou génération).
+     * @param {{source: 'preset'|'random', url?: string, seed?: number}} opts
+     */
+    async handleUniverseLoadRequested(opts) {
+        try {
+            if (!opts || !opts.source) {
+                console.warn('[GameController] UNIVERSE_LOAD_REQUESTED sans options valides.');
+                return;
+            }
+
+            // Mettre en pause la simulation pour un reload sûr
+            if (this.physicsController) this.physicsController.pauseSimulation();
+            this.changeState(GameStates.PAUSED);
+
+            let data = null;
+            if (opts.source === 'random') {
+                if (window.ProceduralGenerator && typeof window.ProceduralGenerator.generate === 'function') {
+                    data = window.ProceduralGenerator.generate(opts.seed);
+                } else {
+                    console.warn('[GameController] Aucun ProceduralGenerator détecté. Abandon du chargement random.');
+                    return;
+                }
+            } else if (opts.source === 'preset' && typeof opts.url === 'string') {
+                data = await fetch(opts.url).then(r => r.json());
+            } else {
+                console.warn('[GameController] Options de chargement preset/random invalides.', opts);
+                return;
+            }
+
+            this.resetWorld(data);
+        } catch (e) {
+            console.error('[GameController] handleUniverseLoadRequested erreur:', e);
+        }
+    }
+
+    /**
+     * Réinitialise l'univers et repositionne la fusée à partir de données de monde.
+     * Ne recrée pas les contrôleurs; réutilise les instances existantes et réinitialise la physique.
+     * @param {object} worldData
+     */
+    resetWorld(worldData) {
+        try {
+            if (!this.rocketModel) {
+                console.error('[GameController.resetWorld] rocketModel manquant.');
+                return;
+            }
+
+            // Nettoyage léger des systèmes dépendants
+            if (this.particleController && typeof this.particleController.reset === 'function') {
+                this.particleController.reset();
+            }
+
+            // Construire un nouveau UniverseModel depuis les données
+            const setup = new GameSetupController(this.eventBus, this.missionManager);
+            const built = setup.buildWorldFromData(worldData, this.rocketModel);
+            if (!built || !built.universeModel) {
+                console.error('[GameController.resetWorld] Échec de buildWorldFromData.');
+                return;
+            }
+            this.universeModel = built.universeModel;
+
+            // Réinitialiser le moteur physique avec les nouveaux modèles
+            if (this.physicsController) {
+                this.physicsController.initPhysics(this.rocketModel, this.universeModel);
+            }
+
+            // Réinitialiser la trace de rendu avec la nouvelle position de la fusée
+            if (this.renderingController && this.rocketModel && this.rocketModel.position) {
+                this.renderingController.resetTrace(this.rocketModel.position);
+            }
+
+            // Notifier du nouvel état d'univers
+            if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE) {
+                this.eventBus.emit(EVENTS.UNIVERSE.STATE_UPDATED, {
+                    universeModel: this.universeModel,
+                    rocketModel: this.rocketModel
+                });
+            }
+
+            // Reprendre la simulation et émettre complétion
+            if (this.physicsController) this.physicsController.resumeSimulation();
+            this.changeState(GameStates.PLAYING);
+            if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE) {
+                this.eventBus.emit(EVENTS.UNIVERSE.RELOAD_COMPLETED, {});
+            }
+        } catch (e) {
+            console.error('[GameController.resetWorld] Erreur lors du reset:', e);
+        }
     }
 
     /**
