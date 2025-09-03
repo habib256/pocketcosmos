@@ -19,9 +19,12 @@ class CelestialBodyView {
         
         ctx.save();
         
-        // Dessiner l'atmosphère si elle existe (en premier pour qu'elle soit derrière la planète)
+        // Dessiner l'atmosphère si elle existe (arrière et avant avec éclairage)
         if (celestialBodyModel.atmosphere && celestialBodyModel.atmosphere.exists) {
-            this.drawAtmosphere(ctx, celestialBodyModel, camera);
+            this.drawAtmosphere(ctx, celestialBodyModel, camera, 'back', sunBodyModel);
+        }
+        if (celestialBodyModel.atmosphere && celestialBodyModel.atmosphere.exists) {
+            this.drawAtmosphere(ctx, celestialBodyModel, camera, 'front', sunBodyModel);
         }
 
         // Dessiner la partie ARRIÈRE des anneaux avant le corps (pour qu'ils passent derrière)
@@ -138,23 +141,64 @@ class CelestialBodyView {
      * @param {object} body - Le modèle de données du corps céleste.
      * @param {Camera} camera - L'objet caméra.
      */
-    drawAtmosphere(ctx, body, camera) {
+    drawAtmosphere(ctx, body, camera, layer = 'both', sunBodyModel = null) {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
         const screenAtmosphereHeight = body.atmosphere.height * camera.zoom;
         
-        // Dessiner le cercle de l'atmosphère avec un remplissage
-        ctx.beginPath();
-        ctx.arc(screenPos.x, screenPos.y, screenRadius + screenAtmosphereHeight, 0, Math.PI * 2);
-        
-        // Ajouter un remplissage semi-transparent
-        ctx.fillStyle = body.atmosphere.color || 'rgba(25, 35, 80, 0.2)';
-        ctx.fill();
-        
-        // Ajouter un contour
-        ctx.strokeStyle = body.atmosphere.color || 'rgba(25, 35, 80, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        // Préparer le gradient d'ombre/lumière pour l'atmosphère
+        let grad = null;
+        if (sunBodyModel && sunBodyModel.position) {
+            const dirX = sunBodyModel.position.x - body.position.x;
+            const dirY = sunBodyModel.position.y - body.position.y;
+            const len = Math.hypot(dirX, dirY) || 1;
+            const nx = dirX / len;
+            const ny = dirY / len;
+            const gxStart = screenPos.x + nx * (screenRadius + screenAtmosphereHeight);
+            const gyStart = screenPos.y + ny * (screenRadius + screenAtmosphereHeight);
+            const gxEnd = screenPos.x - nx * (screenRadius + screenAtmosphereHeight);
+            const gyEnd = screenPos.y - ny * (screenRadius + screenAtmosphereHeight);
+            grad = ctx.createLinearGradient(gxStart, gyStart, gxEnd, gyEnd);
+            grad.addColorStop(0.0, 'rgba(255,255,255,0.02)');
+            grad.addColorStop(0.4, 'rgba(0,0,0,0.10)');
+            grad.addColorStop(0.7, 'rgba(0,0,0,0.25)');
+            grad.addColorStop(1.0, 'rgba(0,0,0,0.35)');
+        }
+
+        const baseColor = body.atmosphere.color || 'rgba(25, 35, 80, 0.2)';
+
+        // Couche arrière
+        if (layer === 'back' || layer === 'both') {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius + screenAtmosphereHeight, 0, Math.PI * 2);
+            ctx.fillStyle = baseColor;
+            ctx.fill();
+            if (grad) {
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // Couche avant (après le corps): uniquement le halo externe
+        if (layer === 'front' || layer === 'both') {
+            ctx.save();
+            // Clip pour exclure le disque de la planète
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
+            ctx.clip();
+            // Dessiner la couronne
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius + screenAtmosphereHeight, 0, Math.PI * 2);
+            ctx.fillStyle = baseColor;
+            ctx.fill();
+            if (grad) {
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+            ctx.restore();
+        }
     }
     
     /**

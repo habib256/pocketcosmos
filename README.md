@@ -12,7 +12,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 ### Captures d'écran 📸
 
 ![Écran de démarrage](assets/screenshots/Startup.png)
-*Écran de démarrage de la simulation*
+*Écran de démarrage avec sélection du monde à gauche et bouton "Prêt !" à droite*
 
 ![Simulation lunaire](assets/screenshots/Lune.png)
 *La fusée près de la lune en orbite avec affichage des vecteurs de la fusée*
@@ -33,7 +33,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *   **Exploration Spatiale 🪐:** Naviguez autour d'une planète et de sa lune en orbite.
 *   **Mécaniques d'Atterrissage/Crash 😬💥:** Maîtrisez les atterrissages en douceur ou subissez les conséquences d'un crash.
 *   **IA Optionnelle (TensorFlow.js) 🤖:** Activez un agent IA pour observer son comportement (basé sur TensorFlow.js).
-*   **Effets Visuels ✨:** Particules pour les propulseurs, débris de crash, étoiles scintillantes.
+*   **Effets Visuels ✨:** Particules pour les propulseurs, débris de crash, étoiles scintillantes, atmosphères ombrées, anneaux rendus en deux passes (back/front).
 *   **Interface Utilisateur Complète 📊:** Suivez vitesse, altitude, fuel, santé, mission active, cargo, crédits.
 *   **Trajectoire Visible 📈:** Activez la trace pour visualiser votre parcours.
 *   **Caméra Dynamique 🎥:** Suivi de la fusée et zoom ajustable.
@@ -43,6 +43,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 *   **(Debug) Visualisation des Forces 🔬:** Activez l'affichage des vecteurs pour comprendre la physique.
 *   **Architecture Modulaire (EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
 *   **(Nouveau) Champ de Gravité et Lignes Équipotentielles 🌀:** Visualisez le champ de gravité généré par tous les corps célestes sous forme de flèches ou de lignes équipotentielles (isopotentielles), pour explorer la structure du potentiel gravitationnel multi-corps en temps réel.
+*   **(Nouveau) Ombres/Pénombres planétaires + Atmosphères**: ombrage jour→nuit orienté par l'étoile centrale, s'appliquant aussi aux atmosphères.
 
 ## 🎮 Contrôles
 
@@ -82,8 +83,9 @@ _(Le code est structuré de manière modulaire (inspiration MVC étendue + Event
 2.  Naviguez dans le dossier `pocketcosmos`.
 3.  Ouvrez le fichier `index.html` dans votre navigateur web moderne. 🎉
 
-**Remarque :**
+**Remarques :**
 - Tous les scripts sont chargés via `<script>` dans `index.html` (pas d'import ES6).
+- Le plugin `matter-attractors` peut afficher un avertissement de version; il est compatible avec `matter-js@0.19.0` ici.
 
 ## 📝 Personnalisation
 
@@ -95,6 +97,13 @@ Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu 
 - Les paramètres d'orbite des corps célestes (`UNIVERSE`)
 - Les seuils de difficulté (atterrissage, crash `PHYSICS.LANDING_MAX_SPEED`, `PHYSICS.IMPACT_DAMAGE_FACTOR`)
 - ...et bien plus ! 🛠️
+
+### Presets de mondes 🌍
+Sélectionnez le monde au démarrage (Monde 1 par défaut) : `assets/worlds/1_solar.json`, `2_kerbol.json`, `3_outerwilds.json`, `4_Tatoo.json`, `5_Endor.json`, `6_alien.json`.
+Chaque preset peut définir :
+- `bodies[]` (dont `hasRings`, `atmosphere { exists, height, color }`)
+- `rocket.spawn` (hostName+angle ou position/velocity/angle)
+- `stations[]`, `asteroidBelts[]`, `starsConfig`, `narratives`, `missions[]`.
 
 ## 📈 Perspectives Futures
 

@@ -1,0 +1,116 @@
+{
+    "seed": 2049,
+    "physics": { "G": 0.0001, "timeStepMs": 16.6667 },
+  
+    "bodies": [
+      {
+        "name": "Zeta II Reticuli",
+        "mass": 10000000000000,
+        "radius": 1200,
+        "position": { "x": 0, "y": 0 },
+        "color": "#FFD27A"
+      },
+  
+      {
+        "name": "Zeta I Reticuli",
+        "mass": 8000000000000,
+        "radius": 1100,
+        "color": "#FFE9A3",
+        "parentName": "Zeta II Reticuli",
+        "orbitDistance": 5000,
+        "initialOrbitAngle": 0.35,
+        "orbitSpeed": 0.02
+      },
+  
+      {
+        "name": "Calpamos",
+        "mass": 1200000000000,
+        "radius": 1050,
+        "color": "#9FB0C6",
+        "parentName": "Zeta II Reticuli",
+        "orbitDistance": 24000,
+        "initialOrbitAngle": 1.40,
+        "orbitSpeed": 0.005
+      },
+  
+      {
+        "name": "Acheron (LV-426)",
+        "mass": 7000000000,
+        "radius": 180,
+        "color": "#8E8E8E",
+        "parentName": "Calpamos",
+        "orbitDistance": 1800,
+        "initialOrbitAngle": 0.60,
+        "orbitSpeed": 0.03
+      },
+  
+      {
+        "name": "LV-223",
+        "mass": 8000000000,
+        "radius": 200,
+        "color": "#A49B8C",
+        "parentName": "Calpamos",
+        "orbitDistance": 2600,
+        "initialOrbitAngle": 2.40,
+        "orbitSpeed": 0.022
+      },
+  
+      {
+        "name": "Calpamos III (non nommée)",
+        "mass": 5000000000,
+        "radius": 150,
+        "color": "#6F6B66",
+        "parentName": "Calpamos",
+        "orbitDistance": 3400,
+        "initialOrbitAngle": 4.10,
+        "orbitSpeed": 0.017
+      }
+    ],
+  
+    "stations": [
+      { "hostName": "Acheron (LV-426)", "angle": 0.35, "name": "Hadley's Hope (colonie)", "color": "#00FFCC" },
+      { "hostName": "Acheron (LV-426)", "angle": 2.50, "name": "Processeur Atmosphérique WY", "color": "#00FFCC" },
+      { "hostName": "Acheron (LV-426)", "angle": 4.80, "name": "Vaisseau Dériva (Juggernaut) - site du signal", "color": "#00FFCC" },
+      { "hostName": "LV-223",           "angle": 1.10, "name": "Complexe Ingénieurs (Installation 3-26)", "color": "#00FFCC" },
+      { "hostName": "Calpamos",         "angle": 5.00, "name": "Plateforme d'observation des anneaux", "color": "#00FFCC" }
+    ],
+  
+    "rocket": { "spawn": { "hostName": "Acheron (LV-426)", "angle": 0.18 } },
+  
+    "asteroidBelts": [
+      {
+        "innerRadius": 2100,
+        "outerRadius": 2300,
+        "count": 800,
+        "seed": 426223,
+        "sizeRange": { "min": 1, "max": 2 },
+        "color": "#9aa3a7",
+        "brightness": 0.85,
+        "note": "Anneau de débris/particules autour de Calpamos (représentation stylisée des anneaux)."
+      }
+    ],
+  
+    "starsConfig": { "count": 900, "radius": 150000, "seed": 424242 },
+  
+    "narratives": {
+      "Zeta II Reticuli": {
+        "title": "Soleil de Calpamos",
+        "text": "Composante ζ² du couple stellaire réel Zeta Reticuli (~39 a.l.). Sert ici de centre gravitationnel simplifié pour le binaire."
+      },
+      "Zeta I Reticuli": {
+        "text": "Compagnon stellaire (ζ¹). En réalité, la binaire est très lâche ; l’orbite serrée ici est une approximation pour le moteur."
+      },
+      "Calpamos": {
+        "text": "Géante gazeuse annelée du système ; trois lunes connues, dont Acheron (LV-426) et LV-223."
+      },
+      "Acheron (LV-426)": {
+        "text": "Roche balayée par des tempêtes, colonie humaine Hadley's Hope, Processeur atmosphérique, et le vaisseau Dériva à l’origine du signal."
+      },
+      "LV-223": {
+        "text": "Lune plus tempérée abritant plusieurs installations des Ingénieurs ; théâtre des événements de Prometheus."
+      },
+      "Calpamos III (non nommée)": {
+        "text": "Troisième satellite répertorié de Calpamos ; peu d’informations canoniques disponibles."
+      }
+    }
+  }

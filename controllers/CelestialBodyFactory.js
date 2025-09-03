@@ -372,6 +372,20 @@ class CelestialBodyFactory {
             if (cfg.hasRings) {
                 body.hasRings = !!cfg.hasRings;
             }
+            if (cfg.atmosphere) {
+                // cfg.atmosphere: { exists?:boolean, height?:number, color?:string }
+                body.atmosphere = body.atmosphere || {};
+                if (typeof cfg.atmosphere.exists === 'boolean') {
+                    body.atmosphere.exists = cfg.atmosphere.exists;
+                }
+                if (typeof cfg.atmosphere.height === 'number') {
+                    // height est exprimée en proportion du rayon si <=1, sinon valeur monde
+                    body.atmosphere.height = cfg.atmosphere.height <= 1 ? (cfg.radius * cfg.atmosphere.height) : cfg.atmosphere.height;
+                }
+                if (typeof cfg.atmosphere.color === 'string') {
+                    body.atmosphere.color = cfg.atmosphere.color;
+                }
+            }
             created.push(body);
             nameToBody[cfg.name] = body;
         }

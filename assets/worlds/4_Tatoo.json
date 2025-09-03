@@ -1,0 +1,127 @@
+{
+    "seed": 1138,
+    "physics": { "G": 0.0001, "timeStepMs": 16.6667 },
+    "bodies": [
+      {
+        "name": "Tatoo I",
+        "mass": 10000000000000,
+        "radius": 1200,
+        "position": { "x": 0, "y": 0 },
+        "color": "#FFD27A"
+      },
+      {
+        "name": "Tatoo II",
+        "mass": 8000000000000,
+        "radius": 1100,
+        "color": "#FFE9A3",
+        "parentName": "Tatoo I",
+        "orbitDistance": 3000,
+        "initialOrbitAngle": 0.2,
+        "orbitSpeed": 0.02
+      },
+  
+      {
+        "name": "Tatooine",
+        "mass": 300000000000,
+        "radius": 650,
+        "color": "#CFA163",
+        "parentName": "Tatoo I",
+        "orbitDistance": 18000,
+        "initialOrbitAngle": 1.1,
+        "orbitSpeed": 0.006
+      },
+      {
+        "name": "Ghomrassen",
+        "mass": 6000000000,
+        "radius": 90,
+        "color": "#C8B7A6",
+        "parentName": "Tatooine",
+        "orbitDistance": 1400,
+        "initialOrbitAngle": 0.5,
+        "orbitSpeed": 0.02
+      },
+      {
+        "name": "Guermessa",
+        "mass": 5000000000,
+        "radius": 80,
+        "color": "#BFA78E",
+        "parentName": "Tatooine",
+        "orbitDistance": 1900,
+        "initialOrbitAngle": 2.8,
+        "orbitSpeed": 0.015
+      },
+      {
+        "name": "Chenini",
+        "mass": 4000000000,
+        "radius": 70,
+        "color": "#D7C6AE",
+        "parentName": "Tatooine",
+        "orbitDistance": 2400,
+        "initialOrbitAngle": 4.1,
+        "orbitSpeed": 0.012
+      },
+  
+      {
+        "name": "Ohann",
+        "mass": 1200000000000,
+        "radius": 1000,
+        "color": "#9FB0C6",
+        "parentName": "Tatoo I",
+        "orbitDistance": 36000,
+        "initialOrbitAngle": 2.4,
+        "orbitSpeed": 0.004
+      },
+      { "name": "Ohann I", "mass": 3000000000, "radius": 100, "color": "#B0B0B0",
+        "parentName": "Ohann", "orbitDistance": 1800, "initialOrbitAngle": 0.3, "orbitSpeed": 0.03 },
+      { "name": "Ohann II", "mass": 2500000000, "radius": 90, "color": "#A8A8A8",
+        "parentName": "Ohann", "orbitDistance": 2400, "initialOrbitAngle": 1.7, "orbitSpeed": 0.024 },
+      { "name": "Ohann III", "mass": 2200000000, "radius": 85, "color": "#9E9E9E",
+        "parentName": "Ohann", "orbitDistance": 3000, "initialOrbitAngle": 3.2, "orbitSpeed": 0.02 },
+      { "name": "Ohann IV", "mass": 1800000000, "radius": 75, "color": "#8E8E8E",
+        "parentName": "Ohann", "orbitDistance": 3600, "initialOrbitAngle": 4.6, "orbitSpeed": 0.017 },
+  
+      {
+        "name": "Adriana",
+        "mass": 1000000000000,
+        "radius": 950,
+        "color": "#8AA5BF",
+        "parentName": "Tatoo I",
+        "orbitDistance": 46000,
+        "initialOrbitAngle": 3.8,
+        "orbitSpeed": 0.0035
+      },
+      { "name": "Adriana I", "mass": 2000000000, "radius": 80, "color": "#A9A9A9",
+        "parentName": "Adriana", "orbitDistance": 1600, "initialOrbitAngle": 0.9, "orbitSpeed": 0.032 },
+      { "name": "Adriana II", "mass": 1700000000, "radius": 70, "color": "#9B9B9B",
+        "parentName": "Adriana", "orbitDistance": 2200, "initialOrbitAngle": 2.1, "orbitSpeed": 0.026 },
+      { "name": "Adriana III", "mass": 1500000000, "radius": 65, "color": "#8F8F8F",
+        "parentName": "Adriana", "orbitDistance": 2800, "initialOrbitAngle": 3.9, "orbitSpeed": 0.021 }
+    ],
+  
+    "stations": [
+      { "hostName": "Tatooine", "angle": 0.35, "name": "Station Orbital de Mos Eisley", "color": "#00FFCC" },
+      { "hostName": "Tatooine", "angle": 3.49, "name": "Relais Anchorhead",             "color": "#00FFCC" },
+      { "hostName": "Ohann",    "angle": 2.09, "name": "Plateforme Ohann-Alpha",        "color": "#00FFCC" },
+      { "hostName": "Adriana",  "angle": 5.20, "name": "Dépôt Adriana-Delta",           "color": "#00FFCC" }
+    ],
+  
+    "rocket": { "spawn": { "hostName": "Tatooine", "angle": 0.18 } },
+  
+    "asteroidBelts": [
+      { "innerRadius": 52000, "outerRadius": 60000, "count": 500, "seed": 32777,
+        "sizeRange": { "min": 1, "max": 2 }, "color": "#9aa3a7", "brightness": 0.85 }
+    ],
+  
+    "starsConfig": { "count": 1000, "radius": 150000, "seed": 424242 },
+  
+    "narratives": {
+      "Tatoo I": { "title": "Premier Soleil", "text": "L’un des deux soleils du système Tatoo. Pour la simulation, il sert de centre gravitationnel." },
+      "Tatoo II": { "text": "Compagnon stellaire de Tatoo I. Le vrai canon montre Tatooine en orbite circumbinaire, ici simplifiée pour le moteur." },
+      "Tatooine": { "text": "Monde désertique aux deux soleils, patrie des fermes d’humidité et repaire de contrebandiers." },
+      "Ghomrassen": { "text": "Première lune répertoriée de Tatooine." },
+      "Guermessa": { "text": "Deuxième lune répertoriée de Tatooine." },
+      "Chenini": { "text": "Troisième lune de Tatooine — triade emblématique de son ciel nocturne." },
+      "Ohann": { "text": "Première géante gazeuse du système Tatoo, escortée de plusieurs lunes." },
+      "Adriana": { "text": "Seconde géante gazeuse du système, complète l’architecture externe." }
+    }
+  }

@@ -215,8 +215,13 @@ class UniverseView {
             return;
         }
 
-        // Trouver le Soleil pour orienter l'ombre
-        const sunBody = celestialBodies.find(b => b && b.name === 'Soleil');
+        // Trouver l'étoile centrale (monde générique):
+        // priorité au corps sans parentBody, sinon fallback sur quelques noms connus
+        let sunBody = celestialBodies.find(b => b && b.parentBody === null);
+        if (!sunBody) {
+            const STAR_NAMES = ['Soleil', 'Sun', 'Kerbol', 'Star', 'Sol'];
+            sunBody = celestialBodies.find(b => b && STAR_NAMES.includes(b.name));
+        }
 
         for (const body of celestialBodies) {
             // Vérification basique de l'existence et de la position

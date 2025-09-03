@@ -157,7 +157,7 @@ const ROCKET = {
 // Constantes du corps céleste
 // IMPORTANT: Ces valeurs décrivent un monde par défaut (fallback) utilisé
 // uniquement si aucun preset JSON n'est chargé.
-// Le monde par défaut sera remplacé par assets/worlds/1_solar_system.json
+// Le monde par défaut sera remplacé par assets/worlds/1_solar.json
 // lors de l'initialisation (voir main.js et GameController/Setup).
 const CELESTIAL_BODY = {
     // --- Propriétés Générales / Terre (par défaut) ---

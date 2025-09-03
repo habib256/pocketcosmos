@@ -55,6 +55,8 @@ Comprendre ces flux de données est essentiel pour toute modification.
    - Appelle les autres vues (`traceView`, `vectorsView`, `uiView`...) si elles sont actives.
    - Gère les "toggles" d'affichage (Vecteurs `RENDER_TOGGLE_VECTORS`, Traces `RENDER_TOGGLE_TRACES`, Champ de gravité `RENDER_TOGGLE_GRAVITY_FIELD`) en réponse aux événements.
    - Tient compte de l'état de pause (`GAME_PAUSED`/`GAME_RESUMED`) pour n'afficher que l'UI pendant la pause.
+   - Éclairage/ombres: `CelestialBodyView` applique un dégradé jour→nuit avec pénombre, orienté par l'étoile centrale (détection générique: corps sans parent ou noms `Soleil`/`Kerbol`...). Ombres aussi sur l'atmosphère.
+   - Anneaux: dessinés en deux passes (arrière puis avant) avec découpe par le disque de la planète pour éviter que l'arrière passe devant.
 
 ### d. Logique de Collision
 1. **Matter.js** : Détecte une collision entre la fusée et un corps céleste.
@@ -99,7 +101,7 @@ Comprendre ces flux de données est essentiel pour toute modification.
 *Lisent les données des modèles et les dessinent sur le canvas. Ne modifient jamais l'état.*
 - **`RocketView.js`**: Affiche la fusée, ses propulseurs et son état (crashé ou non).
 - **`UniverseView.js`**: Affiche le fond étoilé (scintillement), coordonne le dessin des corps célestes, et rend les ceintures d'astéroïdes.
-- **`CelestialBodyView.js`**: Affiche un corps céleste individuel.
+- **`CelestialBodyView.js`**: Affiche un corps céleste individuel, avec ombrage/pénombre orienté par l'étoile, atmosphère ombrée, et anneaux en deux passes (back/front). Le contour uniforme a été supprimé.
 - **`VectorsView.js`**: Affiche les vecteurs physiques (poussée, vitesse, accélération, attractions) et peut afficher le champ de gravité en modes "flèches" ou "lignes".
 - **`TraceView.js`**: Affiche la trajectoire de la fusée.
 - **`UIView.js`**: Affiche l'interface utilisateur (infos, missions, cargo, crédits), gère des écrans modaux (Chargement, Pause, Game Over) et un effet "Mission Réussie".
@@ -133,6 +135,7 @@ Comprendre ces flux de données est essentiel pour toute modification.
 #### Entrées et UI
 - **`InputController.js`**: Capture les entrées clavier/souris/manette et les publie sur l'EventBus.
 - **`AudioManager.js`**: Gestion centralisée de l'audio.
+ - **Écran de démarrage**: choix du monde via un sélecteur "Monde" à gauche et bouton "Prêt !" à droite.
 
 #### IA et Entraînement
 - **`RocketAI.js`**: L'agent IA (Deep Q-Network) qui prend des décisions pour piloter la fusée.
@@ -282,6 +285,8 @@ Champs additionnels supportés (optionnels):
 - `stations`: liste d'objets `{ hostName, angle, name, color? }` positionnés sur la surface des corps.
 - `asteroidBelts`: configuration(s) d'anneaux d'astéroïdes `{ innerRadius, outerRadius, count, seed?, sizeRange?, color?, brightness? }`.
 - `starsConfig`: génération compacte des étoiles d'arrière-plan `{ count, radius, seed }`.
+ - `hasRings`: booléen pour activer les anneaux sur un corps.
+ - `atmosphere`: objet `{ exists?: boolean, height?: number, color?: string }`. `height` ≤ 1 => proportion du rayon; sinon valeur monde.
 
 ### 10.5. Responsabilités lors d'un Reload
 
@@ -293,6 +298,7 @@ Champs additionnels supportés (optionnels):
 - **`CameraController`**: recale la caméra (target/zoom) sur le spawn ou la cible par défaut.
 - **`RocketController`**: remet à zéro les puissances/états, repositionne la fusée via `RocketModel`.
 - **`AudioManager`**: coupe/rejoue les ambiances en fonction du nouvel univers.
+ - `UniverseModel.spawnInfo`: mémorise `rocket.spawn` du preset; `GameController.resetRocket` réapplique ce spawn lorsque l'utilisateur appuie sur `R`.
 
 ### 10.6. Pseudo-code de Référence
 

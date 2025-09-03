@@ -238,10 +238,11 @@ class GameSetupController {
                 }
             }
 
-            // Repositionner la fusée si demandé
+            // Stocker l'info de spawn et repositionner la fusée si demandé
             if (existingRocketModel) {
                 if (data && data.rocket && data.rocket.spawn && existingRocketModel.setPosition) {
                     const spawn = data.rocket.spawn;
+                    universeModel.spawnInfo = JSON.parse(JSON.stringify(spawn));
                     // Mode 1: hostName + angle (spécifie l'astre de départ et l'angle à la surface)
                     if (spawn.hostName && typeof spawn.angle === 'number') {
                         const host = universeModel.celestialBodies.find(b => b.name === spawn.hostName);

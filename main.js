@@ -28,6 +28,16 @@ let gameController = null;
  */
 let eventBus = null;
 
+// Liste des mondes disponibles (id -> url)
+const WORLD_PRESETS = [
+    { id: '1', name: 'Monde 1 — Système solaire', url: 'assets/worlds/1_solar.json' },
+    { id: '2', name: 'Monde 2 — Kerbol System',   url: 'assets/worlds/2_kerbol.json' },
+    { id: '3', name: 'Monde 3 — OuterWilds System', url: 'assets/worlds/3_outerwilds.json' },
+    { id: '4', name: 'Monde 4 — Tatoo', url: 'assets/worlds/4_Tatoo.json' },
+    { id: '5', name: 'Monde 5 — Endor', url: 'assets/worlds/5_Endor.json' },
+    { id: '6', name: 'Monde 6 — Alien', url: 'assets/worlds/6_alien.json' }
+];
+
 /**
  * Fonction principale d'initialisation de l'application.
  * Exécutée lorsque le DOM est entièrement chargé.
@@ -113,17 +123,7 @@ function init() {
     };
     gameController.init(canvas, config); // Passer le canvas et la config ici
 
-    // Charger par défaut le preset d'univers si disponible
-    try {
-        if (window.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
-            window.eventBus.emit(window.EVENTS.UNIVERSE.LOAD_REQUESTED, {
-                source: 'preset',
-                url: 'assets/worlds/1_solar_system.json'
-            });
-        }
-    } catch (e) {
-        console.warn('[main] Échec de l\'émission UNIVERSE_LOAD_REQUESTED initiale:', e);
-    }
+    // Le choix du monde est maintenant fait dans l'écran de démarrage (showInstructions)
 
     // Afficher les instructions initiales à l'utilisateur
     showInstructions();
@@ -257,7 +257,11 @@ function showInstructions() {
     // Contenu HTML du panneau (structure améliorée).
     instructions.innerHTML = `
         <div style="display: flex; align-items: flex-start; gap: 15px; width: 100%;">
-            <img src="favicon.png" alt="Icône Fusée" style="width:160px; height:160px; flex-shrink: 0; margin-top: 5px;" />
+            <div style="display:flex; flex-direction:column; align-items:center; width:160px; flex-shrink:0;">
+                <img src="favicon.png" alt="Icône Fusée" style="width:160px; height:160px; margin-top: 5px;" />
+                <p style="font-size:0.8em; color:#bbb; margin-top: 8px; text-align:center;">Souris et Manette de jeu également supportées.</p>
+                <p style="font-size:0.82em; color:#9cf; margin-top:4px; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
+            </div>
             <div style="flex-grow: 1;">
                 <h3 style="font-weight:bold; font-size:1.1em; margin:0 0 5px 0; text-align: left;">Contrôles</h3>
                 <table style="border-collapse:collapse; width: 100%; font-size:0.85em; text-align: left;">
@@ -277,17 +281,39 @@ function showInstructions() {
                 </table>
             </div>
         </div>
-        <p style="font-size:0.8em; color:#bbb; margin-top: 10px; text-align:center;">Souris et Manette de jeu également supportées.</p>
-        <p style="font-size:0.82em; color:#9cf; margin-top:5px; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; margin-top:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <label for="worldSelect" style="font-weight:bold;">Monde:</label>
+                <select id="worldSelect" style="padding:4px 6px;">
+                    <option value="1" selected>Monde 1 — Système solaire</option>
+                    <option value="2">Monde 2 — Kerbol System</option>
+                    <option value="3">Monde 3 — OuterWilds System</option>
+                    <option value="4">Monde 4 — Tatoo</option>
+                    <option value="5">Monde 5 — Endor</option>
+                    <option value="6">Monde 6 — Alien</option>
+                </select>
+            </div>
+            <button id="startButton" style="font-size:1.0em; padding: 5px 15px; cursor: pointer;">Prêt ! (Commencer)</button>
+        </div>
     `;
     
-    // Créer le bouton de fermeture.
-    const closeButton = document.createElement('button');
-    closeButton.textContent = 'Prêt ! (Commencer)'; // Texte plus engageant
-    closeButton.style = 'margin-top: 15px; font-size:1.0em; padding: 5px 15px; cursor: pointer;';
-    
     // Action lors du clic sur le bouton : supprimer le panneau et jouer le son.
-    closeButton.onclick = () => {
+    const startBtn = instructions.querySelector('#startButton');
+    startBtn.onclick = () => {
+        // Émettre le chargement du monde choisi AVANT de retirer l'overlay
+        try {
+            const select = instructions.querySelector('#worldSelect');
+            const worldId = select ? select.value : '1';
+            const preset = WORLD_PRESETS.find(w => w.id === worldId) || WORLD_PRESETS[0];
+            if (window.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
+                window.eventBus.emit(window.EVENTS.UNIVERSE.LOAD_REQUESTED, {
+                    source: 'preset',
+                    url: preset.url
+                });
+            }
+        } catch (e) {
+            console.warn('[start] Échec de l\'émission UNIVERSE_LOAD_REQUESTED via écran de démarrage:', e);
+        }
         if (instructions.parentNode) { // Vérifier si le panneau est toujours dans le DOM
             instructions.parentNode.removeChild(instructions);
         }
@@ -307,9 +333,6 @@ function showInstructions() {
             }
         }
     };
-    
-    // Ajouter le bouton au panneau d'instructions.
-    instructions.appendChild(closeButton);
     
     // Ajouter le panneau d'instructions complet au corps du document.
     document.body.appendChild(instructions);

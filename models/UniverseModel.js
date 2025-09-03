@@ -44,6 +44,12 @@ class UniverseModel {
         this.narratives = {};
 
         /**
+         * @type {object|null}
+         * Informations de spawn de la fusée d'après les données du monde (hostName+angle ou position/velocity/angle).
+         */
+        this.spawnInfo = null;
+
+        /**
          * @type {number} Largeur théorique de l'univers, basée sur MAX_COORDINATE.
          * Pourrait être utilisée pour définir des limites ou optimiser le rendu.
          */

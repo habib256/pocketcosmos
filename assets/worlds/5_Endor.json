@@ -1,0 +1,104 @@
+{
+    "seed": 1211,
+    "physics": { "G": 0.0001, "timeStepMs": 16.6667 },
+    "bodies": [
+      {
+        "name": "Moddell",
+        "mass": 10000000000000,
+        "radius": 1200,
+        "position": { "x": 0, "y": 0 },
+        "color": "#FFD27A"
+      },
+  
+      {
+        "name": "Endor Prime",
+        "mass": 1200000000000,
+        "radius": 1050,
+        "color": "#9FB0C6",
+        "parentName": "Moddell",
+        "orbitDistance": 22000,
+        "initialOrbitAngle": 1.35,
+        "orbitSpeed": 0.005
+      },
+  
+      {
+        "name": "Forêt-lune d'Endor",
+        "mass": 7000000000,
+        "radius": 180,
+        "color": "#4A7A3C",
+        "parentName": "Endor Prime",
+        "orbitDistance": 1800,
+        "initialOrbitAngle": 0.40,
+        "orbitSpeed": 0.03
+      },
+      {
+        "name": "Kef Bir",
+        "mass": 6000000000,
+        "radius": 170,
+        "color": "#2F6B89",
+        "parentName": "Endor Prime",
+        "orbitDistance": 2400,
+        "initialOrbitAngle": 2.10,
+        "orbitSpeed": 0.024
+      },
+  
+      { "name": "Endor III",  "mass": 3500000000, "radius": 120, "color": "#A3A39A",
+        "parentName": "Endor Prime", "orbitDistance": 1200, "initialOrbitAngle": 3.60, "orbitSpeed": 0.035 },
+  
+      { "name": "Endor IV",  "mass": 3000000000, "radius": 110, "color": "#8F8F88",
+        "parentName": "Endor Prime", "orbitDistance": 3000, "initialOrbitAngle": 1.05, "orbitSpeed": 0.02 },
+  
+      { "name": "Endor V",   "mass": 2500000000, "radius": 100, "color": "#B8B094",
+        "parentName": "Endor Prime", "orbitDistance": 3600, "initialOrbitAngle": 4.20, "orbitSpeed": 0.017 },
+  
+      { "name": "Endor VI",  "mass": 2200000000, "radius": 95,  "color": "#9E8F7C",
+        "parentName": "Endor Prime", "orbitDistance": 4200, "initialOrbitAngle": 5.50, "orbitSpeed": 0.015 },
+  
+      { "name": "Endor VII", "mass": 2000000000, "radius": 90,  "color": "#807A74",
+        "parentName": "Endor Prime", "orbitDistance": 4800, "initialOrbitAngle": 0.85, "orbitSpeed": 0.013 },
+  
+      { "name": "Endor VIII","mass": 1800000000, "radius": 85,  "color": "#6F6B66",
+        "parentName": "Endor Prime", "orbitDistance": 5400, "initialOrbitAngle": 2.85, "orbitSpeed": 0.011 },
+  
+      { "name": "Endor IX",  "mass": 1600000000, "radius": 80,  "color": "#5F5B57",
+        "parentName": "Endor Prime", "orbitDistance": 6000, "initialOrbitAngle": 4.95, "orbitSpeed": 0.009 }
+    ],
+  
+    "stations": [
+      { "hostName": "Forêt-lune d'Endor", "angle": 0.52, "name": "Étoile de la Mort II (orbite)", "color": "#00FFCC" },
+      { "hostName": "Forêt-lune d'Endor", "angle": 3.14, "name": "Générateur de bouclier (orbital)", "color": "#00FFCC" },
+      { "hostName": "Kef Bir",            "angle": 2.44, "name": "Relais océanique Kef Bir",        "color": "#00FFCC" },
+      { "hostName": "Endor Prime",        "angle": 1.20, "name": "Plateforme d’observation Endor",  "color": "#00FFCC" }
+    ],
+  
+    "rocket": { "spawn": { "hostName": "Forêt-lune d'Endor", "angle": 0.18 } },
+  
+    "asteroidBelts": [
+      {
+        "innerRadius": 2100,
+        "outerRadius": 2300,
+        "count": 700,
+        "seed": 55542,
+        "sizeRange": { "min": 1, "max": 2 },
+        "color": "#9aa3a7",
+        "brightness": 0.85,
+        "note": "Anneau de débris DS-2 autour d'Endor Prime"
+      }
+    ],
+  
+    "starsConfig": { "count": 900, "radius": 150000, "seed": 424242 },
+  
+    "narratives": {
+      "Moddell": { "title": "Étoile de Moddell", "text": "L’astre central du système d’Endor. Source d’énergie paisible d’un secteur reculé de la Bordure Extérieure." },
+      "Endor Prime": { "text": "Géante gazeuse bleutée. Son cortège de neuf lunes abrite la fameuse Forêt-lune et l’océanique Kef Bir." },
+      "Forêt-lune d'Endor": { "text": "Mondes forestiers, villages Ewoks et légendes rebelles. Théâtre de la bataille qui scella le destin de l’Empire." },
+      "Kef Bir": { "text": "Lune océanique battue par les houles. Des épaves monumentales y témoignent des guerres passées." },
+      "Endor III": { "text": "Petit monde rocheux, surface terne et criblée de cratères." },
+      "Endor IV": { "text": "Satellite minéral aux falaises sombres et au relief marqué." },
+      "Endor V": { "text": "Corps aride aux tons sablonneux, pauvre en volatils." },
+      "Endor VI": { "text": "Lune pierreuse aux plaines gris-brun, peu d’albédo." },
+      "Endor VII": { "text": "Petit astre sombre, orbite externe stable." },
+      "Endor VIII": { "text": "Satellite irrégulier, probablement un corps capturé." },
+      "Endor IX": { "text": "Dernière lune répertoriée, au bord de la sphère d’influence d’Endor Prime." }
+    }
+  }

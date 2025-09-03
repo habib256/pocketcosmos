@@ -1,0 +1,215 @@
+{
+    "seed": 1002,
+    "physics": {
+      "G": 0.0001,
+      "timeStepMs": 16.6667
+    },
+    "bodies": [
+      {
+        "name": "Grand Feu",
+        "mass": 10000000000000,
+        "radius": 1200,
+        "position": { "x": 0, "y": 0 },
+        "color": "#FFD700"
+      },
+      {
+        "name": "Sablière Rouge",
+        "mass": 100000000000,
+        "radius": 150,
+        "color": "#FF8C00",
+        "parentName": "Grand Feu",
+        "orbitDistance": 8000,
+        "initialOrbitAngle": 0.0,
+        "orbitSpeed": 0.008
+      },
+      {
+        "name": "Sablière Noire",
+        "mass": 90000000000,
+        "radius": 140,
+        "color": "#3B3B3B",
+        "parentName": "Sablière Rouge",
+        "orbitDistance": 1000,
+        "initialOrbitAngle": 3.1415926536,
+        "orbitSpeed": 0.01
+      },
+      {
+        "name": "Âtrebois",
+        "mass": 200000000000,
+        "radius": 300,
+        "color": "#228B22",
+        "parentName": "Grand Feu",
+        "orbitDistance": 12000,
+        "initialOrbitAngle": 1.0,
+        "orbitSpeed": 0.006
+      },
+      {
+        "name": "La Rocaille",
+        "mass": 10000000000,
+        "radius": 50,
+        "color": "#CCCCCC",
+        "parentName": "Âtrebois",
+        "orbitDistance": 2000,
+        "initialOrbitAngle": 0.5,
+        "orbitSpeed": 0.005
+      },
+      {
+        "name": "Cravité",
+        "mass": 400000000000,
+        "radius": 280,
+        "color": "#483D8B",
+        "parentName": "Grand Feu",
+        "orbitDistance": 16000,
+        "initialOrbitAngle": 2.0,
+        "orbitSpeed": 0.005
+      },
+      {
+        "name": "La Lanterne",
+        "mass": 5000000000,
+        "radius": 60,
+        "color": "#FF4500",
+        "parentName": "Cravité",
+        "orbitDistance": 3000,
+        "initialOrbitAngle": 1.0,
+        "orbitSpeed": 0.006
+      },
+      {
+        "name": "Léviathe",
+        "mass": 900000000000,
+        "radius": 600,
+        "color": "#20B2AA",
+        "parentName": "Grand Feu",
+        "orbitDistance": 22000,
+        "initialOrbitAngle": 2.8,
+        "orbitSpeed": 0.004
+      },
+      {
+        "name": "Sombronces",
+        "mass": 300000000000,
+        "radius": 250,
+        "color": "#C0C0C0",
+        "parentName": "Grand Feu",
+        "orbitDistance": 28000,
+        "initialOrbitAngle": 4.0,
+        "orbitSpeed": 0.003
+      },
+      {
+        "name": "Trou blanc",
+        "mass": 100000000,
+        "radius": 50,
+        "color": "#FFFFFF",
+        "parentName": "Grand Feu",
+        "orbitDistance": 32000,
+        "initialOrbitAngle": 0.8,
+        "orbitSpeed": 0.002
+      },
+      {
+        "name": "L'Intrus",
+        "mass": 500000000,
+        "radius": 30,
+        "color": "#87CEEB",
+        "parentName": "Grand Feu",
+        "orbitDistance": 14000,
+        "initialOrbitAngle": 5.5,
+        "orbitSpeed": 0.007
+      },
+      {
+        "name": "Lune quantique",
+        "mass": 10000000000,
+        "radius": 50,
+        "color": "#AAAAAA",
+        "parentName": "Grand Feu",
+        "orbitDistance": 18000,
+        "initialOrbitAngle": 4.7,
+        "orbitSpeed": 0.0045
+      },
+      {
+        "name": "L'Étranger",
+        "mass": 10000000000,
+        "radius": 100,
+        "color": "#4B5320",
+        "parentName": "Grand Feu",
+        "orbitDistance": 10000,
+        "initialOrbitAngle": 3.14,
+        "orbitSpeed": 0.009
+      },
+      {
+        "name": "L'Œil de l'Univers",
+        "mass": 20000000000,
+        "radius": 100,
+        "color": "#800080",
+        "parentName": "Grand Feu",
+        "orbitDistance": 40000,
+        "initialOrbitAngle": 1.5,
+        "orbitSpeed": 0.001
+      }
+    ],
+    "stations": [
+      { "hostName": "Grand Feu",  "angle": 0.0,   "name": "Station solaire",        "color": "#00FFCC" },
+      { "hostName": "Âtrebois",   "angle": 1.047, "name": "Satellite Âtrien",       "color": "#00FFCC" },
+      { "hostName": "Léviathe",   "angle": 2.356, "name": "Canon orbital",          "color": "#00FFCC" },
+      { "hostName": "Trou blanc", "angle": 0.5,   "name": "Station du trou blanc",  "color": "#00FFCC" },
+      { "hostName": "Grand Feu",  "angle": 1.8849555922, "name": "Satellite spatial lointain", "color": "#00FFCC" }
+    ],
+    "rocket": {
+      "spawn": {
+        "hostName": "Âtrebois",
+        "angle": 0.1
+      }
+    },
+    "asteroidBelts": [
+      { "innerRadius": 33000, "outerRadius": 36000, "count": 300, "seed": 42424,
+        "sizeRange": { "min": 1, "max": 2 }, "color": "#9aa3a7", "brightness": 0.85 },
+      { "innerRadius": 50000, "outerRadius": 55000, "count": 300, "seed": 42425,
+        "sizeRange": { "min": 1, "max": 2 }, "color": "#a7b0b3", "brightness": 0.8 }
+    ],
+    "starsConfig": {
+      "count": 800,
+      "radius": 150000,
+      "seed": 424242
+    },
+    "narratives": {
+      "Grand Feu": {
+        "title": "Au Bord de la Supernova",
+        "text": "Étoile du système Outer Wilds, ce \"Grand Feu\" s’embrase lentement. En l’espace de chaque boucle temporelle, il enfle en géante rouge puis s’effondre violemment en supernova, remettant les compteurs à zéro [oai_citation:0‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Sun%20is%20a%20main,violent%20Supernova%20after%2022%20minutes) [oai_citation:1‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Interloper)."
+      },
+      "Sablière Rouge": {
+        "text": "Planète jumelle désertique teintée d’orange, la Sablière Rouge est creusée de cavernes profondes. Au fil du temps, elle se remplit du sable venant de sa sœur, révélant peu à peu ses mystères tout en ensevelissant les siens [oai_citation:2‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Hourglass%20Twins%20are%20two,with%20sand%20and%20becomes%20inaccessible) [oai_citation:3‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=planet%20with%20an%20expansive%20cave,with%20sand%20and%20becomes%20inaccessible)."
+      },
+      "Sablière Noire": {
+        "text": "Seconde des planètes jumelles des Sablières, la Sablière Noire perd inexorablement son immense mer de sable au profit de sa jumelle. Sous sa surface d’apparence stérile se cachent de précieux secrets Nomaï, dévoilés une fois le sable écoulé [oai_citation:4‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Hourglass%20Twins%20are%20two,with%20sand%20and%20becomes%20inaccessible) [oai_citation:5‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=planet%20with%20an%20expansive%20cave,with%20sand%20and%20becomes%20inaccessible)."
+      },
+      "Âtrebois": {
+        "text": "Berceau verdoyant des Âtriens, Âtrebois est une planète boisée parsemée de geysers et de cratères. Cette terre accueillante, où débute notre aventure, abrite la base du programme Outer Wilds et un observatoire astronomique rustique."
+      },
+      "La Rocaille": {
+        "text": "Petite lune grise en orbite d’Âtrebois, la Rocaille servit d’avant-poste aux premiers vols spatiaux Âtriens. Marquée par un large cratère d’impact, elle offre une vue rapprochée de sa planète mère et du ciel étoilé."
+      },
+      "Cravité": {
+        "text": "Planète rocheuse creuse, Cravité cache en son cœur un trou noir dévorant. Tandis que sa lune volcanique La Lanterne bombarde sa surface de roches en fusion, d’énormes fragments de croûte s’effondrent à travers le vortex gravitationnel pour être éjectés au loin par un trou blanc lointain [oai_citation:6‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Brittle%20Hollow%20is%20a%20hollow,48%20at%20the%20system%27s%20outskirts) [oai_citation:7‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=White%20Hole)."
+      },
+      "La Lanterne": {
+        "text": "Unique lune de Cravité, ce volcan ambulant éjecte sans relâche des gerbes de lave incandescente. Ses projections embrasées s’abattent sur Cravité, fragilisant un peu plus la planète creuse tandis que l’océan de feu de la Lanterne se vide lentement [oai_citation:8‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Hollow%E2%80%99s%20Lantern) [oai_citation:9‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Hollow%E2%80%99s%20Lantern%20is%20the%20lone,lava%20ocean%20as%20time%20progresses)."
+      },
+      "Léviathe": {
+        "text": "Immense planète océanique, Léviathe est balayée par des cyclones titanesques qui projettent parfois ses îles flottantes jusque dans l’espace. Sous sa surface marine agitée, ce monde à la gravité écrasante recèle des structures Nomaï englouties et un mystérieux projet scientifique en orbite [oai_citation:10‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Giant%E2%80%99s%20Deep) [oai_citation:11‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Giant%27s%20Deep%20is%20a%20large,suborbital%20trajectories%20by%20passing%20cyclones)."
+      },
+      "Sombronces": {
+        "text": "Sphère gelée percée de ronces obscures, Sombronces est tout ce qu’il reste d’une planète océan infectée par un réseau végétal sinistre. Son intérieur renferme un labyrinthe brumeux de poches dimensionnelles, peuplé d’Anglerfish géants et dépourvu de toute logique spatiale conventionnelle [oai_citation:12‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Dark%20Bramble) [oai_citation:13‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=Dark%20Bramble%20is%20a%20frozen,that%20tore%20the%20planet%20apart)."
+      },
+      "Trou blanc": {
+        "text": "Singularité cosmique inversée, le trou blanc stationnaire en bordure du système expulse les objets engloutis par le trou noir de Cravité. Les Nomaï ont construit à ses côtés la Station du trou blanc, permettant aux voyageurs égarés de se téléporter depuis ce lointain refuge vers la surface de Cravité [oai_citation:14‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=White%20Hole) [oai_citation:15‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=White%20Hole%20Station)."
+      },
+      "L'Intrus": {
+        "text": "Comète à l’orbite excentrique, l’Intrus provient des confins du cosmos et est le dernier arrivé dans le système. Recouvert d’une épaisse couche de glace qui fond brièvement à son passage près du Soleil, il renferme dans ses entrailles gelées une dangereuse matière spectrale qui scella le destin des Nomaï."
+      },
+      "Lune quantique": {
+        "text": "Énigmatique satellite naturel doté de propriétés quantiques, la Lune quantique apparaît en orbite autour de plusieurs planètes successivement, disparaissant sitôt qu’on ne l’observe plus [oai_citation:16‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Quantum%20Moon%20is%20a,is%20a%20mystery%20unto%20itself). Atterrir à sa surface exige de comprendre ses règles quantiques, afin de la fixer par l’objectif d’une caméra."
+      },
+      "L'Étranger": {
+        "text": "Vaste vaisseau-monde en forme d’anneau, l’Étranger fut bâti par une espèce ancienne inconnue. Camouflé près du Soleil par un dispositif optique, il passe inaperçu du reste du système. En son sein, une civilisation et un écosystème endormis dérivent sur un fleuve silencieux, figés dans l’ombre."
+      },
+      "L'Œil de l'Univers": {
+        "text": "Objet céleste mythique en orbite lointaine, l’Œil de l’Univers est extrêmement ancien et mystérieux [oai_citation:17‡outerwilds.fandom.com](https://outerwilds.fandom.com/wiki/Solar_System#:~:text=The%20Eye%20of%20the%20Universe,55%20as%20their%20ultimate%20goal). Il émet un signal presque imperceptible qui attira autrefois les Nomaï dans ce système. Considéré comme la clé de la compréhension cosmique, il reste l’ultime destination de notre voyage."
+      }
+    }
+  }
