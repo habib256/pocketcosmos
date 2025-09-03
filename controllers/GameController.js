@@ -631,10 +631,6 @@ class GameController {
             this.renderingController.resetTrace(null);
         }
 
-        if (this.missionManager) {
-            this.missionManager.resetMissions();
-        }
-        
         if(startLocation && this.missionManager){
             this.missionManager.loadCargoForCurrentLocationMission(startLocation, this.rocketModel);
         }

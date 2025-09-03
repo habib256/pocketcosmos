@@ -157,6 +157,19 @@ class GameSetupController {
                 }
             }
 
+            // Narratives par corps
+            if (data && data.narratives && typeof data.narratives === 'object') {
+                universeModel.narratives = {};
+                for (const [name, value] of Object.entries(data.narratives)) {
+                    if (value && typeof value.text === 'string') {
+                        universeModel.narratives[name] = {
+                            title: typeof value.title === 'string' ? value.title : undefined,
+                            text: value.text
+                        };
+                    }
+                }
+            }
+
             // Appliquer les étoiles si fournies (x, y, brightness)
             if (data && Array.isArray(data.stars)) {
                 universeModel.stars = [];
@@ -261,6 +274,17 @@ class GameSetupController {
         } catch (e) {
             console.error('[GameSetupController.buildWorldFromData] Erreur de construction:', e);
         }
+        // Charger les missions si présentes
+        try {
+            if (this.missionManager && data && Array.isArray(data.missions)) {
+                if (typeof this.missionManager.loadFromData === 'function') {
+                    this.missionManager.loadFromData(data.missions);
+                }
+            }
+        } catch (e) {
+            console.warn('[GameSetupController] Échec chargement missions depuis data:', e);
+        }
+
         return { universeModel };
     }
 

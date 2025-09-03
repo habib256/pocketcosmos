@@ -130,6 +130,39 @@ class MissionManager {
     }
 
     /**
+     * Charge une liste de missions depuis des données (ex: JSON du monde) et remplace les missions courantes.
+     * @param {Array<{id?:string, from:string, to:string, requiredCargo:Array<{type:string,quantity:number}>, reward:number, description?:string}>} missionsData
+     */
+    loadFromData(missionsData) {
+        if (!Array.isArray(missionsData)) {
+            console.warn("[MissionManager] loadFromData appelé sans tableau de missions valide.");
+            return;
+        }
+        this.missions = [];
+        for (const m of missionsData) {
+            if (!m || typeof m.from !== 'string' || typeof m.to !== 'string' || !Array.isArray(m.requiredCargo) || typeof m.reward !== 'number') {
+                console.warn('[MissionManager] Mission invalide ignorée:', m);
+                continue;
+            }
+            const sanitized = m.requiredCargo.filter(it => it && typeof it.type === 'string' && typeof it.quantity === 'number' && it.quantity > 0);
+            if (sanitized.length === 0) {
+                console.warn('[MissionManager] requiredCargo vide/invalid pour mission, ignorée:', m);
+                continue;
+            }
+            this.missions.push({
+                id: typeof m.id === 'string' ? m.id : `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                from: m.from,
+                to: m.to,
+                requiredCargo: sanitized,
+                reward: m.reward,
+                description: typeof m.description === 'string' ? m.description : undefined,
+                status: 'pending'
+            });
+        }
+        // console.log(`[MissionManager] ${this.missions.length} mission(s) chargée(s) depuis les données.`);
+    }
+
+    /**
      * Retourne les détails de la première mission active (statut "pending") dans la liste.
      * Utile pour afficher des informations sur la mission en cours.
      * @returns {MissionObjet|null} La première mission active trouvée, ou null si aucune mission n'est en attente.

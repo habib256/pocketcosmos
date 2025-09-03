@@ -38,6 +38,12 @@ class UniverseModel {
         this.stations = [];
 
         /**
+         * @type {Record<string, {title?:string, text:string}>}
+         * Narrations par corps (planètes/lunes), optionnelles, chargées depuis les presets.
+         */
+        this.narratives = {};
+
+        /**
          * @type {number} Largeur théorique de l'univers, basée sur MAX_COORDINATE.
          * Pourrait être utilisée pour définir des limites ou optimiser le rendu.
          */

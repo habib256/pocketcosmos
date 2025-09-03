@@ -230,6 +230,38 @@
     "count": 800,
     "radius": 150000,
     "seed": 424242
-  }
+  },
+  "narratives": {
+    "Soleil": { "title": "Le Coeur du Système", "text": "Le Soleil, phare de notre système, dont la gravité dirige la danse des planètes." },
+    "Mercure": { "text": "Petite et rapide, battue par les vents solaires, Mercure est un monde de roche et d'extrêmes." },
+    "Vénus": { "text": "Voilée de nuages acides, Vénus brûle d'une chaleur écrasante sous une atmosphère épaisse." },
+    "Terre": { "text": "Berceau de l'humanité, la Terre abrite océans, continents et notre point de départ." },
+    "Lune": { "text": "Gardienne nocturne, la Lune a guidé nos premiers pas au-delà de la Terre." },
+    "Mars": { "text": "Planète rouge de poussière et de promesses, but des rêves d'exploration." },
+    "Phobos": { "text": "Étrange rocher en orbite basse, Phobos file vite au-dessus de Mars." },
+    "Deimos": { "text": "Lointain et timide, Deimos survole Mars sur une orbite silencieuse." },
+    "Cérès": { "text": "Première des planètes naines, Cérès repose dans la ceinture d'astéroïdes." },
+    "Jupiter": { "text": "Géante gazeuse striée de tempêtes, Jupiter règne avec ses lunes innombrables." },
+    "Io": { "text": "Mondes de feu et de soufre, Io est bousculée par la gravité de Jupiter." },
+    "Europe": { "text": "Sous sa glace, Europe pourrait cacher un océan et des secrets de vie." },
+    "Ganymède": { "text": "Plus grande lune du système solaire, Ganymède est un monde à part entière." },
+    "Callisto": { "text": "Ancienne et criblée de cratères, Callisto témoigne d'un passé violent." },
+    "Saturne": { "text": "Avec ses anneaux majestueux, Saturne fascine depuis toujours les observateurs." },
+    "Titan": { "text": "Brume orange, lacs d'hydrocarbures — Titan ressemble à une Terre primitive." },
+    "Encelade": { "text": "Geysers glacés et océan interne, Encelade défie nos certitudes." },
+    "Uranus": { "text": "Penchée sur le côté, Uranus tourne comme une bille turquoise au ralenti." },
+    "Neptune": { "text": "Bleue et lointaine, Neptune abrite des vents supersoniques." },
+    "Pluton": { "text": "Aux confins, Pluton et ses glaces racontent la naissance du système." }
+  },
+  "missions": [
+    { "id": "m1-terre-lune-fuel", "from": "Terre", "to": "Lune", "requiredCargo": [{"type":"Fuel","quantity":10}], "reward": 120, "description": "Ravitaillez un avant-poste lunaire en carburant." },
+    { "id": "m2-lune-terre-wrench", "from": "Lune", "to": "Terre", "requiredCargo": [{"type":"Wrench","quantity":10}], "reward": 150, "description": "Rapatriez des outils usinés en microgravité." },
+    { "id": "m3-terre-mars-mix", "from": "Terre", "to": "Mars", "requiredCargo": [{"type":"Fuel","quantity":5},{"type":"Wrench","quantity":5}], "reward": 320, "description": "Approvisionnez une base martienne naissante." },
+    { "id": "m4-mars-terre-crew", "from": "Mars", "to": "Terre", "requiredCargo": [{"type":"🧑‍🚀","quantity":10}], "reward": 520, "description": "Rapatriez un équipage d'exploration martienne." },
+    { "id": "m5-terre-venus-fuel", "from": "Terre", "to": "Vénus", "requiredCargo": [{"type":"Fuel","quantity":8}], "reward": 260, "description": "Alimentez une sonde atmosphérique vénusienne." },
+    { "id": "m6-terre-mercure-tools", "from": "Terre", "to": "Mercure", "requiredCargo": [{"type":"Wrench","quantity":6}], "reward": 240, "description": "Livrez des outils résistants aux hautes températures." },
+    { "id": "m7-jupiter-europe-fuel", "from": "Jupiter", "to": "Europe", "requiredCargo": [{"type":"Fuel","quantity":12}], "reward": 400, "description": "Ravitaillez un foreur sur la glace d'Europe." },
+    { "id": "m8-saturne-encelade-tools", "from": "Saturne", "to": "Encelade", "requiredCargo": [{"type":"Wrench","quantity":8}], "reward": 380, "description": "Livrez des pièces pour l'observatoire geysers." }
+  ]
 }
 
