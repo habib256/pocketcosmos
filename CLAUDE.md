@@ -162,12 +162,6 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - Trajectory visualization
 - Start/stop/pause training controls
 
-**Known issues**:
-- AI emits wrong event types (uses `INPUT.KEYDOWN` instead of semantic events)
-- Thruster power scaling inconsistency
-- Training constants use unrealistic Earth/Moon values
-- Memory leaks in TensorFlow gradient calculations
-
 ## Key Events Reference
 
 Here are the most important events flowing through the `EventBus`:

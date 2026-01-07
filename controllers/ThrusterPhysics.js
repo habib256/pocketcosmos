@@ -164,6 +164,22 @@ class ThrusterPhysics {
         const landedOnBodyName = forcedLandedOnName || rocketModel.landedOn;
         console.log(`[LIFTOFF] Décollage initié depuis ${landedOnBodyName || 'surface inconnue'}`);
 
+        // CORRECTION BUG INERTIE: Récupérer la vélocité du corps céleste AVANT de modifier l'état
+        // Cela permet à la fusée d'hériter de l'inertie du corps en mouvement (lune, planète)
+        let inheritedVelocity = { x: 0, y: 0 };
+        if (landedOnBodyName && this.physicsController.celestialBodies) {
+            const celestialBodyInfo = this.physicsController.celestialBodies.find(
+                cb => cb.model && cb.model.name === landedOnBodyName
+            );
+            if (celestialBodyInfo && celestialBodyInfo.model && celestialBodyInfo.model.velocity) {
+                inheritedVelocity = {
+                    x: celestialBodyInfo.model.velocity.x || 0,
+                    y: celestialBodyInfo.model.velocity.y || 0
+                };
+                console.log(`[LIFTOFF] Vélocité héritée de ${landedOnBodyName}: (${inheritedVelocity.x.toFixed(2)}, ${inheritedVelocity.y.toFixed(2)})`);
+            }
+        }
+
         // Mettre à jour l'état du modèle
         rocketModel.isLanded = false;
         rocketModel.landedOn = null;
@@ -182,14 +198,16 @@ class ThrusterPhysics {
         };
         this.Body.applyForce(rocketBody, rocketBody.position, impulse);
 
-        // Donner une légère vitesse initiale pour décoller du sol
+        // CORRECTION BUG INERTIE: Ajouter la vélocité héritée du corps céleste
+        // à la vitesse initiale de décollage pour conserver l'inertie
         const initialVelMagnitude = 20.0;
-        this.Body.setVelocity(rocketBody, {
-            x: Math.cos(liftOffAngle) * -initialVelMagnitude,
-            y: Math.sin(liftOffAngle) * -initialVelMagnitude
-        });
+        const liftoffVelocity = {
+            x: Math.cos(liftOffAngle) * -initialVelMagnitude + inheritedVelocity.x,
+            y: Math.sin(liftOffAngle) * -initialVelMagnitude + inheritedVelocity.y
+        };
+        this.Body.setVelocity(rocketBody, liftoffVelocity);
         
-        console.log(`[LIFTOFF] ✅ Décollage naturel initié`);
+        console.log(`[LIFTOFF] ✅ Décollage naturel initié avec vélocité: (${liftoffVelocity.x.toFixed(2)}, ${liftoffVelocity.y.toFixed(2)})`);
     }
 
     // Jouer le son du propulseur principal

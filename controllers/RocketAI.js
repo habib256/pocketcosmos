@@ -135,7 +135,13 @@ class RocketAI {
     
     // Mettre à jour le modèle cible
     updateTargetModel() {
-        this.targetModel.setWeights(this.model.getWeights());
+        // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de les remplacer
+        const oldWeights = this.targetModel.getWeights();
+        const newWeights = this.model.getWeights();
+        this.targetModel.setWeights(newWeights);
+        // Libérer les anciens poids
+        oldWeights.forEach(w => w.dispose());
+        // Note: newWeights sont maintenant référencés par targetModel, ne pas les dispose
     }
     
     // S'abonner aux événements pertinents
@@ -150,9 +156,7 @@ class RocketAI {
     
     // Activer/désactiver l'agent
     toggleActive() {
-        console.log("[RocketAI] toggleActive() appelée. isActive avant changement:", this.isActive);
         this.isActive = !this.isActive;
-        console.log(`Agent IA ${this.isActive ? 'activé' : 'désactivé'}`);
         
         // Publier l'état de l'agent
         this.eventBus.emit(window.EVENTS.AI.CONTROL_CHANGED, { active: this.isActive });
@@ -168,7 +172,6 @@ class RocketAI {
     // Activer/désactiver l'entraînement
     toggleTraining() {
         this.isTraining = !this.isTraining;
-        console.log(`Entraînement ${this.isTraining ? 'activé' : 'désactivé'}`);
         this.eventBus.emit(window.EVENTS.AI.TRAINING_CHANGED, { active: this.isTraining });
     }
     
@@ -199,7 +202,7 @@ class RocketAI {
         if (!this.rocketController) missing.push('rocketController');
         
         if (missing.length > 0) {
-            console.warn(`[RocketAI] Dépendances manquantes: ${missing.join(', ')}`);
+            if (globalThis.DEBUG) console.warn(`[RocketAI] Dépendances manquantes: ${missing.join(', ')}`);
             return false;
         }
         return true;
@@ -272,14 +275,12 @@ class RocketAI {
         
         for (const prop of requiredRocketProps) {
             if (typeof this.rocketData[prop] !== 'number' || !isFinite(this.rocketData[prop])) {
-                console.warn(`[RocketAI] Propriété rocket invalide: ${prop} = ${this.rocketData[prop]}`);
                 return Array(10).fill(0);
             }
         }
         
         for (const prop of requiredBodyProps) {
             if (typeof this.celestialBodyData[prop] !== 'number' || !isFinite(this.celestialBodyData[prop])) {
-                console.warn(`[RocketAI] Propriété celestialBody invalide: ${prop} = ${this.celestialBodyData[prop]}`);
                 return Array(10).fill(0);
             }
         }
@@ -291,7 +292,6 @@ class RocketAI {
         
         // Vérifier que la distance est valide et non nulle
         if (!isFinite(distance) || distance === 0) {
-            console.warn(`[RocketAI] Distance invalide: ${distance}`);
             return Array(10).fill(0);
         }
         
@@ -338,21 +338,11 @@ class RocketAI {
             Math.max(-2, Math.min(2, tangentialVelocity / VELOCITY_SCALE))  // Vitesse tangentielle [-2, +2]
         ];
         
-        // CORRECTION : Validation renforcée avec détection de valeurs aberrantes
-        let hasInvalidValues = false;
+        // Validation renforcée avec détection de valeurs aberrantes
         for (let i = 0; i < state.length; i++) {
             if (!isFinite(state[i]) || Math.abs(state[i]) > 10) {
-                console.warn(`[RocketAI] État invalide à l'index ${i}: ${state[i]}, valeurs sources:`, {
-                    dx, dy, distance, 
-                    vx: this.rocketData.vx, vy: this.rocketData.vy,
-                    angle: this.rocketData.angle, angularVel: this.rocketData.angularVelocity
-                });
-                hasInvalidValues = true;
+                return Array(10).fill(0);
             }
-        }
-        
-        if (hasInvalidValues) {
-            return Array(10).fill(0);
         }
         
         return state;
@@ -378,14 +368,12 @@ class RocketAI {
     calculateReward() {
         // Vérifier que les données nécessaires sont disponibles
         if (!this.rocketData || !this.celestialBodyData) {
-            console.warn('[RocketAI] Données manquantes pour calculer la récompense');
             return -1;
         }
         
         // Vérifier que les propriétés nécessaires existent
         if (typeof this.rocketData.x !== 'number' || typeof this.rocketData.y !== 'number' ||
             typeof this.celestialBodyData.x !== 'number' || typeof this.celestialBodyData.y !== 'number') {
-            console.warn('[RocketAI] Propriétés de position manquantes ou invalides');
             return -1;
         }
         
@@ -396,7 +384,6 @@ class RocketAI {
         
         // Vérifier que la distance est valide
         if (!isFinite(distance) || distance < 0) {
-            console.warn('[RocketAI] Distance calculée invalide:', distance);
             return -10;
         }
         
@@ -465,13 +452,7 @@ class RocketAI {
         
         // S'assurer que la récompense est un nombre fini
         if (!isFinite(reward)) {
-            console.warn('[RocketAI] Récompense calculée invalide:', reward);
             return -1;
-        }
-        
-        // CORRECTION : Log périodique des récompenses positives pour vérifier
-        if (reward > 10 && this.totalSteps % 100 === 0) {
-            console.log(`[RocketAI] 🎯 RÉCOMPENSE POSITIVE: ${reward.toFixed(1)} (erreur: ${(relativeError*100).toFixed(1)}%)`);
         }
         
         return reward;
@@ -555,7 +536,6 @@ class RocketAI {
         // Éviter les appels concurrents
         if (this.isTrainingInProgress) {
             this.concurrencyMetrics.blockedCalls++;
-            console.warn(`[RocketAI] Entraînement déjà en cours, abandon de cet appel (${this.concurrencyMetrics.blockedCalls}/${this.concurrencyMetrics.totalTrainingCalls} bloqués)`);
             return;
         }
         
@@ -577,38 +557,21 @@ class RocketAI {
         // Vérifier et normaliser les états pour s'assurer qu'ils ont tous 10 dimensions
         const states = batch.map(exp => {
             if (!Array.isArray(exp.state) || exp.state.length !== 10) {
-                console.warn('[RocketAI] État invalide dans le replay buffer, utilisation d\'un état par défaut');
                 return Array(10).fill(0);
             }
-            // Vérifier que tous les éléments sont des nombres finis
-            const validState = exp.state.map(val => {
-                if (typeof val !== 'number' || !isFinite(val)) {
-                    return 0;
-                }
-                return val;
-            });
-            return validState;
+            return exp.state.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
         });
         
         const nextStates = batch.map(exp => {
             if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
-                console.warn('[RocketAI] État suivant invalide dans le replay buffer, utilisation d\'un état par défaut');
                 return Array(10).fill(0);
             }
-            // Vérifier que tous les éléments sont des nombres finis
-            const validNextState = exp.nextState.map(val => {
-                if (typeof val !== 'number' || !isFinite(val)) {
-                    return 0;
-                }
-                return val;
-            });
-            return validNextState;
+            return exp.nextState.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
         });
         
         // Vérifier que nous avons exactement le bon nombre d'états
         if (states.length !== this.config.batchSize || nextStates.length !== this.config.batchSize) {
-            console.warn(`[RocketAI] Taille de batch incorrecte: states=${states.length}, nextStates=${nextStates.length}, attendu=${this.config.batchSize}`);
-            return; // Abandonner cet entraînement
+            return;
         }
         
         // Vérifier que chaque état a exactement 10 dimensions
@@ -616,8 +579,7 @@ class RocketAI {
         const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
         
         if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
-            console.warn(`[RocketAI] Dimensions incorrectes: totalStateValues=${totalStateValues}, totalNextStateValues=${totalNextStateValues}, attendu=${this.config.batchSize * 10}`);
-            return; // Abandonner cet entraînement
+            return;
         }
         
         // Prédire les valeurs Q pour les états actuels et futurs
@@ -661,90 +623,37 @@ class RocketAI {
             // CORRECTION : Capturer et stocker le loss pour monitoring
             const currentLoss = history.history.loss[0];
             
-            // CORRECTION CRITIQUE : Diagnostic avancé des gradients
-            if (currentLoss === 0 || !isFinite(currentLoss)) {
-                console.warn(`[RocketAI] 🚨 LOSS = ${currentLoss} - Diagnostic en cours...`);
-                
-                // Test manuel des gradients pour diagnostiquer
-                tf.tidy(() => {
+                // Diagnostic des gradients (seulement en mode DEBUG)
+                if ((currentLoss === 0 || !isFinite(currentLoss)) && globalThis.DEBUG) {
                     try {
-                        // Calculer manuellement les gradients
                         const testXs = tf.tensor2d(states.slice(0, 2), [2, 10]);
                         const testYs = tf.tensor2d(qTargets.slice(0, 2), [2, this.actions.length]);
                         
-                        const f = () => {
-                            const pred = this.model.apply(testXs, { training: true });
-                            return tf.losses.meanSquaredError(testYs, pred);
-                        };
-                        
-                        const grads = tf.variableGrads(f);
-                        
-                        // Analyser les gradients
-                        let totalGradNorm = 0;
-                        let nanGrads = 0;
-                        let zeroGrads = 0;
-                        
-                        Object.values(grads.grads).forEach(grad => {
-                            const gradData = grad.dataSync();
-                            gradData.forEach(val => {
-                                if (isNaN(val)) nanGrads++;
-                                else if (val === 0) zeroGrads++;
-                                else totalGradNorm += Math.abs(val);
+                        const diagnosticResult = tf.tidy(() => {
+                            const f = () => {
+                                const pred = this.model.apply(testXs, { training: true });
+                                return tf.losses.meanSquaredError(testYs, pred);
+                            };
+                            const grads = tf.variableGrads(f);
+                            let totalGradNorm = 0, nanGrads = 0, zeroGrads = 0;
+                            Object.values(grads.grads).forEach(grad => {
+                                grad.dataSync().forEach(val => {
+                                    if (isNaN(val)) nanGrads++;
+                                    else if (val === 0) zeroGrads++;
+                                    else totalGradNorm += Math.abs(val);
+                                });
                             });
+                            return { totalGradNorm, nanGrads, zeroGrads };
                         });
                         
-                        console.warn(`[RocketAI] 📊 DIAGNOSTIC GRADIENTS:`);
-                        console.warn(`   - Norme totale: ${totalGradNorm.toFixed(6)}`);
-                        console.warn(`   - Gradients NaN: ${nanGrads}`);
-                        console.warn(`   - Gradients = 0: ${zeroGrads}`);
-                        console.warn(`   - States sample: [${states[0].slice(0,3).map(x => x.toFixed(3)).join(', ')}...]`);
-                        console.warn(`   - Targets sample: [${qTargets[0].slice(0,3).map(x => x.toFixed(3)).join(', ')}...]`);
-                        
-                        if (nanGrads > 0) {
-                            console.error(`[RocketAI] 💥 GRADIENTS NaN DÉTECTÉS! Probable overflow dans les features.`);
-                        }
-                        if (totalGradNorm < 1e-8) {
-                            console.error(`[RocketAI] 💤 GRADIENTS QUASI-NULS! Problème de cibles identiques aux prédictions.`);
+                        if (diagnosticResult.nanGrads > 0 || diagnosticResult.totalGradNorm < 1e-8) {
+                            console.warn(`[RocketAI] Gradient issue: NaN=${diagnosticResult.nanGrads}, norm=${diagnosticResult.totalGradNorm.toFixed(6)}`);
                         }
                         
-                        // CORRECTION: Nettoyer explicitement tous les tensors créés
-                        // Libérer les gradients
-                        Object.values(grads.grads).forEach(grad => {
-                            if (grad && typeof grad.dispose === 'function') {
-                                grad.dispose();
-                            }
-                        });
-                        // Libérer les variables si elles existent (certaines versions de tf.variableGrads les retournent)
-                        if (grads.vars) {
-                            Object.values(grads.vars).forEach(v => {
-                                if (v && typeof v.dispose === 'function') {
-                                    v.dispose();
-                                }
-                            });
-                        }
-                        // Libérer les tensors de test
                         testXs.dispose();
                         testYs.dispose();
-                        
-                    } catch (gradError) {
-                        console.error('[RocketAI] Erreur diagnostic gradients:', gradError);
-                    }
-                });
-                
-                // Échantillonner quelques valeurs pour diagnostic
-                if (qTargets.length > 0) {
-                    const sampleTarget = qTargets[0];
-                    const samplePrediction = qValuesData[0];
-                    console.warn(`[RocketAI] Échantillon - Cible:`, sampleTarget.map(x => x.toFixed(4)));
-                    console.warn(`[RocketAI] Échantillon - Prédic:`, samplePrediction.map(x => x.toFixed(4)));
-                    
-                    // Vérifier si cible === prédiction (cause principale de loss=0)
-                    const isIdentical = sampleTarget.every((val, i) => Math.abs(val - samplePrediction[i]) < 1e-6);
-                    if (isIdentical) {
-                        console.error(`[RocketAI] 🚨 ERREUR CRITIQUE: Cibles identiques aux prédictions!`);
-                    }
+                    } catch (e) { /* ignore diagnostic errors */ }
                 }
-            }
             
             // Mettre à jour les métriques de succès avec loss
             this.concurrencyMetrics.successfulTrainings++;
@@ -756,10 +665,6 @@ class RocketAI {
                 (this.concurrencyMetrics.averageTrainingDuration * (this.concurrencyMetrics.successfulTrainings - 1) + trainingDuration) / 
                 this.concurrencyMetrics.successfulTrainings;
             
-            // Log périodique avec loss pour debugging
-            if (this.totalSteps % 50 === 0) {
-                console.log(`[RocketAI] 📈 Étape ${this.totalSteps}: loss=${currentLoss.toFixed(6)}, ε=${this.config.epsilon.toFixed(3)}, buffer=${this.replayBuffer.length}, updates=${this.concurrencyMetrics.successfulTrainings}`);
-            }
             
         } catch (error) {
             console.error('[RocketAI] Erreur lors de l\'entraînement:', error);
@@ -789,34 +694,64 @@ class RocketAI {
         if (this.totalSteps % this.config.saveFrequency === 0) {
             this.saveModel();
         }
+        // Monitoring mémoire périodique
+        this.monitorMemory();
+    }
+    
+    /**
+     * Monitore l'utilisation mémoire de TensorFlow.js.
+     * Log seulement en mode DEBUG ou si problème détecté.
+     */
+    monitorMemory() {
+        if (this.totalSteps % 500 !== 0 || this.totalSteps === 0) return;
+        
+        const memInfo = tf.memory();
+        // Avertissement seulement si problème détecté
+        if (memInfo.numTensors > 1000 || memInfo.numBytes > 500 * 1024 * 1024) {
+            console.warn(`[RocketAI] Memory warning: ${memInfo.numTensors} tensors, ${(memInfo.numBytes / 1024 / 1024).toFixed(2)} MB`);
+        }
+    }
+    
+    /**
+     * Nettoie les ressources TensorFlow.js pour éviter les fuites mémoire.
+     * Doit être appelé lors de la destruction de l'agent.
+     */
+    cleanup() {
+        try {
+            if (this.model) {
+                this.model.dispose();
+                this.model = null;
+            }
+            if (this.targetModel) {
+                this.targetModel.dispose();
+                this.targetModel = null;
+            }
+            this.replayBuffer = [];
+        } catch (error) {
+            console.error('[RocketAI] Cleanup error:', error);
+        }
     }
     
     // Sauvegarder le modèle
     async saveModel() {
         try {
-            await this.model.save('localstorage://rocket-ai-model'); // Modifié pour RocketAI
-            console.log(`Modèle sauvegardé à l'étape ${this.totalSteps}`);
+            await this.model.save('localstorage://rocket-ai-model');
         } catch (error) {
-            console.error('Erreur lors de la sauvegarde du modèle:', error);
+            console.error('[RocketAI] Save error:', error);
         }
     }
     
     // Charger le modèle
     async loadModel() {
         try {
-            this.model = await tf.loadLayersModel('localstorage://rocket-ai-model'); // Modifié pour RocketAI
+            this.model = await tf.loadLayersModel('localstorage://rocket-ai-model');
             this.model.compile({
                 optimizer: tf.train.adam(this.config.learningRate),
                 loss: 'meanSquaredError'
             });
-            
-            // Mettre à jour également le modèle cible
             this.updateTargetModel();
-            
-            console.log('Modèle chargé avec succès');
             return true;
         } catch (error) {
-            console.warn('Aucun modèle trouvé à charger:', error);
             return false;
         }
     }
@@ -848,7 +783,6 @@ class RocketAI {
     // Définir un nouvel objectif
     setObjective(objective) {
         this.currentObjective = objective;
-        console.log(`Agent IA: Nouvel objectif - ${objective}`);
     }
     
     // Algorithme de prise de décision principal (pour le mode non-entraînement)
@@ -985,17 +919,5 @@ class RocketAI {
         this.physicsController = physicsController || this.physicsController;
         this.missionManager = missionManager || this.missionManager;
         this.rocketController = rocketController || this.rocketController;
-        
-        console.log("RocketAI: Dépendances injectées/mises à jour.", { // Modifié pour RocketAI
-            rocketModel: !!this.rocketModel,
-            universeModel: !!this.universeModel,
-            physicsController: !!this.physicsController,
-            missionManager: !!this.missionManager,
-            rocketController: !!this.rocketController
-        });
-
-        // TODO: Envisager d'appeler ici une méthode d'initialisation si l'agent
-        // doit effectuer des actions spécifiques une fois les dépendances reçues.
-        // Par exemple: this.onDependenciesReady();
     }
 } 

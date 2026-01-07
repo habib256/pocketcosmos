@@ -355,6 +355,69 @@ const PARTICLES = {
     }
 }; 
 
+// Constantes pour l'entraînement de l'IA
+// Ces valeurs sont calculées pour être cohérentes avec la physique du jeu (PHYSICS.G et masses)
+// Formule vitesse orbitale : v = sqrt(G * M / r)
+const AI_TRAINING = {
+    // Configuration de l'environnement d'entraînement
+    ENVIRONMENT: {
+        // Position de la Terre (centre du système d'entraînement)
+        EARTH_POSITION: { x: 0, y: 0 },
+        // Position initiale de la fusée (sur la surface de la Terre, côté +Y)
+        ROCKET_INITIAL_OFFSET: 50, // Distance au-dessus de la surface
+    },
+    
+    // Paramètres d'orbite pour la Terre (calculés avec G=0.0001, M=2e11, R=720)
+    ORBIT: {
+        // Plage d'altitude pour considérer une orbite stable (au-dessus de la surface)
+        MIN_ALTITUDE: 100,           // Altitude minimale sécuritaire
+        MAX_ALTITUDE: 1500,          // Altitude maximale pour orbite basse
+        TARGET_ALTITUDE: 500,        // Altitude cible idéale
+        
+        // Vitesse orbitale théorique : v = sqrt(G * M / (R + altitude))
+        // Pour altitude=500 : v = sqrt(0.0001 * 2e11 / 1220) ≈ 128
+        MIN_ORBITAL_SPEED: 100,      // Vitesse minimale pour orbite stable
+        MAX_ORBITAL_SPEED: 160,      // Vitesse maximale pour orbite stable
+        TARGET_ORBITAL_SPEED: 128,   // Vitesse orbitale cible (calculée)
+        
+        // Tolérance pour considérer l'orbite réussie
+        ALTITUDE_TOLERANCE: 200,     // ±200 autour de la cible
+        SPEED_TOLERANCE: 30,         // ±30 autour de la vitesse cible
+        
+        // Nombre de pas pour confirmer une orbite stable
+        STABILITY_STEPS: 100,        // ~1.67 secondes à 60 FPS
+    },
+    
+    // Paramètres d'atterrissage
+    LANDING: {
+        MAX_LANDING_SPEED: 10,       // Vitesse max pour atterrissage en douceur
+        APPROACH_ALTITUDE: 100,      // Altitude pour commencer l'approche finale
+    },
+    
+    // Paramètres de récompense (pour reward shaping)
+    REWARDS: {
+        // Récompenses positives
+        ORBIT_PERFECT: 1.0,          // Dans la zone orbitale parfaite
+        ORBIT_GOOD: 0.5,             // Dans une zone orbitale acceptable
+        ORBIT_SUCCESS: 100.0,        // Mission d'orbite réussie
+        LANDING_SUCCESS: 100.0,      // Atterrissage réussi
+        EXPLORATION_NEW_BODY: 10.0,  // Découverte d'un nouveau corps
+        
+        // Pénalités
+        STEP_PENALTY: -0.01,         // Pénalité par pas (encourager efficacité)
+        FUEL_PENALTY_FACTOR: 0.005,  // Facteur de pénalité pour consommation carburant
+        CRASH_PENALTY: -100.0,       // Crash
+        TOO_CLOSE_PENALTY: -0.5,     // Trop proche de la surface
+        TOO_FAR_PENALTY: -0.2,       // Trop loin pour une orbite
+    },
+    
+    // Limites de sécurité
+    SAFETY: {
+        MIN_SAFE_ALTITUDE: 50,       // Altitude minimale avant alerte crash
+        MAX_SIMULATION_DISTANCE: 50000, // Distance max du centre avant reset
+    }
+};
+
 // Constantes des stations (ravitaillement, etc.)
 const STATIONS = {
     // Tolerance de distance (en mètres du monde) pour considérer l'accostage réussi

@@ -359,6 +359,7 @@ class CollisionHandler {
                 console.log(`   Détails - Vitesse: ${speed.toFixed(2)}, Angle: ${angleDiffDeg.toFixed(1)}°, Rotation: ${angularVelocity.toFixed(3)}`);
                 rocketModel.landedOn = otherBody.label; // Indique le contact, même si c'est un crash.
                 rocketModel.attachedTo = otherBody.label; // Similaire à landedOn pour la logique de suivi.
+                rocketModel.relativePosition = null; // Force le recalcul de la position relative dans handleLandedOrAttachedRocket
                 
                 // Appliquer des dégâts fatals SI la fusée n'est pas déjà détruite.
                 let wasJustDestroyedByCrash = false;

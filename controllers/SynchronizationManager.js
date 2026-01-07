@@ -31,6 +31,9 @@ class SynchronizationManager {
             
             // Ne synchroniser que si la fusée est vraiment posée (pas en décollage)
             if ((rocketModel.isLanded || rocketModel.isDestroyed) && !isInGracePeriod && !isThrusterActive) {
+                // CORRECTION BUG CRASH: Mettre à jour la position du modèle AVANT de synchroniser avec la physique
+                // Cela permet aux débris attachés aux corps mobiles de suivre le mouvement orbital
+                this.handleLandedOrAttachedRocket(rocketModel);
                 this.syncPhysicsWithModel(rocketModel);
             } else if (isInGracePeriod || isThrusterActive) {
                 // Log de debug pour tracer les cas où on évite la synchronisation

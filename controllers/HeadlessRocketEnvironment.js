@@ -26,8 +26,6 @@ class HeadlessRocketEnvironment {
      * @param {object} [config.constants] - Permet de surcharger les constantes (ROCKET, PHYSICS).
      */
     constructor(config = {}) {
-        console.log("HeadlessRocketEnvironment: Initialisation...");
-
         this.config = config;
         this.maxStepsPerEpisode = config.maxStepsPerEpisode || 10000;
         
@@ -65,8 +63,6 @@ class HeadlessRocketEnvironment {
         // et que RocketController y soit abonné.
          if (typeof this.rocketController.subscribeToEvents === 'function') {
             this.rocketController.subscribeToEvents();
-         } else {
-            console.warn("HeadlessRocketEnvironment: rocketController.subscribeToEvents() n'est pas une fonction.");
          }
 
         // Initialiser l'état interne de l'environnement
@@ -74,8 +70,7 @@ class HeadlessRocketEnvironment {
         this.totalRewardInEpisode = 0;
         this._missionAlreadyRewardedThisEpisode = false;
 
-        console.log("HeadlessRocketEnvironment: Initialisation terminée.");
-        this.reset(); // Effectuer une première réinitialisation pour mettre en place le monde.
+        this.reset();
     }
 
     /**
@@ -84,7 +79,6 @@ class HeadlessRocketEnvironment {
      * @return {object} L'observation initiale après réinitialisation.
      */
     reset(newConfig = null) {
-        console.log("HeadlessRocketEnvironment: Réinitialisation de l'épisode...");
         if (newConfig) {
             this.config = { ...this.config, ...newConfig };
             // Ré-appliquer les constantes si elles ont changé
@@ -127,7 +121,6 @@ class HeadlessRocketEnvironment {
                 );
                 this.universeModel.addCelestialBody(celestialBody);
             }
-            console.log(`HeadlessRocketEnvironment: ${this.config.universeConfig.celestialBodies.length} corps célestes créés.`);
         } else {
             // Configuration par défaut avec la Terre
             const earth = new CelestialBodyModel(
@@ -138,7 +131,6 @@ class HeadlessRocketEnvironment {
                 '#1E88E5'
             );
             this.universeModel.addCelestialBody(earth);
-            console.log("HeadlessRocketEnvironment: Corps céleste par défaut (Terre) créé.");
         }
         
         // Réinitialiser les missions
@@ -180,9 +172,6 @@ class HeadlessRocketEnvironment {
                     );
                 }
             }
-            console.log(`HeadlessRocketEnvironment: ${this.missionManager.missions.length} mission(s) configurée(s) selon missionConfig.`);
-        } else {
-            console.log(`HeadlessRocketEnvironment: ${this.missionManager.missions.length} mission(s) par défaut créée(s).`);
         }
 
         // Réinitialiser le monde physique avec les modèles mis à jour
@@ -195,8 +184,6 @@ class HeadlessRocketEnvironment {
         // Réinitialiser les compteurs de succès spécifiques
         this.orbitSuccessCounter = 0;
         this.visitedBodies = new Set();
-        
-        console.log("HeadlessRocketEnvironment: Épisode réinitialisé.");
         
         // Émettre événement de début d'épisode
         this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_STARTED, {
@@ -326,7 +313,6 @@ class HeadlessRocketEnvironment {
                           this.rocketModel.fuel <= 0 ? 'out_of_fuel' :
                           this.missionManager.isCurrentMissionSuccessful() ? 'mission_success' :
                           this.currentStep >= this.maxStepsPerEpisode ? 'max_steps_reached' : 'unknown_done_reason';
-            console.log(`HeadlessRocketEnvironment: Épisode terminé. Raison: ${info.status}, Récompense totale: ${this.totalRewardInEpisode.toFixed(2)}, Pas: ${this.currentStep}`);
             
             // Émettre événement de fin d'épisode
             this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_ENDED, {
@@ -417,18 +403,27 @@ class HeadlessRocketEnvironment {
                         const altitude = distance - earth.radius;
                         const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
                         
+                        // Utiliser les constantes AI_TRAINING au lieu de valeurs hardcodées
+                        const orbitConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ORBIT : {
+                            MIN_ALTITUDE: 100, MAX_ALTITUDE: 1500,
+                            MIN_ORBITAL_SPEED: 100, MAX_ORBITAL_SPEED: 160
+                        };
+                        const rewardConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.REWARDS : {
+                            ORBIT_GOOD: 0.5, ORBIT_PERFECT: 1.0, ORBIT_SUCCESS: 100.0
+                        };
+                        
                         // Récompense pour être dans la zone orbitale
-                        if (altitude >= 200 && altitude <= 800) {
-                            reward += 0.1;
+                        if (altitude >= orbitConfig.MIN_ALTITUDE && altitude <= orbitConfig.MAX_ALTITUDE) {
+                            reward += rewardConfig.ORBIT_GOOD;
                             // Bonus pour vitesse orbitale appropriée
-                            if (speed >= 30 && speed <= 70) {
-                                reward += 0.2;
+                            if (speed >= orbitConfig.MIN_ORBITAL_SPEED && speed <= orbitConfig.MAX_ORBITAL_SPEED) {
+                                reward += rewardConfig.ORBIT_PERFECT;
                             }
                         }
                         
                         // Grosse récompense pour succès d'orbite
                         if (this.checkOrbitSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                            reward += 100;
+                            reward += rewardConfig.ORBIT_SUCCESS;
                             this._missionAlreadyRewardedThisEpisode = true;
                         }
                     }
@@ -519,6 +514,7 @@ class HeadlessRocketEnvironment {
 
     /**
      * Calcule la récompense pour l'objectif d'orbite
+     * Utilise les constantes AI_TRAINING pour des valeurs cohérentes avec la physique du jeu
      */
     calculateOrbitReward() {
         let reward = 0;
@@ -532,32 +528,43 @@ class HeadlessRocketEnvironment {
         const distance = Math.sqrt(dx * dx + dy * dy);
         const altitude = distance - earth.radius;
         
-        // Récompense pour maintenir une altitude orbitale (entre 100 et 1000 unités)
-        const targetAltitude = 500;
-        const altitudeDiff = Math.abs(altitude - targetAltitude);
+        // Utiliser les constantes AI_TRAINING
+        const orbitConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ORBIT : {
+            TARGET_ALTITUDE: 500, ALTITUDE_TOLERANCE: 200,
+            TARGET_ORBITAL_SPEED: 128, SPEED_TOLERANCE: 30,
+            MIN_ALTITUDE: 100, MAX_ALTITUDE: 1500
+        };
+        const rewardConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.REWARDS : {
+            ORBIT_PERFECT: 1.0, ORBIT_GOOD: 0.5, TOO_CLOSE_PENALTY: -0.5, TOO_FAR_PENALTY: -0.2
+        };
+        const safetyConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.SAFETY : {
+            MIN_SAFE_ALTITUDE: 50
+        };
         
-        if (altitudeDiff < 100) {
+        // Récompense pour maintenir une altitude orbitale
+        const altitudeDiff = Math.abs(altitude - orbitConfig.TARGET_ALTITUDE);
+        
+        if (altitudeDiff < orbitConfig.ALTITUDE_TOLERANCE / 2) {
             reward += 0.1; // Bonne altitude
-        } else if (altitudeDiff < 300) {
+        } else if (altitudeDiff < orbitConfig.ALTITUDE_TOLERANCE) {
             reward += 0.05; // Altitude acceptable
         }
         
         // Récompense pour vitesse orbitale appropriée
         const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
-        const targetSpeed = 50; // Vitesse orbitale cible
-        const speedDiff = Math.abs(speed - targetSpeed);
+        const speedDiff = Math.abs(speed - orbitConfig.TARGET_ORBITAL_SPEED);
         
-        if (speedDiff < 10) {
+        if (speedDiff < orbitConfig.SPEED_TOLERANCE / 3) {
             reward += 0.1; // Bonne vitesse
-        } else if (speedDiff < 25) {
+        } else if (speedDiff < orbitConfig.SPEED_TOLERANCE) {
             reward += 0.05; // Vitesse acceptable
         }
         
         // Pénalité pour être trop proche ou trop loin
-        if (altitude < 50) {
-            reward -= 0.5; // Trop proche, risque de crash
-        } else if (altitude > 2000) {
-            reward -= 0.2; // Trop loin, pas vraiment en orbite
+        if (altitude < safetyConfig.MIN_SAFE_ALTITUDE) {
+            reward += rewardConfig.TOO_CLOSE_PENALTY; // Trop proche, risque de crash
+        } else if (altitude > orbitConfig.MAX_ALTITUDE * 1.5) {
+            reward += rewardConfig.TOO_FAR_PENALTY; // Trop loin, pas vraiment en orbite
         }
         
         return reward;
@@ -654,6 +661,7 @@ class HeadlessRocketEnvironment {
 
     /**
      * Vérifie si la mission d'orbite est réussie
+     * Utilise les constantes AI_TRAINING pour des valeurs cohérentes avec la physique du jeu
      */
     checkOrbitSuccess() {
         if (!this.orbitSuccessCounter) this.orbitSuccessCounter = 0;
@@ -668,13 +676,21 @@ class HeadlessRocketEnvironment {
         
         const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
         
-        // Conditions d'orbite : altitude entre 200-800 et vitesse entre 30-70
-        const inOrbit = (altitude >= 200 && altitude <= 800) && (speed >= 30 && speed <= 70);
+        // Utiliser les constantes AI_TRAINING
+        const orbitConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ORBIT : {
+            MIN_ALTITUDE: 100, MAX_ALTITUDE: 1500,
+            MIN_ORBITAL_SPEED: 100, MAX_ORBITAL_SPEED: 160,
+            STABILITY_STEPS: 100
+        };
+        
+        // Conditions d'orbite avec constantes calculées
+        const inOrbit = (altitude >= orbitConfig.MIN_ALTITUDE && altitude <= orbitConfig.MAX_ALTITUDE) && 
+                       (speed >= orbitConfig.MIN_ORBITAL_SPEED && speed <= orbitConfig.MAX_ORBITAL_SPEED);
         
         if (inOrbit) {
             this.orbitSuccessCounter++;
-            // Succès si maintenu en orbite pendant 100 pas (environ 1.67 secondes)
-            return this.orbitSuccessCounter >= 100;
+            // Succès si maintenu en orbite pendant STABILITY_STEPS pas
+            return this.orbitSuccessCounter >= orbitConfig.STABILITY_STEPS;
         } else {
             this.orbitSuccessCounter = 0; // Reset si sort de l'orbite
             return false;
@@ -683,12 +699,18 @@ class HeadlessRocketEnvironment {
 
     /**
      * Vérifie si la mission d'atterrissage est réussie
+     * Utilise les constantes AI_TRAINING pour des valeurs cohérentes
      */
     checkLandingSuccess() {
+        // Utiliser les constantes AI_TRAINING
+        const landingConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.LANDING : {
+            MAX_LANDING_SPEED: 10
+        };
+        
         // Succès si atterri sur la Lune avec vitesse faible
         if (this.rocketModel.isLanded && this.rocketModel.landedOn === 'Lune') {
             const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
-            return speed < 10; // Atterrissage en douceur
+            return speed < landingConfig.MAX_LANDING_SPEED; // Atterrissage en douceur
         }
         return false;
     }

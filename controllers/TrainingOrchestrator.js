@@ -93,12 +93,11 @@ class TrainingOrchestrator {
      */
     async startTraining(userConfig = {}) {
         if (this.isTraining) {
-            console.warn('Entraînement déjà en cours');
             return;
         }
         
         try {
-                    // Fusionner la configuration utilisateur avec la configuration par défaut
+        // Fusionner la configuration utilisateur avec la configuration par défaut
         this.config = { ...this.config, ...userConfig };
         
         // Mettre à jour l'objectif actuel si fourni
@@ -106,8 +105,6 @@ class TrainingOrchestrator {
             this.trainingState.currentObjective = this.config.objectives[0];
         }
         
-        console.log('[TrainingOrchestrator] Démarrage de l\'entraînement...', this.config);
-        console.log('[TrainingOrchestrator] Objectif d\'entraînement:', this.trainingState.currentObjective);
         this.metrics.trainingStartTime = Date.now();
         this.isTraining = true;
             
@@ -137,33 +134,41 @@ class TrainingOrchestrator {
      * Initialise les environnements d'entraînement et d'évaluation
      */
     async initializeEnvironments() {
-        console.log('[TrainingOrchestrator] Initialisation des environnements...');
         
         // Configuration pour l'environnement d'entraînement (avec Terre et Lune)
+        // CORRECTION: Utiliser AI_TRAINING pour des positions cohérentes
+        const aiEnvConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ENVIRONMENT : {
+            EARTH_POSITION: { x: 0, y: 0 },
+            ROCKET_INITIAL_OFFSET: 50
+        };
+        
+        // Position initiale de la fusée : sur la surface de la Terre, côté +Y
+        const rocketStartY = aiEnvConfig.EARTH_POSITION.y + CELESTIAL_BODY.RADIUS + aiEnvConfig.ROCKET_INITIAL_OFFSET;
+        
         const trainingConfig = {
             maxStepsPerEpisode: this.config.maxStepsPerEpisode,
             rocketInitialState: {
-                position: { x: 0, y: 0 },
+                position: { x: aiEnvConfig.EARTH_POSITION.x, y: rocketStartY },
                 velocity: { x: 0, y: 0 },
                 fuel: ROCKET.FUEL_MAX,
                 health: 100
             },
             universeConfig: {
                 // Configuration avec Terre et Lune pour l'entraînement
-                // CORRECTION: Utiliser les constantes du projet au lieu de valeurs réelles
+                // CORRECTION: Terre au centre, Lune en orbite
                 celestialBodies: [
                     {
                         name: 'Terre',
                         mass: CELESTIAL_BODY.MASS,
                         radius: CELESTIAL_BODY.RADIUS,
-                        position: { x: 0, y: CELESTIAL_BODY.RADIUS + 100 },
+                        position: { ...aiEnvConfig.EARTH_POSITION },
                         color: '#1E88E5'
                     },
                     {
                         name: 'Lune',
                         mass: CELESTIAL_BODY.MOON.MASS,
                         radius: CELESTIAL_BODY.MOON.RADIUS,
-                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: CELESTIAL_BODY.RADIUS },
+                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: aiEnvConfig.EARTH_POSITION.y },
                         color: '#CCCCCC'
                     }
                 ]
@@ -174,23 +179,24 @@ class TrainingOrchestrator {
         };
         
         // Configuration pour l'environnement d'évaluation (plus réaliste)
+        // Utilise la même configuration de base que l'entraînement pour cohérence
         const evaluationConfig = {
             ...trainingConfig,
             universeConfig: {
                 // Configuration complète pour l'évaluation
-                // CORRECTION: Utiliser les constantes du projet au lieu de valeurs réelles
+                // CORRECTION: Mêmes positions que l'entraînement pour cohérence
                 celestialBodies: [
                     {
                         name: 'Terre',
                         mass: CELESTIAL_BODY.MASS,
                         radius: CELESTIAL_BODY.RADIUS,
-                        position: { x: 0, y: CELESTIAL_BODY.RADIUS + 100 }
+                        position: { ...aiEnvConfig.EARTH_POSITION }
                     },
                     {
                         name: 'Lune',
                         mass: CELESTIAL_BODY.MOON.MASS,
                         radius: CELESTIAL_BODY.MOON.RADIUS,
-                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: CELESTIAL_BODY.RADIUS }
+                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: aiEnvConfig.EARTH_POSITION.y }
                     }
                 ]
             }
@@ -205,12 +211,6 @@ class TrainingOrchestrator {
         this.trainingEnv.physicsController.eventBus = this.eventBus;
         this.trainingEnv.missionManager.eventBus = this.eventBus;
         
-        // CORRECTION: Ne pas écraser window.EVENTS, utiliser l'EventBus partagé
-        // window.EVENTS doit être défini avant l'initialisation de TrainingOrchestrator
-        // Si non défini, cela indique un problème de configuration, pas une raison de l'écraser
-        if (typeof window.EVENTS === 'undefined') {
-            console.warn('[TrainingOrchestrator] window.EVENTS non défini. Assurez-vous que EventTypes.js est chargé avant TrainingOrchestrator.');
-        }
         
         // Re-souscrire aux événements avec le bon EventBus
         if (typeof this.trainingEnv.rocketController.subscribeToEvents === 'function') {
@@ -237,15 +237,12 @@ class TrainingOrchestrator {
         if (this.evaluationEnv.missionManager && typeof this.evaluationEnv.missionManager.subscribeToEvents === 'function') {
             this.evaluationEnv.missionManager.subscribeToEvents();
         }
-        
-        console.log('[TrainingOrchestrator] Environnements initialisés');
     }
     
     /**
      * Initialise et configure l'agent IA
      */
     async initializeAgent() {
-        console.log('[TrainingOrchestrator] Initialisation de l\'agent IA...');
         
         // Créer une nouvelle instance ou utiliser l'existante
         this.rocketAI = new RocketAI(this.eventBus);
@@ -280,15 +277,12 @@ class TrainingOrchestrator {
                 loss: 'meanSquaredError'
             });
         }
-        
-        console.log('[TrainingOrchestrator] Agent IA configuré avec dépendances injectées');
     }
     
     /**
      * Boucle d'entraînement principale
      */
     async trainingLoop() {
-        console.log('[TrainingOrchestrator] Démarrage de la boucle d\'entraînement');
         
         for (let episode = 0; episode < this.config.maxEpisodes && this.isTraining; episode++) {
             if (this.isPaused) {
@@ -320,13 +314,11 @@ class TrainingOrchestrator {
             
             // Vérification de convergence
             if (this.checkConvergence()) {
-                console.log('[TrainingOrchestrator] Convergence atteinte, arrêt de l\'entraînement');
                 break;
             }
             
             // Early stopping
             if (this.checkEarlyStopping()) {
-                console.log('[TrainingOrchestrator] Early stopping déclenché');
                 break;
             }
             
@@ -422,7 +414,6 @@ class TrainingOrchestrator {
     buildAIState(environmentState) {
         // Vérifier que environmentState existe
         if (!environmentState || typeof environmentState !== 'object') {
-            console.warn('[TrainingOrchestrator] État d\'environnement invalide, utilisation d\'un état par défaut');
             return Array(10).fill(0);
         }
         
@@ -444,12 +435,10 @@ class TrainingOrchestrator {
         ];
         
         // Vérifier et nettoyer l'état pour s'assurer que tous les éléments sont des nombres finis
-        const cleanState = rawState.map((val, index) => {
+        const cleanState = rawState.map((val) => {
             if (typeof val !== 'number' || !isFinite(val)) {
-                console.warn(`[TrainingOrchestrator] Valeur d'état invalide à l'index ${index}: ${val}, remplacement par 0`);
                 return 0;
             }
-            // Borner les valeurs entre -10 et 10 pour éviter les valeurs extrêmes
             return Math.max(-10, Math.min(10, val));
         });
         
@@ -486,7 +475,6 @@ class TrainingOrchestrator {
      * Évalue les performances de l'agent
      */
     async evaluateAgent() {
-        console.log('[TrainingOrchestrator] Évaluation de l\'agent...');
         
         const numEvaluationEpisodes = 10;
         let totalScore = 0;
@@ -532,13 +520,20 @@ class TrainingOrchestrator {
             this.trainingState.recentPerformance.shift();
         }
         
-        console.log(`[TrainingOrchestrator] Évaluation: Score moyen=${averageScore.toFixed(2)}, Taux de succès=${(successRate * 100).toFixed(1)}%`);
-        
         // Sauvegarder le meilleur modèle
         if (averageScore > this.metrics.bestAverageReward) {
             this.metrics.bestAverageReward = averageScore;
+            
+            // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de stocker les nouveaux
+            if (this.trainingState.bestModelWeights) {
+                this.trainingState.bestModelWeights.forEach(w => {
+                    if (w && typeof w.dispose === 'function') {
+                        w.dispose();
+                    }
+                });
+            }
+            
             this.trainingState.bestModelWeights = await this.rocketAI.model.getWeights();
-            console.log('[TrainingOrchestrator] Nouveau meilleur modèle sauvegardé');
         }
         
         this.eventBus.emit(window.EVENTS.AI.EVALUATION_COMPLETED, {
@@ -583,18 +578,10 @@ class TrainingOrchestrator {
     }
     
     /**
-     * Log des progrès d'entraînement
+     * Log des progrès d'entraînement (silencieux sauf en DEBUG)
      */
     logProgress() {
-        const avgReward = this.metrics.averageRewards.length > 0 ? 
-            this.metrics.averageRewards.reduce((a, b) => a + b, 0) / this.metrics.averageRewards.length : 0;
-        
-        const successRate = this.metrics.successfulEpisodes / Math.max(this.metrics.episode, 1);
-        
-        console.log(`[TrainingOrchestrator] Épisode ${this.metrics.episode}: ` +
-                   `Récompense moy=${avgReward.toFixed(2)}, ` +
-                   `Succès=${(successRate * 100).toFixed(1)}%, ` +
-                   `ε=${this.rocketAI.config.epsilon.toFixed(3)}`);
+        // Logs désactivés pour réduire le bruit
     }
     
     /**
@@ -633,9 +620,8 @@ class TrainingOrchestrator {
         try {
             await this.rocketAI.saveModel();
             this.metrics.lastCheckpointTime = Date.now();
-            console.log(`[TrainingOrchestrator] Checkpoint sauvegardé à l'épisode ${this.metrics.episode}`);
         } catch (error) {
-            console.error('[TrainingOrchestrator] Erreur lors de la sauvegarde:', error);
+            console.error('[TrainingOrchestrator] Save error:', error);
         }
     }
     
@@ -643,16 +629,22 @@ class TrainingOrchestrator {
      * Finalise l'entraînement
      */
     async finalizeTraining() {
-        console.log('[TrainingOrchestrator] Finalisation de l\'entraînement...');
-        
         this.isTraining = false;
-        
+
         // Restaurer le meilleur modèle
         if (this.trainingState.bestModelWeights) {
             await this.rocketAI.model.setWeights(this.trainingState.bestModelWeights);
-            console.log('[TrainingOrchestrator] Meilleur modèle restauré');
+            
+            // CORRECTION MEMORY LEAK: Libérer les tensors de bestModelWeights après restauration
+            // (setWeights crée une copie interne, les originaux peuvent être libérés)
+            this.trainingState.bestModelWeights.forEach(w => {
+                if (w && typeof w.dispose === 'function') {
+                    w.dispose();
+                }
+            });
+            this.trainingState.bestModelWeights = null;
         }
-        
+
         // Sauvegarde finale
         await this.saveCheckpoint();
         
@@ -668,8 +660,6 @@ class TrainingOrchestrator {
             bestAverageReward: this.metrics.bestAverageReward,
             averageEpisodeLength: this.metrics.episodeLengths.reduce((a, b) => a + b, 0) / this.metrics.episodeLengths.length
         };
-        
-        console.log('[TrainingOrchestrator] Entraînement terminé:', finalStats);
         
         this.eventBus.emit(window.EVENTS.AI.TRAINING_COMPLETED, finalStats);
     }
@@ -696,7 +686,6 @@ class TrainingOrchestrator {
     stopTraining() {
         this.isTraining = false;
         this.isPaused = false;
-        console.log('[TrainingOrchestrator] Entraînement arrêté');
         this.eventBus.emit(window.EVENTS.AI.TRAINING_STOPPED, this.metrics);
     }
 
@@ -718,6 +707,25 @@ class TrainingOrchestrator {
             this._unsubs = [];
         }
 
+        // Dispose les tensors de poids stockés
+        if (this.trainingState && this.trainingState.bestModelWeights) {
+            try {
+                this.trainingState.bestModelWeights.forEach(w => {
+                    if (w && typeof w.dispose === 'function') {
+                        w.dispose();
+                    }
+                });
+                this.trainingState.bestModelWeights = null;
+            } catch (e) { /* ignore */ }
+        }
+
+        // Nettoyer l'agent IA si disponible
+        if (this.rocketAI && typeof this.rocketAI.cleanup === 'function') {
+            try {
+                this.rocketAI.cleanup();
+            } catch (e) { /* ignore */ }
+        }
+
         // Libérer les références lourdes
         this.trainingEnv = null;
         this.evaluationEnv = null;
@@ -729,7 +737,6 @@ class TrainingOrchestrator {
      */
     pauseTraining() {
         this.isPaused = true;
-        console.log('[TrainingOrchestrator] Entraînement mis en pause');
         this.eventBus.emit(window.EVENTS.AI.TRAINING_PAUSED, this.metrics);
     }
     
@@ -738,7 +745,6 @@ class TrainingOrchestrator {
      */
     resumeTraining() {
         this.isPaused = false;
-        console.log('[TrainingOrchestrator] Entraînement repris');
         this.eventBus.emit(window.EVENTS.AI.TRAINING_RESUMED, this.metrics);
     }
     
@@ -747,7 +753,6 @@ class TrainingOrchestrator {
      */
     updateConfig(newConfig) {
         this.config = { ...this.config, ...newConfig };
-        console.log('[TrainingOrchestrator] Configuration mise à jour:', newConfig);
     }
     
     /**
