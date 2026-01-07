@@ -640,6 +640,14 @@ class HeadlessRocketEnvironment {
         if (this.rocketModel.fuel <= 0) return true;
         if (this.currentStep >= this.maxStepsPerEpisode) return true;
         
+        // CONDITION DE CRASH ANTICIPÉ : Terminer immédiatement si crash imminent sur une planète
+        // Cela accélère l'entraînement en évitant d'attendre la détection de collision par Matter.js
+        if (this.checkImminentCrash()) {
+            // Marquer comme détruite pour cohérence
+            this.rocketModel.isDestroyed = true;
+            return true;
+        }
+        
         // Vérifier les conditions de succès spécifiques selon l'objectif
         if (this.config.missionConfig && this.config.missionConfig.objective) {
             switch (this.config.missionConfig.objective) {
@@ -656,6 +664,59 @@ class HeadlessRocketEnvironment {
         }
         
         // Autres conditions (ex: sortie des limites de simulation si pertinent)
+        return false;
+    }
+    
+    /**
+     * Vérifie si un crash est imminent (fusée trop proche de la surface avec vitesse trop élevée)
+     * @return {boolean} True si un crash est imminent, false sinon
+     */
+    checkImminentCrash() {
+        if (!this.rocketModel || !this.universeModel || this.rocketModel.isDestroyed) {
+            return false;
+        }
+        
+        // Vérifier chaque corps céleste
+        for (const body of this.universeModel.celestialBodies) {
+            if (!body.position || !body.radius) continue;
+            
+            // Calculer la distance au corps céleste
+            const dx = this.rocketModel.position.x - body.position.x;
+            const dy = this.rocketModel.position.y - body.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Distance à la surface (altitude)
+            const altitude = distance - body.radius;
+            
+            // Vitesse actuelle
+            const speed = Math.sqrt(
+                this.rocketModel.velocity.x ** 2 + 
+                this.rocketModel.velocity.y ** 2
+            );
+            
+            // Utiliser les seuils de crash depuis PHYSICS (ou valeurs par défaut)
+            const CRASH_SPEED_THRESHOLD = this.PHYSICS_CONSTS?.CRASH_SPEED_THRESHOLD || 10.0;
+            const CRASH_PROXIMITY_THRESHOLD = 50; // Distance en mètres avant la surface
+            
+            // Crash imminent si :
+            // 1. Très proche de la surface (moins de CRASH_PROXIMITY_THRESHOLD mètres)
+            // 2. ET vitesse trop élevée (supérieure au seuil de crash)
+            // 3. ET vitesse radiale vers le corps (approche, pas éloignement)
+            if (altitude < CRASH_PROXIMITY_THRESHOLD && altitude > 0) {
+                // Calculer la vitesse radiale (vers/depuis le corps)
+                const directionX = dx / distance;
+                const directionY = dy / distance;
+                const radialVelocity = 
+                    this.rocketModel.velocity.x * directionX + 
+                    this.rocketModel.velocity.y * directionY;
+                
+                // Si vitesse radiale négative (vers le corps) et vitesse totale élevée = crash imminent
+                if (radialVelocity < 0 && speed > CRASH_SPEED_THRESHOLD) {
+                    return true;
+                }
+            }
+        }
+        
         return false;
     }
 
