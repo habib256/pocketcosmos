@@ -199,7 +199,7 @@ Chaque preset peut définir :
 
 Les contributions sont les bienvenues ! Pour contribuer :
 1. Consultez `CLAUDE.md` pour comprendre l'architecture
-2. Consultez `TODO.md` pour les bugs connus et améliorations planifiées
+2. Consultez les issues GitHub pour les bugs connus et améliorations planifiées
 3. Ouvrez une issue ou une pull request
 
 ## 📜 Licence

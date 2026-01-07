@@ -20,7 +20,7 @@ This is a browser-based application with no build step:
 
 Since this is a browser-based project with no build tooling:
 - **No npm/package.json**: All dependencies are loaded via CDN in the HTML files
-- **No tests**: Manual testing only (see TODO.md for test scenarios)
+- **No tests**: Manual testing only
 - **No linting**: Code style is manual
 
 For development, simply edit files and refresh the browser.
@@ -162,7 +162,7 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - Trajectory visualization
 - Start/stop/pause training controls
 
-**Known issues** (see TODO.md):
+**Known issues**:
 - AI emits wrong event types (uses `INPUT.KEYDOWN` instead of semantic events)
 - Thruster power scaling inconsistency
 - Training constants use unrealistic Earth/Moon values
@@ -218,6 +218,9 @@ Here are the most important events flowing through the `EventBus`:
 - `MissionManager.js` - Mission system
 - `AudioManager.js` - Sound management
 - `ParticleController.js` - Particle effects management
+- `ControllerContainer.js` - Dependency injection container for controllers
+- `PhysicsVectors.js` - Physics vector calculations for visualization
+- `RocketCargo.js` - Rocket cargo management
 
 ### Views (Rendering)
 - `RocketView.js` - Draws the rocket with thrusters
@@ -316,5 +319,5 @@ Potential improvements and extensions:
 
 ## Additional Resources
 
-- **Known issues**: See `TODO.md` for bugs and planned improvements
-- **Controls**: See README.md for full keyboard/mouse controls
+- **Controls**: See `README.md` for full keyboard/mouse controls
+- **World presets**: See `assets/worlds/*.json` for world configuration examples
