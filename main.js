@@ -1,6 +1,19 @@
 // Point d'entrée principal de l'application de simulation de fusée.
 // Ce fichier initialise tous les composants majeurs et démarre la boucle de jeu.
 
+// CORRECTION: Utiliser console._origLog si disponible, sinon console.log
+// pour que les logs de diagnostic fonctionnent même si DEBUG=false
+const logDiagnostic = (...args) => {
+    if (console._origLog) {
+        console._origLog(...args);
+    } else {
+        console.log(...args);
+    }
+};
+
+logDiagnostic("🟢 [main.js] FICHIER CHARGÉ - VERSION AVEC LOGS DE DIAGNOSTIC");
+logDiagnostic("🟢 [main.js] Timestamp:", new Date().toISOString());
+
 // Réduction du bruit de logs en production (DEBUG=false): désactiver console.debug/log
 if (typeof window !== 'undefined' && window.DEBUG === false) {
     if (!console._debugPatched) {
@@ -96,7 +109,9 @@ function init() {
     gameController = new GameController(eventBus, missionManager);
 
     // Instancier les contrôleurs requis, en leur injectant l'EventBus.
+    logDiagnostic(`[main.js] Création de InputController...`);
     const inputController = new InputController(eventBus);
+    logDiagnostic(`[main.js] InputController créé:`, inputController);
     const renderingController = new RenderingController(eventBus, canvas);
     const rocketAI = new RocketAI(eventBus);
     

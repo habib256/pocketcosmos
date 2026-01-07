@@ -377,7 +377,14 @@
     <script src="views/TraceView.js"></script>
     
     <!-- Point d'entrée -->
+    <script>
+        console.log("🔴 [index.html] Chargement de main.js...");
+        console.log("🔴 [index.html] Timestamp:", new Date().toISOString());
+    </script>
     <script src="main.js"></script>
+    <script>
+        console.log("🔴 [index.html] main.js chargé");
+    </script>
 
     <div class="info-item">
         <p>Altitude: <span id="altitude">--</span> m</p>

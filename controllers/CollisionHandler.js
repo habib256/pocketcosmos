@@ -40,13 +40,15 @@ class CollisionHandler {
         // Événement déclenché au début d'une collision
         this.Events.on(this.engine, 'collisionStart', (event) => {
             // Vérifier si les collisions sont actives et si le délai d'initialisation est écoulé.
+            // CORRECTION: Activer les collisions AVANT de traiter la collision pour éviter les race conditions
             if (!this.collisionsEnabled) {
                 if (Date.now() - this.initTime < this.PHYSICS.COLLISION_DELAY) {
                     return; // Ignorer les collisions pendant le délai d'initialisation.
-                } else {
-                    this.collisionsEnabled = true;
-                    console.log("Collisions activées après le délai d'initialisation");
                 }
+                // Activer les collisions avant de traiter cette collision
+                this.collisionsEnabled = true;
+                console.log("Collisions activées après le délai d'initialisation");
+                // Continuer le traitement de cette collision maintenant que les collisions sont activées
             }
 
             const pairs = event.pairs;
@@ -70,8 +72,20 @@ class CollisionHandler {
                     const impactVelocity = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
                     const COLLISION_THRESHOLD = 2.5; // m/s, seuil pour différencier un contact léger d'un impact notable.
 
+                    // CORRECTION: Vérifier si le propulseur principal est actif (tentative de décollage)
+                    const mainStart = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+                    const isTryingToLiftOffStart = mainStart && mainStart.maxPower > 0 
+                        ? (mainStart.power / mainStart.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT
+                        : false;
+
                     // Tenter de détecter un atterrissage en utilisant la logique de `isRocketLanded`.
-                    if (otherBody.label !== 'rocket' && this.isRocketLanded(rocketModel, otherBody)) {
+                    // CORRECTION: Ne pas considérer comme atterrissage si en train de décoller ou si délai de grâce actif
+                    if (otherBody.label !== 'rocket' && !isTryingToLiftOffStart && this.isRocketLanded(rocketModel, otherBody)) {
+                        // Vérifier le délai de grâce avant de mettre isLanded à true
+                        if (!rocketModel.canSetLanded()) {
+                            console.log(`[CollisionStart] Atterrissage détecté sur ${otherBody.label} mais délai de grâce actif, ignoré`);
+                            continue;
+                        }
                         rocketModel.isLanded = true;
                         rocketModel.landedOn = otherBody.label; // Enregistrer sur quel corps la fusée a atterri.
 
@@ -150,8 +164,31 @@ class CollisionHandler {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
 
                     if (otherBody.label !== 'rocket') {
-                        // Si la fusée n'est pas détruite, pas encore atterrie, mais que les conditions d'atterrissage sont remplies.
+                        // CORRECTION: Vérifier si le propulseur principal est actif (tentative de décollage)
+                        const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+                        const isTryingToLiftOff = main && main.maxPower > 0 
+                            ? (main.power / main.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT
+                            : false;
+                        
+                        // Log de diagnostic désactivé (trop verbeux - 60 fois/seconde)
+                        // if (main && main.power > 0) {
+                        //     console.log(`[CollisionActive] Contact avec ${otherBody.label}: isTryingToLiftOff=${isTryingToLiftOff}, power=${main.power}, maxPower=${main.maxPower}, isLanded=${rocketModel.isLanded}`);
+                        // }
+                        
+                        // Si la fusée essaie de décoller, NE PAS la considérer comme atterrie
+                        if (isTryingToLiftOff) {
+                            // Log désactivé (trop verbeux)
+                            // console.log(`[CollisionActive] Décollage en cours, ignorant atterrissage sur ${otherBody.label}`);
+                            continue; // Passer au prochain pair
+                        }
+                        
+                        // Si la fusée n'est pas détruite, pas encore atterrie, et pas en train de décoller
                         if (!rocketModel.isDestroyed && !rocketModel.isLanded && this.isRocketLanded(rocketModel, otherBody)) {
+                            // Vérifier le délai de grâce avant de mettre isLanded à true
+                            if (!rocketModel.canSetLanded()) {
+                                console.log(`[CollisionActive] Atterrissage détecté sur ${otherBody.label} mais délai de grâce actif, ignoré`);
+                                continue;
+                            }
                             rocketModel.isLanded = true;
                             rocketModel.landedOn = otherBody.label;
                             console.log(`Fusée posée sur ${otherBody.label}`);
@@ -251,6 +288,12 @@ class CollisionHandler {
         const dy = rocketY - bodyY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
+        // CORRECTION: Vérifier que distance est valide avant utilisation
+        if (!isFinite(distance) || distance <= 0) {
+            console.warn(`[isRocketLanded] Distance invalide: ${distance} (dx=${dx}, dy=${dy})`);
+            return false;
+        }
+        
         const bodyRadius = otherBody.circleRadius ?? otherBody.radius; // Utilise circleRadius (Matter.js) ou radius (modèle)
         if (bodyRadius === undefined) {
             console.warn(`[isRocketLanded] Rayon de '${otherBody.label}' indéfini.`);
@@ -289,14 +332,12 @@ class CollisionHandler {
         const landingAngleThresholdRad = this.PHYSICS.LANDING_MAX_ANGLE_DEG * (Math.PI / 180);
         const crashAngleThresholdRad = this.PHYSICS.CRASH_ANGLE_DEG * (Math.PI / 180);
 
-        // --- Log de débogage conditionnel --- 
-        if (isCloseToSurface && !rocketModel.isDestroyed) {
-            // Ce log s'active uniquement si la fusée est proche de la surface et non détruite,
-            // pour aider à diagnostiquer les problèmes d'atterrissage/crash.
-            console.log(`isRocketLanded Check (${otherBody.label}): ` +
-                        `Close=${isCloseToSurface}, DistToSurf=${distanceToSurface.toFixed(2)}, Speed=${speed.toFixed(2)}, ` +
-                        `AngleDiff=${angleDiffDeg.toFixed(1)}°, AngVel=${angularVelocity.toFixed(3)}`);
-        }
+        // --- Log de débogage conditionnel (désactivé pour réduire le bruit) --- 
+        // if (isCloseToSurface && !rocketModel.isDestroyed) {
+        //     console.log(`isRocketLanded Check (${otherBody.label}): ` +
+        //                 `Close=${isCloseToSurface}, DistToSurf=${distanceToSurface.toFixed(2)}, Speed=${speed.toFixed(2)}, ` +
+        //                 `AngleDiff=${angleDiffDeg.toFixed(1)}°, AngVel=${angularVelocity.toFixed(3)}`);
+        // }
 
         // --- Logique de décision : CRASH ou ATTERRISSAGE --- 
         // Un crash ne peut se produire que si les collisions sont activées (après le délai initial).
@@ -357,17 +398,26 @@ class CollisionHandler {
                     }));
                 }
                 // Simuler l'enfoncement de la fusée dans le sol pour un effet visuel de crash.
+                // CORRECTION: Vérifier distance avant division pour éviter NaN/Infinity
                 if (otherBody.position && bodyRadius !== undefined) {
+                    // Vérifier que distance est valide avant toute utilisation
+                    if (distance <= 0 || !isFinite(distance)) {
+                        console.warn(`[CollisionHandler] Distance invalide lors du crash: ${distance} (dx=${dx}, dy=${dy})`);
+                        return false; // Ne pas traiter le crash si distance invalide
+                    }
+                    
                     const CRASH_SINK_DEPTH = 40; // Profondeur d'enfoncement en pixels.
-                    const directionX = dx / distance || 0; // Vecteur direction normalisé.
-                    const directionY = dy / distance || 0;
+                    const directionX = dx / distance; // Vecteur direction normalisé.
+                    const directionY = dy / distance;
                     // Nouvelle position : sur la surface moins la moitié de la hauteur de la fusée, plus la profondeur d'enfoncement.
                     const newDist = bodyRadius + (this.ROCKET.HEIGHT / 2) - CRASH_SINK_DEPTH;
                     
                     rocketModel.position.x = otherBody.position.x + directionX * newDist;
                     rocketModel.position.y = otherBody.position.y + directionY * newDist;
                     
-                    // Synchroniser la position du corps physique avec le modèle.
+                    // NOTE: Body.setPosition() est utilisé ici uniquement pour l'effet visuel de crash.
+                    // Normalement, SynchronizationManager gère la synchronisation physique ↔ modèle.
+                    // Ce cas spécial est nécessaire pour forcer la position lors d'un crash.
                     if (this.Body && rocketBody) {
                         this.Body.setPosition(rocketBody, { x: rocketModel.position.x, y: rocketModel.position.y });
                     }

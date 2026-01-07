@@ -3,8 +3,9 @@
  */
 
 // Drapeau global de debug (désactive les logs verbeux si false)
+// TEMPORAIRE: Activé pour le diagnostic du décollage
 if (typeof globalThis !== 'undefined' && typeof globalThis.DEBUG === 'undefined') {
-    globalThis.DEBUG = false;
+    globalThis.DEBUG = true; // Temporairement true pour voir les logs de diagnostic
 }
 
 // Constantes physiques
@@ -48,7 +49,7 @@ const PHYSICS = {
     // Seuils de crash (si l’un est dépassé et proximité surface => crash)
     CRASH_ANGLE_DEG: 45,                // Différence angulaire max vs normale de surface (degrés)
     CRASH_ANGULAR_VELOCITY: 400,        // Vitesse angulaire de crash (rad/s)
-    TAKEOFF_THRUST_THRESHOLD_PERCENT: 50, // Seuil de poussée (en %) pour considérer un décollage actif
+    TAKEOFF_THRUST_THRESHOLD_PERCENT: 10, // Seuil de poussée (en %) pour considérer un décollage actif (était 50)
     // Ajout des catégories de collision
     COLLISION_CATEGORIES: {
         ROCKET: 0x0001,
@@ -58,7 +59,9 @@ const PHYSICS = {
     
     // Multiplicateur de propulsion
     // Ajustez cette valeur pour augmenter la puissance de tous les propulseurs
-    THRUST_MULTIPLIER: 10.0,    // Multiplicateur global pour toutes les forces de propulsion
+    // Note: La gravité avec G=0.0001 et masses ~2e11 génère des forces énormes
+    // Il faut un multiplicateur élevé pour permettre le décollage
+    THRUST_MULTIPLIER: 100.0,    // Multiplicateur global pour toutes les forces de propulsion
     
     // Contrôles assistés
     ASSISTED_CONTROLS: {
@@ -142,7 +145,7 @@ const ROCKET = {
     THRUSTER_EFFECTIVENESS: {
         MAIN: 1.5,            // Multiplicateur pour le propulseur principal
         REAR: 1.5,            // Multiplicateur pour le propulseur arrière
-        LATERAL: 3.0          // Multiplicateur pour les propulseurs latéraux
+        LATERAL: 0.3          // Multiplicateur pour les propulseurs latéraux (réduit pour équilibrage)
     },
 
     // Positionnement des propulseurs

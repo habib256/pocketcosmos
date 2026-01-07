@@ -99,9 +99,18 @@ class GameController {
         // this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: null });
 
         // Ajout : pause automatique si l'utilisateur quitte l'onglet
+        // CORRECTION: Liste explicite des états qui peuvent être mis en pause automatiquement
+        // Les états comme CRASH_ANIMATION, GAME_OVER, MAIN_MENU ne doivent pas être interrompus
+        // car ils représentent des états finaux ou des animations critiques.
+        const autoPausableStates = [
+            GameStates.PLAYING,
+            GameStates.LEVEL_SETUP
+        ];
+        
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                if (this.currentState === GameStates.PLAYING) { // Agir seulement si en jeu
+                // Mettre en pause uniquement si l'état actuel est dans la liste des états pausables
+                if (autoPausableStates.includes(this.currentState)) {
                     this.changeState(GameStates.PAUSED);
                     console.log('[AUTO-PAUSE] Jeu mis en pause car l\'onglet n\'est plus actif (via visibilitychange).');
                 }
@@ -181,13 +190,7 @@ class GameController {
             // CameraController affichera cet avertissement s'il ne trouve pas l'événement.
             // console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. GameController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
         }
-        // Rechargement d'univers: réagir à une demande de chargement
-        if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
-            window.controllerContainer.track(
-                this.eventBus.subscribe(EVENTS.UNIVERSE.LOAD_REQUESTED, (opts) => this.handleUniverseLoadRequested(opts))
-            );
-        }
-
+        // CORRECTION: Supprimer la duplication - un seul abonnement à UNIVERSE.LOAD_REQUESTED
         // Rechargement d'univers: réagir à une demande de chargement
         if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.LOAD_REQUESTED) {
             window.controllerContainer.track(
@@ -549,6 +552,20 @@ class GameController {
     }
     
     /**
+     * Vérifie que les modèles critiques sont initialisés avant de permettre
+     * certaines opérations comme le changement d'état vers PLAYING.
+     * @returns {boolean} True si tous les modèles critiques sont initialisés, false sinon.
+     * @private
+     */
+    _areModelsInitialized() {
+        return !!(
+            this.rocketModel &&
+            this.universeModel &&
+            this.physicsController
+        );
+    }
+    
+    /**
      * Réinitialise l'état de la fusée et les éléments associés du jeu.
      * Repositionne la fusée sur Terre, réinitialise sa vitesse, son angle,
      * son carburant, sa cargaison, les crédits, les particules, la physique,
@@ -638,6 +655,13 @@ class GameController {
         // S'assurer que le reset amène à un état jouable.
         // Si on était en GAME_OVER, on pourrait vouloir aller au MAIN_MENU d'abord,
         // mais pour un reset en cours de jeu, on reste en PLAYING.
+        // CORRECTION: Vérifier que les modèles sont initialisés avant de changer d'état
+        if (!this._areModelsInitialized()) {
+            console.warn("[GameController.resetRocket] Modèles critiques non initialisés, impossible de changer d'état vers PLAYING. État actuel:", this.currentState);
+            // Ne pas changer d'état si les modèles ne sont pas prêts
+            return;
+        }
+        
         if (this.currentState !== GameStates.PLAYING && 
             this.currentState !== GameStates.PAUSED &&
             this.currentState !== GameStates.LEVEL_SETUP) { // LEVEL_SETUP peut appeler resetRocket

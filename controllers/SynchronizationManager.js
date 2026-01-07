@@ -17,8 +17,24 @@ class SynchronizationManager {
             this.syncMovingBodyPositions();
             // Ne pas forcer la synchronisation du rocketModel vers physique en vol (éviter d'écraser la stabilisation)
             const rocketModel = this.physicsController.rocketModel;
-            if (rocketModel.isLanded || rocketModel.isDestroyed) {
+            if (!rocketModel) return;
+            
+            // CORRECTION: Ne pas synchroniser si:
+            // 1. La fusée n'est pas atterrie (en vol)
+            // 2. Le délai de grâce est actif (décollage récent)
+            // 3. Le propulseur principal est actif (tentative de décollage)
+            const isInGracePeriod = rocketModel._liftoffGracePeriodEnd !== null && 
+                                    Date.now() < rocketModel._liftoffGracePeriodEnd;
+            const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+            const isThrusterActive = main && main.maxPower > 0 && 
+                                     (main.power / main.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT;
+            
+            // Ne synchroniser que si la fusée est vraiment posée (pas en décollage)
+            if ((rocketModel.isLanded || rocketModel.isDestroyed) && !isInGracePeriod && !isThrusterActive) {
                 this.syncPhysicsWithModel(rocketModel);
+            } else if (isInGracePeriod || isThrusterActive) {
+                // Log de debug pour tracer les cas où on évite la synchronisation
+                // console.log(`[beforeUpdate] Évite sync: gracePeriod=${isInGracePeriod}, thrusterActive=${isThrusterActive}`);
             }
         });
 
@@ -26,6 +42,17 @@ class SynchronizationManager {
         this.Events.on(this.engine, 'afterUpdate', () => {
             this.syncModelWithPhysics(this.physicsController.rocketModel);
         });
+
+        // CORRECTION: S'abonner à UNIVERSE_STATE_UPDATED pour réinitialiser les références après rechargement
+        if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, () => {
+                    // Les références seront automatiquement mises à jour via physicsController.celestialBodies
+                    // Mais on peut forcer une réinitialisation si nécessaire
+                    console.log('[SynchronizationManager] Univers mis à jour, références seront réinitialisées au prochain update');
+                })
+            );
+        }
 
         // Détection d'atterrissage gérée périodiquement via checkRocketLandedStatusPeriodically et CollisionHandler
     }
@@ -88,6 +115,21 @@ class SynchronizationManager {
         }
     }
 
+    /**
+     * Calcule l'angle correct pour aligner un objet perpendiculairement à la surface d'un corps céleste.
+     * @param {Matter.Body} rocketBody - Le corps physique de la fusée/débris
+     * @param {object} celestialBodyModel - Le modèle du corps céleste
+     * @returns {number} L'angle correct en radians
+     * @private
+     */
+    _calculateCorrectAngleToBody(rocketBody, celestialBodyModel) {
+        const angleToBody = Math.atan2(
+            rocketBody.position.y - celestialBodyModel.position.y,
+            rocketBody.position.x - celestialBodyModel.position.x
+        );
+        return angleToBody + Math.PI / 2; // Perpendiculaire à la surface
+    }
+
     // Gère la position et l'orientation de la fusée lorsqu'elle est posée ou attachée
     handleLandedOrAttachedRocket(rocketModel) {
         const rocketBody = this.physicsController.rocketBody;
@@ -95,31 +137,46 @@ class SynchronizationManager {
 
         if (!rocketBody || !rocketModel) return;
 
+        // IMPORTANT: Vérifier d'abord si la fusée essaie de décoller AVANT de vérifier isLanded
+        // Cela évite que la stabilisation ne s'applique même si isLanded est encore true
+        const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+        if (main && main.maxPower > 0) {
+            const mainThrusterPercent = (main.power / main.maxPower) * 100;
+            // Log de diagnostic: tracer le pourcentage de poussée à chaque frame
+            // Log de diagnostic désactivé (trop verbeux - 60 fois/seconde)
+            // if (mainThrusterPercent > 0) {
+            //     console.log(`[DECOLLAGE] Frame: poussée=${mainThrusterPercent.toFixed(1)}%, seuil=${this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT}%, isLanded=${rocketModel.isLanded}, power=${main.power}, maxPower=${main.maxPower}`);
+            // }
+                if (mainThrusterPercent > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+                // La fusée essaie activement de décoller, forcer isLanded à false et retourner
+                if (rocketModel.isLanded) {
+                    console.log(`[DECOLLAGE] Détection précoce: poussée=${mainThrusterPercent.toFixed(1)}%, forçant isLanded=false`);
+                    // IMPORTANT: Sauvegarder landedOn AVANT de le mettre à null pour le repositionnement
+                    const savedLandedOn = rocketModel.landedOn;
+                    rocketModel.isLanded = false;
+                    rocketModel.landedOn = null;
+                    rocketModel.relativePosition = null;
+                    // Démarrer le délai de grâce pour empêcher isLanded d'être remis à true trop vite
+                    rocketModel.startLiftoffGracePeriod(500);
+                    // Appeler handleLiftoff pour l'impulsion, en passant le nom du corps sauvegardé
+                    if (this.physicsController && this.physicsController.thrusterPhysics && this.physicsController.rocketBody) {
+                        this.physicsController.thrusterPhysics.handleLiftoff(rocketModel, this.physicsController.rocketBody, savedLandedOn);
+                    }
+                }
+                return; // Ne pas appliquer la stabilisation si on essaie de décoller
+            }
+        }
+
         // CAS 1: Fusée posée sur un corps
         if (rocketModel.isLanded && rocketModel.landedOn) {
-            const landedOnInfo = celestialBodies.find(cb => cb.model.name === rocketModel.landedOn);
-            const landedOnModel = landedOnInfo ? landedOnInfo.model : null;
+            // CORRECTION: Vérifier que model existe avant d'accéder à model.name
+            const landedOnInfo = celestialBodies.find(cb => cb.model && cb.model.name === rocketModel.landedOn);
+            const landedOnModel = landedOnInfo && landedOnInfo.model ? landedOnInfo.model : null;
 
             if (landedOnModel) {
-                const main = rocketModel.thrusters.main;
-                // Définir un seuil clair pour le décollage (comparaison en % réel)
-                const mainThrusterPercent = (main.power / main.maxPower) * 100;
-                const isTryingToLiftOff = mainThrusterPercent > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT;
-
-                if (isTryingToLiftOff) {
-                    // --- TENTATIVE DE DÉCOLLAGE ---
-                    const percentLog = mainThrusterPercent.toFixed(0);
-                    console.log(`Tentative de décollage de ${rocketModel.landedOn} détectée (Poussée: ${percentLog}%)`);
-                    // Appliquer immédiatement l'impulsion de décollage pour vaincre l'adhérence au sol
-                    if (this.physicsController && this.physicsController.thrusterPhysics && this.physicsController.rocketBody) {
-                        this.physicsController.thrusterPhysics.handleLiftoff(rocketModel, this.physicsController.rocketBody);
-                    } else {
-                        // Fallback minimal si le module n'est pas dispo
-                        rocketModel.isLanded = false;
-                        rocketModel.landedOn = null;
-                        rocketModel.relativePosition = null;
-                    }
-                } else {
+                // NOTE: La vérification de décollage est déjà faite au début de la fonction
+                // Si on arrive ici, c'est que la fusée n'essaie PAS de décoller (ou n'a pas de propulseur)
+                // On peut donc appliquer la stabilisation en toute sécurité
                     // --- STABILISATION ACTIVE (Pas de tentative de décollage) ---
                     // Détecter si le corps est mobile (orbite)
                     const isMobile = landedOnModel.parentBody !== null;
@@ -132,11 +189,7 @@ class SynchronizationManager {
 
                     // 2. Calculer et forcer l'angle correct par rapport à la surface (Physique ET Modèle)
                     //    Utiliser la position PHYSIQUE actuelle pour le calcul de l'angle, car c'est elle qu'on stabilise.
-                    const angleToBody = Math.atan2(
-                        rocketBody.position.y - landedOnModel.position.y, // Utiliser la position physique pour le calcul de l'angle
-                        rocketBody.position.x - landedOnModel.position.x
-                    );
-                    const correctAngle = angleToBody + Math.PI / 2; // Perpendiculaire à la surface
+                    const correctAngle = this._calculateCorrectAngleToBody(rocketBody, landedOnModel);
                     this.Body.setAngle(rocketBody, correctAngle);
                     // La synchro modèle se fera à la fin avec syncModelWithPhysics
 
@@ -154,12 +207,8 @@ class SynchronizationManager {
                         // Forcer la position PHYSIQUE à correspondre au modèle mis à jour
                         this.Body.setPosition(rocketBody, rocketModel.position);
                         // Forcer l'angle à chaque frame
-                        const angleToBody = Math.atan2(
-                            rocketBody.position.y - landedOnModel.position.y,
-                            rocketBody.position.x - landedOnModel.position.x
-                        );
-                        const correctAngle = angleToBody + Math.PI / 2;
-                        this.Body.setAngle(rocketBody, correctAngle);
+                        const correctAngleMobile = this._calculateCorrectAngleToBody(rocketBody, landedOnModel);
+                        this.Body.setAngle(rocketBody, correctAngleMobile);
                         // Forcer la vélocité à chaque frame
                         this.Body.setVelocity(rocketBody, parentVelocity);
                         this.Body.setAngularVelocity(rocketBody, 0);
@@ -182,11 +231,13 @@ class SynchronizationManager {
                     // pour garantir qu'elle reflète le mouvement orbital.
                     rocketModel.velocity.x = parentVelocity.x;
                     rocketModel.velocity.y = parentVelocity.y;
-                } // Fin else (Stabilisation active)
-
             } else {
-                 // Cas où landedOn est défini mais le corps n'est pas trouvé (ne devrait pas arriver)
-                 console.warn(`Corps ${rocketModel.landedOn} non trouvé pour la stabilisation.`);
+                 // CORRECTION: Cas où landedOn est défini mais le corps n'est pas trouvé ou modèle absent
+                 if (landedOnInfo && !landedOnInfo.model) {
+                     console.warn(`[SynchronizationManager] Corps ${rocketModel.landedOn} trouvé mais modèle absent`);
+                 } else {
+                     console.warn(`[SynchronizationManager] Corps ${rocketModel.landedOn} non trouvé pour la stabilisation.`);
+                 }
                  rocketModel.isLanded = false; // Forcer le décollage pour éviter blocage
                  rocketModel.landedOn = null;
                  rocketModel.relativePosition = null;
@@ -194,7 +245,7 @@ class SynchronizationManager {
         } // fin if(rocketModel.isLanded)
 
         // CAS 2: Fusée détruite et attachée (logique existante semble correcte)
-        else if (rocketModel.isDestroyed && rocketModel.attachedTo) {
+        if (rocketModel.isDestroyed && rocketModel.attachedTo) {
             const attachedToInfo = celestialBodies.find(cb => cb.model.name === rocketModel.attachedTo);
             const attachedToModel = attachedToInfo ? attachedToInfo.model : null;
 
@@ -216,11 +267,7 @@ class SynchronizationManager {
                 // Mettre à jour la position ET l'angle du corps physique des débris
                 this.Body.setPosition(rocketBody, rocketModel.position);
                 // Aligner l'angle perpendiculairement à la surface du corps
-                const angleToBodyForDebris = Math.atan2(
-                    rocketBody.position.y - attachedToModel.position.y,
-                    rocketBody.position.x - attachedToModel.position.x
-                );
-                const correctDebrisAngle = angleToBodyForDebris + Math.PI / 2;
+                const correctDebrisAngle = this._calculateCorrectAngleToBody(rocketBody, attachedToModel);
                 this.Body.setAngle(rocketBody, correctDebrisAngle);
 
                 // Les débris attachés devraient aussi suivre la vélocité du parent
@@ -239,11 +286,7 @@ class SynchronizationManager {
                  // S'assurer que la position physique correspond au modèle (qui ne devrait pas changer)
                  this.Body.setPosition(rocketBody, rocketModel.position);
                  // Aligner l'angle perpendiculairement à la surface
-                 const angleToBodyStaticDebris = Math.atan2(
-                     rocketBody.position.y - attachedToModel.position.y,
-                     rocketBody.position.x - attachedToModel.position.x
-                 );
-                 const correctStaticDebrisAngle = angleToBodyStaticDebris + Math.PI / 2;
+                 const correctStaticDebrisAngle = this._calculateCorrectAngleToBody(rocketBody, attachedToModel);
                  this.Body.setAngle(rocketBody, correctStaticDebrisAngle);
             }
         } // fin if(rocketModel.isDestroyed)
@@ -286,11 +329,21 @@ class SynchronizationManager {
             const maxDistanceCheckSq = checkRadius * checkRadius;
 
             if (distanceSquared <= maxDistanceCheckSq) {
-                // Utiliser la méthode isRocketLanded de CollisionHandler
-                if (collisionHandler.isRocketLanded(rocketModel, bodyToCheck)) {
-                     isNowConsideredLanded = true;
-                     currentLandedOnBody = bodyToCheck.label;
-                     break; // Trouvé un corps sur lequel on est posé
+                // IMPORTANT: Vérifier d'abord si la fusée essaie de décoller avant d'appeler isRocketLanded
+                // Cela évite que isRocketLanded retourne true à cause de isLanded=true même si on essaie de décoller
+                const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+                const isTryingToLiftOff = main && main.maxPower > 0 
+                    ? (main.power / main.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT
+                    : false;
+                
+                // Si la fusée essaie de décoller, ne pas considérer qu'elle est atterrie
+                if (!isTryingToLiftOff) {
+                    // Utiliser la méthode isRocketLanded de CollisionHandler
+                    if (collisionHandler.isRocketLanded(rocketModel, bodyToCheck)) {
+                         isNowConsideredLanded = true;
+                         currentLandedOnBody = bodyToCheck.label;
+                         break; // Trouvé un corps sur lequel on est posé
+                    }
                 }
             }
         }
@@ -299,9 +352,26 @@ class SynchronizationManager {
 
         if (isNowConsideredLanded) {
             // La fusée est physiquement considérée comme posée
+            // CORRECTION: Protéger contre division par zéro
             // Comparer en pourcentage réel de la poussée principale
-            if (((rocketModel.thrusters.main.power / rocketModel.thrusters.main.maxPower) * 100) <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+            const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
+            if (!main) {
+                return; // Pas de propulseur principal, ne pas traiter
+            }
+            const mainThrusterPercent = main.maxPower > 0 
+                ? (main.power / main.maxPower) * 100 
+                : 0;
+            
+            // IMPORTANT: Ne pas remettre isLanded à true si la fusée essaie activement de décoller
+            // Cela empêche le conflit avec handleLiftoff
+            if (mainThrusterPercent <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
                 // Et la poussée est faible (atterrissage stable)
+                
+                // Vérifier le délai de grâce avant de mettre isLanded à true
+                if (!rocketModel.canSetLanded()) {
+                    console.log(`[SyncManager] Atterrissage détecté sur ${currentLandedOnBody} mais délai de grâce actif, ignoré`);
+                    return;
+                }
                 
                 // Mettre à jour le modèle de manière cohérente
                 rocketModel.isLanded = true;
@@ -314,18 +384,22 @@ class SynchronizationManager {
                     console.log(`État d'atterrissage DÉTECTÉ et CONFIRMÉ (périodique) sur ${currentLandedOnBody}.`);
                     // Appeler handleLandedOrAttachedRocket pour appliquer la stabilisation immédiatement
                     // et recalculer relativePosition si nécessaire.
+                    // NOTE: handleLandedOrAttachedRocket vérifiera si la fusée essaie de décoller et retournera immédiatement
                     this.handleLandedOrAttachedRocket(rocketModel);
-                    // Forcer les vitesses à zéro immédiatement dans le modèle aussi pour cohérence
-                    // (handleLandedOrAttachedRocket devrait déjà s'en charger pour la physique et le modèle)
-                    rocketModel.setVelocity(0, 0); 
-                    rocketModel.setAngularVelocity(0);
+                    // Vérifier à nouveau isLanded après handleLandedOrAttachedRocket (il peut avoir changé si décollage détecté)
+                    if (rocketModel.isLanded) {
+                        // Forcer les vitesses à zéro immédiatement dans le modèle aussi pour cohérence
+                        // (handleLandedOrAttachedRocket devrait déjà s'en charger pour la physique et le modèle)
+                        rocketModel.setVelocity(0, 0); 
+                        rocketModel.setAngularVelocity(0);
 
-                    // Émettre l'événement ROCKET_LANDED
-                    this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                        // Émettre l'événement ROCKET_LANDED
+                        this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                    }
                 } else if (initialModelIsLanded && initialModelLandedOn === currentLandedOnBody) {
                     // On était déjà posé sur ce corps selon le modèle au début de la fonction.
                     // On s'assure juste que la stabilisation est appliquée si elle ne l'était pas.
-                    // console.log(`[SyncManager] Atterrissage confirmé sur ${currentLandedOnBody}, état déjà connu.`);
+                    // NOTE: handleLandedOrAttachedRocket vérifiera si la fusée essaie de décoller et retournera immédiatement
                     this.handleLandedOrAttachedRocket(rocketModel);
                 }
             } else {
@@ -337,8 +411,12 @@ class SynchronizationManager {
         } else {
             // Pas considéré comme posé actuellement par la vérification physique.
             if (initialModelIsLanded) { // Si le modèle disait qu'on était posé au début de cette fonction
+                 // CORRECTION: Protéger contre division par zéro
                  // Vérifier si ce n'est pas dû à une tentative de décollage en cours (poussée faible mais pas de contact)
-                 if (((rocketModel.thrusters.main.power / rocketModel.thrusters.main.maxPower) * 100) <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
+                 const mainThrusterPercent = rocketModel.thrusters.main.maxPower > 0 
+                     ? (rocketModel.thrusters.main.power / rocketModel.thrusters.main.maxPower) * 100 
+                     : 0;
+                 if (mainThrusterPercent <= this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
                      console.log(`État de décollage confirmé (périodique) de ${initialModelLandedOn} (plus de contact détecté).`);
                      rocketModel.isLanded = false;
                      rocketModel.landedOn = null;

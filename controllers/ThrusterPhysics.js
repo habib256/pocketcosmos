@@ -45,7 +45,7 @@ class ThrusterPhysics {
     }
 
     // Appliquer la force de poussée d'un réacteur spécifique
-    applyThrusterForce(rocketModel, thrusterName, powerPercentage) {
+    applyThrusterForce(rocketModel, thrusterName, power) {
         const rocketBody = this.physicsController.rocketBody;
         if (!rocketModel.thrusters[thrusterName] || !rocketBody) return;
 
@@ -54,9 +54,11 @@ class ThrusterPhysics {
         let fuelConsumption = 0;
 
         // Calculer la force et la consommation de base
-        // Interpréter 'powerPercentage' comme un pourcentage (0..∞),
-        // pour conserver le comportement existant où MAIN peut dépasser 100% (jusqu'à 1000%).
-        const powerRatio = Math.max(0, powerPercentage / 100);
+        // CORRECTION: 'power' est une valeur absolue (0 à maxPower), pas un pourcentage
+        // Calculer le ratio de puissance en divisant par maxPower
+        // Le ratio doit être entre 0 et 1
+        const powerRatio = thruster.maxPower > 0 ? Math.max(0, Math.min(1, power / thruster.maxPower)) : 0;
+        
         switch (thrusterName) {
             case 'main':
                 thrustForce = this.ROCKET.MAIN_THRUST * powerRatio
@@ -72,9 +74,10 @@ class ThrusterPhysics {
                 break;
             case 'left':
             case 'right':
-                thrustForce = this.ROCKET.LATERAL_THRUST * powerRatio
+                // CORRECTION: Réduction de la puissance des propulseurs latéraux par 2
+                thrustForce = (this.ROCKET.LATERAL_THRUST * powerRatio
                               * this.ROCKET.THRUSTER_EFFECTIVENESS.LATERAL
-                              * this.PHYSICS.THRUST_MULTIPLIER;
+                              * this.PHYSICS.THRUST_MULTIPLIER) / 2;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.LATERAL;
                 break;
         }
@@ -156,33 +159,37 @@ class ThrusterPhysics {
     }
 
     // Gère l'impulsion initiale du décollage
-    handleLiftoff(rocketModel, rocketBody) {
-        console.log(`Décollage initié depuis ${rocketModel.landedOn || 'surface inconnue'} avec propulseur principal`);
-        const landedOnBodyName = rocketModel.landedOn;
+    // @param {string|null} forcedLandedOnName - Nom du corps (optionnel, utilisé si landedOn est déjà null)
+    handleLiftoff(rocketModel, rocketBody, forcedLandedOnName = null) {
+        const landedOnBodyName = forcedLandedOnName || rocketModel.landedOn;
+        console.log(`[LIFTOFF] Décollage initié depuis ${landedOnBodyName || 'surface inconnue'}`);
 
+        // Mettre à jour l'état du modèle
         rocketModel.isLanded = false;
         rocketModel.landedOn = null;
-        rocketModel.relativePosition = null; // Oublier la position relative au sol
+        rocketModel.relativePosition = null;
+        rocketModel.startLiftoffGracePeriod(500);
 
-        // Appliquer une forte impulsion vers le haut (axe de la fusée) pour simuler le décollage
-        // Augmentation de la force pour un effet plus marqué
-        const impulseForce = 5.0; // Force d'impulsion initiale
         // L'angle "vers le haut" de la fusée est son angle - 90 degrés (PI/2 radians)
         const liftOffAngle = rocketBody.angle - Math.PI / 2;
-        // L'impulsion est appliquée dans la direction opposée à cet angle (vers le haut de la fusée)
+        
+        // Appliquer une impulsion modérée pour aider à vaincre l'inertie initiale
+        // La poussée continue des propulseurs fera le reste
+        const impulseForce = 50.0;
         const impulse = {
             x: Math.cos(liftOffAngle) * -impulseForce,
             y: Math.sin(liftOffAngle) * -impulseForce
         };
-        // Appliquer cette force instantanée (impulsion) au centre de la fusée
         this.Body.applyForce(rocketBody, rocketBody.position, impulse);
 
-        // Donner une légère vitesse initiale vers le haut pour aider à quitter le sol
-        const initialVelMagnitude = 2.0; // Vitesse initiale ajoutée
+        // Donner une légère vitesse initiale pour décoller du sol
+        const initialVelMagnitude = 20.0;
         this.Body.setVelocity(rocketBody, {
-            x: rocketBody.velocity.x + Math.cos(liftOffAngle) * -initialVelMagnitude,
-            y: rocketBody.velocity.y + Math.sin(liftOffAngle) * -initialVelMagnitude
+            x: Math.cos(liftOffAngle) * -initialVelMagnitude,
+            y: Math.sin(liftOffAngle) * -initialVelMagnitude
         });
+        
+        console.log(`[LIFTOFF] ✅ Décollage naturel initié`);
     }
 
     // Jouer le son du propulseur principal

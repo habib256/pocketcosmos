@@ -50,7 +50,11 @@ class MissionManager {
             console.error("[MissionManager] EventBus non fourni au constructeur.");
             return;
         }
-        this.eventBus.subscribe(EVENTS.MISSION.FAILED, data => this.failMission(data));
+        // CORRECTION: Track l'abonnement pour éviter les fuites mémoire
+        const unsubscribe = this.eventBus.subscribe(EVENTS.MISSION.FAILED, data => this.failMission(data));
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(unsubscribe);
+        }
     }
 
     /**

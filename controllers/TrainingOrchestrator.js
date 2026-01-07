@@ -150,19 +150,20 @@ class TrainingOrchestrator {
             },
             universeConfig: {
                 // Configuration avec Terre et Lune pour l'entraînement
+                // CORRECTION: Utiliser les constantes du projet au lieu de valeurs réelles
                 celestialBodies: [
                     {
                         name: 'Terre',
-                        mass: 5.972e24,
-                        radius: 6371000,
-                        position: { x: 0, y: 6471000 },
+                        mass: CELESTIAL_BODY.MASS,
+                        radius: CELESTIAL_BODY.RADIUS,
+                        position: { x: 0, y: CELESTIAL_BODY.RADIUS + 100 },
                         color: '#1E88E5'
                     },
                     {
                         name: 'Lune',
-                        mass: 7.342e22,
-                        radius: 1737000,
-                        position: { x: 384400000, y: 6471000 },
+                        mass: CELESTIAL_BODY.MOON.MASS,
+                        radius: CELESTIAL_BODY.MOON.RADIUS,
+                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: CELESTIAL_BODY.RADIUS },
                         color: '#CCCCCC'
                     }
                 ]
@@ -177,18 +178,19 @@ class TrainingOrchestrator {
             ...trainingConfig,
             universeConfig: {
                 // Configuration complète pour l'évaluation
+                // CORRECTION: Utiliser les constantes du projet au lieu de valeurs réelles
                 celestialBodies: [
                     {
                         name: 'Terre',
-                        mass: 5.972e24,
-                        radius: 6371000,
-                        position: { x: 0, y: 6471000 }
+                        mass: CELESTIAL_BODY.MASS,
+                        radius: CELESTIAL_BODY.RADIUS,
+                        position: { x: 0, y: CELESTIAL_BODY.RADIUS + 100 }
                     },
                     {
                         name: 'Lune',
-                        mass: 7.342e22,
-                        radius: 1737000,
-                        position: { x: 384400000, y: 6471000 }
+                        mass: CELESTIAL_BODY.MOON.MASS,
+                        radius: CELESTIAL_BODY.MOON.RADIUS,
+                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: CELESTIAL_BODY.RADIUS }
                     }
                 ]
             }
@@ -203,14 +205,20 @@ class TrainingOrchestrator {
         this.trainingEnv.physicsController.eventBus = this.eventBus;
         this.trainingEnv.missionManager.eventBus = this.eventBus;
         
-        // S'assurer que les constantes EVENTS sont disponibles globalement
+        // CORRECTION: Ne pas écraser window.EVENTS, utiliser l'EventBus partagé
+        // window.EVENTS doit être défini avant l'initialisation de TrainingOrchestrator
+        // Si non défini, cela indique un problème de configuration, pas une raison de l'écraser
         if (typeof window.EVENTS === 'undefined') {
-            window.EVENTS = this.trainingEnv.EVENT_TYPES;
+            console.warn('[TrainingOrchestrator] window.EVENTS non défini. Assurez-vous que EventTypes.js est chargé avant TrainingOrchestrator.');
         }
         
         // Re-souscrire aux événements avec le bon EventBus
         if (typeof this.trainingEnv.rocketController.subscribeToEvents === 'function') {
             this.trainingEnv.rocketController.subscribeToEvents();
+        }
+        // CORRECTION: Re-souscrire aussi missionManager si la méthode existe
+        if (this.trainingEnv.missionManager && typeof this.trainingEnv.missionManager.subscribeToEvents === 'function') {
+            this.trainingEnv.missionManager.subscribeToEvents();
         }
         
         this.evaluationEnv = new HeadlessRocketEnvironment(evaluationConfig);
@@ -224,6 +232,10 @@ class TrainingOrchestrator {
         // Re-souscrire aux événements avec le bon EventBus
         if (typeof this.evaluationEnv.rocketController.subscribeToEvents === 'function') {
             this.evaluationEnv.rocketController.subscribeToEvents();
+        }
+        // CORRECTION: Re-souscrire aussi missionManager si la méthode existe
+        if (this.evaluationEnv.missionManager && typeof this.evaluationEnv.missionManager.subscribeToEvents === 'function') {
+            this.evaluationEnv.missionManager.subscribeToEvents();
         }
         
         console.log('[TrainingOrchestrator] Environnements initialisés');

@@ -56,21 +56,28 @@ class TrainingVisualizer {
      * S'abonner aux événements pertinents
      */
     subscribeToEvents() {
+        // CORRECTION: Track tous les abonnements pour éviter les fuites mémoire
         // Écouter les mises à jour de l'environnement d'entraînement
-        this.eventBus.subscribe(window.EVENTS.AI.TRAINING_STEP, (data) => {
+        const unsubscribe1 = this.eventBus.subscribe(window.EVENTS.AI.TRAINING_STEP, (data) => {
             if (this.isActive && data) {
                 this.updateVisualization(data);
             }
         });
         
         // Écouter les événements de début/fin d'épisode
-        this.eventBus.subscribe(window.EVENTS.AI.EPISODE_STARTED, (data) => {
+        const unsubscribe2 = this.eventBus.subscribe(window.EVENTS.AI.EPISODE_STARTED, (data) => {
             this.onEpisodeStarted(data);
         });
         
-        this.eventBus.subscribe(window.EVENTS.AI.EPISODE_ENDED, (data) => {
+        const unsubscribe3 = this.eventBus.subscribe(window.EVENTS.AI.EPISODE_ENDED, (data) => {
             this.onEpisodeEnded(data);
         });
+        
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(unsubscribe1);
+            window.controllerContainer.track(unsubscribe2);
+            window.controllerContainer.track(unsubscribe3);
+        }
     }
     
     /**

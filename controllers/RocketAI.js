@@ -707,8 +707,22 @@ class RocketAI {
                             console.error(`[RocketAI] 💤 GRADIENTS QUASI-NULS! Problème de cibles identiques aux prédictions.`);
                         }
                         
-                        // Nettoyer
-                        Object.values(grads.grads).forEach(grad => grad.dispose());
+                        // CORRECTION: Nettoyer explicitement tous les tensors créés
+                        // Libérer les gradients
+                        Object.values(grads.grads).forEach(grad => {
+                            if (grad && typeof grad.dispose === 'function') {
+                                grad.dispose();
+                            }
+                        });
+                        // Libérer les variables si elles existent (certaines versions de tf.variableGrads les retournent)
+                        if (grads.vars) {
+                            Object.values(grads.vars).forEach(v => {
+                                if (v && typeof v.dispose === 'function') {
+                                    v.dispose();
+                                }
+                            });
+                        }
+                        // Libérer les tensors de test
                         testXs.dispose();
                         testYs.dispose();
                         

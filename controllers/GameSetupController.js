@@ -455,9 +455,10 @@ class GameSetupController {
         );
 
         if (rocketController && typeof rocketController.subscribeToEvents === 'function') {
+            console.log(`[GameSetupController] Appel de rocketController.subscribeToEvents()`);
             rocketController.subscribeToEvents();
         } else {
-            // console.error("GameSetupController: RocketController est invalide ou n'a pas de méthode subscribeToEvents.");
+            console.error(`[GameSetupController] ❌ RocketController invalide ou subscribeToEvents n'est pas une fonction!`, rocketController);
         }
 
         let currentRocketAI = providedRocketAI; // MODIFIÉ: Utiliser l'agent fourni via les paramètres

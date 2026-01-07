@@ -1,5 +1,6 @@
 class RocketController {
     constructor(eventBus, rocketModel, actualPhysicsController, actualParticleController, cameraModel) {
+        console.log(`[RocketController] 🔵 CONSTRUCTEUR APPELÉ`);
         this.eventBus = eventBus;
         this.rocketModel = rocketModel;
         this.physicsController = actualPhysicsController; // actualPhysicsController est l'instance de PhysicsController
@@ -33,53 +34,50 @@ class RocketController {
     }
 
     subscribeToEvents() {
-        // Nettoyer les anciens abonnements si ils existent
-        if (this.eventSubscriptions) {
-            this.eventSubscriptions.forEach(unsubscribe => {
-                if (typeof unsubscribe === 'function') {
-                    unsubscribe();
-                }
-            });
+        console.log(`[RocketController] ⚠️ subscribeToEvents() APPELÉ`);
+        let subscriptionCount = 0;
+        
+        // Vérifier que EVENTS est défini
+        if (!window.EVENTS || !window.EVENTS.ROCKET) {
+            console.error(`[RocketController] ❌ EVENTS non défini! window.EVENTS=`, window.EVENTS);
+            return;
         }
-        this.eventSubscriptions = [];
+        
+        console.log(`[RocketController] ✅ EVENTS défini, THRUST_FORWARD_START=${window.EVENTS.ROCKET.THRUST_FORWARD_START}`);
         
         // S'abonner aux événements sémantiques pour les actions de la fusée
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_START, () => this.handleThrustForwardStart()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_FORWARD_STOP, () => this.handleThrustForwardStop()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_START, () => this.handleThrustBackwardStart()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.THRUST_BACKWARD_STOP, () => this.handleThrustBackwardStop()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_START, () => this.handleRotateLeftStart()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop()));
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data)));
+        // CORRECTION: Utiliser uniquement controllerContainer.track() pour éviter la double gestion
+        const subscribeAndTrack = (eventType, handler) => {
+            if (!eventType) {
+                console.error(`[RocketController] Tentative d'abonnement à un événement null/undefined`);
+                return null;
+            }
+            const unsubscribe = this.eventBus.subscribe(eventType, handler);
+            if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+                window.controllerContainer.track(unsubscribe);
+            }
+            subscriptionCount++;
+            console.log(`[RocketController] Abonné à l'événement: ${eventType}`);
+            return unsubscribe;
+        };
+        
+        subscribeAndTrack(EVENTS.ROCKET.THRUST_FORWARD_START, () => {
+            console.log(`[RocketController] Événement THRUST_FORWARD_START reçu, appel handleThrustForwardStart`);
+            this.handleThrustForwardStart();
+        });
+        subscribeAndTrack(EVENTS.ROCKET.THRUST_FORWARD_STOP, () => this.handleThrustForwardStop());
+        subscribeAndTrack(EVENTS.ROCKET.THRUST_BACKWARD_START, () => this.handleThrustBackwardStart());
+        subscribeAndTrack(EVENTS.ROCKET.THRUST_BACKWARD_STOP, () => this.handleThrustBackwardStop());
+        subscribeAndTrack(EVENTS.ROCKET.ROTATE_LEFT_START, () => this.handleRotateLeftStart());
+        subscribeAndTrack(EVENTS.ROCKET.ROTATE_LEFT_STOP, () => this.handleRotateLeftStop());
+        subscribeAndTrack(EVENTS.ROCKET.ROTATE_RIGHT_START, () => this.handleRotateRightStart());
+        subscribeAndTrack(EVENTS.ROCKET.ROTATE_RIGHT_STOP, () => this.handleRotateRightStop());
+        subscribeAndTrack(EVENTS.ROCKET.SET_THRUSTER_POWER, (data) => this.handleSetThrusterPower(data));
 
         // Nouvel abonnement pour la commande de rotation générique (par exemple, depuis un joystick)
-        this.eventSubscriptions.push(this.eventBus.subscribe(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data)));
+        subscribeAndTrack(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data));
         
-        // Utiliser controllerContainer si disponible (mode jeu normal)
-        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
-            this.eventSubscriptions.forEach(subscription => {
-                window.controllerContainer.track(subscription);
-            });
-        }
-        
-        console.log(`[RocketController] Abonné à ${this.eventSubscriptions.length} événements`);
-    }
-    
-    /**
-     * Nettoie les abonnements aux événements
-     */
-    unsubscribeFromEvents() {
-        if (this.eventSubscriptions) {
-            this.eventSubscriptions.forEach(unsubscribe => {
-                if (typeof unsubscribe === 'function') {
-                    unsubscribe();
-                }
-            });
-            this.eventSubscriptions = [];
-            console.log('[RocketController] Abonnements aux événements nettoyés');
-        }
+        console.log(`[RocketController] Abonné à ${subscriptionCount} événements`);
     }
 
     handleThrustForwardStart() {
@@ -91,6 +89,7 @@ class RocketController {
             return;
         }
         this.eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED);
+        console.log(`[THRUST] handleThrustForwardStart appelé, power=${ROCKET.THRUSTER_POWER.MAIN}, isLanded=${this.rocketModel.isLanded}`);
         this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);

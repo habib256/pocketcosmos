@@ -69,6 +69,7 @@ class InputController {
      * @param {EventBus} eventBus - L'instance de l'EventBus pour la communication entre modules.
      */
     constructor(eventBus) {
+        console.log(`[InputController] 🔵 CONSTRUCTEUR APPELÉ`);
         // Référence à l'EventBus
         this.eventBus = eventBus;
         
@@ -199,10 +200,12 @@ class InputController {
         this._keyboardEventsInitialized = false; // Nouveau drapeau
         
         // Initialiser les événements du clavier, souris, tactile et joystick
+        console.log(`[InputController] Initialisation des événements clavier/souris/tactile/gamepad`);
         this.initKeyboardEvents();
         this.initMouseEvents(); // Renommé pour clarté
         this.initTouchEvents(); // Renommé pour clarté
         this.initGamepadEvents();
+        console.log(`[InputController] ✅ Événements initialisés, keyMap contient ${Object.keys(this.keyMap).length} touches`);
     }
     
     /**
@@ -230,13 +233,16 @@ class InputController {
      */
     initKeyboardEvents() {
         if (this._keyboardEventsInitialized) { 
+            console.log(`[InputController] ⚠️ initKeyboardEvents déjà appelé, ignoré`);
             return;
         }
+        console.log(`[InputController] Attachement des listeners clavier (keydown, keyup, wheel)`);
         this._addTrackedEventListener(window, 'keydown', this._boundKeyDown);
         this._addTrackedEventListener(window, 'keyup', this._boundKeyUp);
         this._addTrackedEventListener(window, 'wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
         
-        this._keyboardEventsInitialized = true; 
+        this._keyboardEventsInitialized = true;
+        console.log(`[InputController] ✅ Listeners clavier attachés`);
     }
     
     /**
@@ -421,7 +427,10 @@ class InputController {
             case 'boost': // boost est un alias pour thrustForward
                 if (!this.activeKeyActions.has(actionKey)) {
                     this.activeKeyActions.add(actionKey);
+                    console.log(`[InputController] Touche ${event.code || event.key} détectée, émission THRUST_FORWARD_START`);
                     this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_START);
+                } else {
+                    console.log(`[InputController] Touche ${event.code || event.key} déjà active, pas de ré-émission`);
                 }
                 break;
             case 'thrustBackward':

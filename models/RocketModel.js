@@ -97,6 +97,8 @@ class RocketModel {
         this.isLanded = false;
         /** @type {string|null} Nom du corps céleste sur lequel la fusée est posée (ex: 'Terre', 'Lune'). Null si non posée. */
         this.landedOn = null;
+        /** @type {number|null} Timestamp de fin du délai de grâce après décollage (ms). Null si pas de délai actif. */
+        this._liftoffGracePeriodEnd = null;
         // this.crashedOn a été supprimé car non utilisé.
         
         /**
@@ -141,6 +143,8 @@ class RocketModel {
         this.acceleration = { x: 0, y: 0 };
         this.angle = 0;
         this.angularVelocity = 0;
+        // Réinitialiser le délai de grâce
+        this._liftoffGracePeriodEnd = null;
 
         // Réinitialiser l'état (santé, carburant)
         this.fuel = ROCKET.FUEL_MAX;
@@ -220,6 +224,35 @@ class RocketModel {
     }
     
     /**
+     * Démarre un délai de grâce après décollage pour empêcher isLanded d'être remis à true trop rapidement.
+     * @param {number} durationMs - Durée du délai en millisecondes (défaut: 500ms)
+     */
+    startLiftoffGracePeriod(durationMs = 500) {
+        this._liftoffGracePeriodEnd = Date.now() + durationMs;
+        console.log(`[RocketModel] Délai de grâce décollage activé jusqu'à ${new Date(this._liftoffGracePeriodEnd).toISOString()}`);
+    }
+    
+    /**
+     * Vérifie si on peut mettre isLanded à true (pas de délai de grâce actif).
+     * @returns {boolean} true si on peut mettre isLanded à true, false si le délai de grâce est actif
+     */
+    canSetLanded() {
+        if (this._liftoffGracePeriodEnd === null) {
+            return true; // Pas de délai actif
+        }
+        const now = Date.now();
+        if (now >= this._liftoffGracePeriodEnd) {
+            // Le délai est expiré, on peut le réinitialiser
+            this._liftoffGracePeriodEnd = null;
+            return true;
+        }
+        // Le délai est encore actif
+        const remaining = this._liftoffGracePeriodEnd - now;
+        console.log(`[RocketModel] Délai de grâce actif: ${remaining.toFixed(0)}ms restants, isLanded ne peut pas être mis à true`);
+        return false;
+    }
+    
+    /**
      * Réduit le carburant de la fusée.
      * @param {number} amount - Quantité de carburant à consommer.
      * @returns {boolean} `true` s'il reste du carburant après consommation, `false` sinon.
@@ -279,14 +312,8 @@ class RocketModel {
     updateRelativePosition(celestialBody) {
         if (!celestialBody) return;
 
-        // AJOUT LOG DE DEBUG
-        console.log(`[updateRelativePosition] Called for ${celestialBody.name}. Current landedOn: ${this.landedOn}, attachedTo: ${this.attachedTo}`);
-
         // Vérifie si la fusée est liée à CE corps céleste (soit par atterrissage, soit par destruction dessus)
         const isRelatedToBody = (this.landedOn === celestialBody.name) || (this.attachedTo === celestialBody.name);
-
-        // AJOUT LOG DE DEBUG
-        console.log(`[updateRelativePosition] isRelatedToBody: ${isRelatedToBody}`);
 
         if (isRelatedToBody) {
             const dx = this.position.x - celestialBody.position.x;
@@ -298,18 +325,13 @@ class RocketModel {
             const angleToBody = Math.atan2(dy, dx);
 
             // Calculer l'angle relatif par rapport à l'orbite du corps céleste
-            // S'assurer que currentOrbitAngle existe et est un nombre
             let angleRelatifOrbital = angleToBody;
-            // AJOUT LOG DE DEBUG
-            console.log(`[updateRelativePosition] Calculating relative angle. Body Angle: ${celestialBody.currentOrbitAngle}`);
             if (typeof celestialBody.currentOrbitAngle === 'number') {
                 angleRelatifOrbital = angleToBody - celestialBody.currentOrbitAngle;
                 // Normaliser l'angle entre -PI et PI si nécessaire (optionnel)
                 // angleRelatifOrbital = (angleRelatifOrbital + Math.PI * 3) % (Math.PI * 2) - Math.PI;
             }
 
-            // AJOUT LOG DE DEBUG
-            console.log("[updateRelativePosition] Assigning this.relativePosition");
             this.relativePosition = {
                 x: dx,
                 y: dy,
