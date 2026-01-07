@@ -229,7 +229,6 @@ class RocketModel {
      */
     startLiftoffGracePeriod(durationMs = 500) {
         this._liftoffGracePeriodEnd = Date.now() + durationMs;
-        console.log(`[RocketModel] Délai de grâce décollage activé jusqu'à ${new Date(this._liftoffGracePeriodEnd).toISOString()}`);
     }
     
     /**
@@ -246,9 +245,7 @@ class RocketModel {
             this._liftoffGracePeriodEnd = null;
             return true;
         }
-        // Le délai est encore actif
-        const remaining = this._liftoffGracePeriodEnd - now;
-        console.log(`[RocketModel] Délai de grâce actif: ${remaining.toFixed(0)}ms restants, isLanded ne peut pas être mis à true`);
+        // Le délai est encore actif - pas de log pour éviter le spam (appelé ~60x/sec)
         return false;
     }
     
@@ -293,9 +290,6 @@ class RocketModel {
                 for (const thrusterName in this.thrusters) {
                     this.setThrusterPower(thrusterName, 0);
                 }
-                
-                console.log(`RocketModel: Fusée détruite. Santé: ${this.health}, vient d'être détruite: ${justDestroyed}`);
-                // L'ancien dispatchEvent est supprimé ici
             }
         }
         return justDestroyed; // Retourne true si la fusée vient d'être détruite, false sinon

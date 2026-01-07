@@ -47,7 +47,6 @@ class CollisionHandler {
                 }
                 // Activer les collisions avant de traiter cette collision
                 this.collisionsEnabled = true;
-                console.log("Collisions activées après le délai d'initialisation");
                 // Continuer le traitement de cette collision maintenant que les collisions sont activées
             }
 
@@ -83,7 +82,7 @@ class CollisionHandler {
                     if (otherBody.label !== 'rocket' && !isTryingToLiftOffStart && this.isRocketLanded(rocketModel, otherBody)) {
                         // Vérifier le délai de grâce avant de mettre isLanded à true
                         if (!rocketModel.canSetLanded()) {
-                            console.log(`[CollisionStart] Atterrissage détecté sur ${otherBody.label} mais délai de grâce actif, ignoré`);
+                            // Log supprimé pour éviter le spam lors des collisions répétées
                             continue;
                         }
                         rocketModel.isLanded = true;
@@ -98,9 +97,6 @@ class CollisionHandler {
                         rocketModel.angle = correctAngle;
                         // La synchronisation de l'état physique (position, angle) est gérée par SynchronizationManager.
 
-                        if (!this._lastLandedState[otherBody.label] && rocketModel.isLanded) {
-                            console.log(`Atterrissage réussi sur ${otherBody.label}`);
-                        }
                         this._lastLandedState[otherBody.label] = !!rocketModel.isLanded;
                     } else {
                         // Gérer une collision normale (pas un atterrissage en douceur).
@@ -110,39 +106,19 @@ class CollisionHandler {
 
                         if (otherBody.label !== 'rocket' && impactVelocity > COLLISION_THRESHOLD) {
                             // Collision significative.
-                            if (!rocketModel.isDestroyed) { // Ce bloc ne sera PAS atteint si isRocketLanded a déjà détruit la fusée.
-                                rocketModel.landedOn = otherBody.label;
-                                console.log(`[CollisionHandler] Avant applyDamage (collision non-fatale). rocketModel.isDestroyed: ${rocketModel.isDestroyed}, impactDamage: ${impactDamage.toFixed(2)}`);
-                                const wasJustDestroyedByNonFatal = rocketModel.applyDamage(impactDamage);
-                                console.log(`[CollisionHandler] Après applyDamage (collision non-fatale). wasJustDestroyed: ${wasJustDestroyedByNonFatal}, rocketModel.isDestroyed: ${rocketModel.isDestroyed}`);
-                                
-                                this.playCollisionSound(impactVelocity); 
-                                console.log(`Collision IMPORTANTE (non-fatale) avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Dégâts=${impactDamage.toFixed(2)}`);
-
-                                if (wasJustDestroyedByNonFatal) { 
-                                    console.log('[CollisionHandler] Condition wasJustDestroyedByNonFatal est VRAIE (collision devenue fatale ici).');
-                                    if (this.physicsController && this.physicsController.eventBus) {
-                                        console.log('[CollisionHandler] Emitting ROCKET.DESTROYED event (collision devenue fatale).');
-                                        this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
-                                            position: { ...rocketModel.position },
-                                            velocity: { ...rocketModel.velocity },
-                                            impactVelocity: impactVelocity,
-                                            destroyedOn: otherBody.label
-                                        });
-                                    } else {
-                                        console.warn('[CollisionHandler] eventBus non disponible, impossible de publier ROCKET.DESTROYED.');
-                                    }
-                                } else {
-                                    console.log('[CollisionHandler] Condition wasJustDestroyedByNonFatal est FAUSSE.');
-                                }
-                            } else {
-                                // Ce log est celui que vous voyez : la fusée a été détruite par isRocketLanded.
-                                console.log(`[CollisionHandler] Collision avec ${otherBody.label} mais fusée déjà détruite (probablement par isRocketLanded). Pas de dégâts supplémentaires ni d'événement depuis collisionStart.`);
-                            }
-                        } else if (otherBody.label !== 'rocket') {
-                            // Collision légère, pas de dégâts.
                             if (!rocketModel.isDestroyed) {
-                                console.log(`Collision avec ${otherBody.label}: Vitesse d'impact=${impactVelocity.toFixed(2)}, Pas de dégâts`);
+                                rocketModel.landedOn = otherBody.label;
+                                const wasJustDestroyedByNonFatal = rocketModel.applyDamage(impactDamage);
+                                this.playCollisionSound(impactVelocity); 
+
+                                if (wasJustDestroyedByNonFatal && this.physicsController && this.physicsController.eventBus) {
+                                    this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
+                                        position: { ...rocketModel.position },
+                                        velocity: { ...rocketModel.velocity },
+                                        impactVelocity: impactVelocity,
+                                        destroyedOn: otherBody.label
+                                    });
+                                }
                             }
                         }
                     }
@@ -186,12 +162,11 @@ class CollisionHandler {
                         if (!rocketModel.isDestroyed && !rocketModel.isLanded && this.isRocketLanded(rocketModel, otherBody)) {
                             // Vérifier le délai de grâce avant de mettre isLanded à true
                             if (!rocketModel.canSetLanded()) {
-                                console.log(`[CollisionActive] Atterrissage détecté sur ${otherBody.label} mais délai de grâce actif, ignoré`);
+                                // Log supprimé pour éviter le spam (~60x/sec pendant collisionActive)
                                 continue;
                             }
                             rocketModel.isLanded = true;
                             rocketModel.landedOn = otherBody.label;
-                            console.log(`Fusée posée sur ${otherBody.label}`);
                             
                             // Mettre à jour le modèle de la fusée pour refléter l'atterrissage.
                             // La vitesse et la vélocité angulaire sont mises à zéro dans le modèle.
@@ -234,13 +209,8 @@ class CollisionHandler {
                     const otherBody = pair.bodyA === rocketBody ? pair.bodyB : pair.bodyA;
                     // Si la fusée était atterrie sur cet 'otherBody' et que la collision se termine.
                     if ((otherBody.label !== 'rocket') && rocketModel.isLanded) {
-                        if (this._lastLandedState[otherBody.label]) {
-                            console.log(`Décollage de ${otherBody.label} détecté (fin de contact)`);
-                        }
                         this._lastLandedState[otherBody.label] = false;
-                        // La logique de confirmation du décollage (passage de isLanded à false)
-                        // est gérée par SynchronizationManager, qui vérifie si la fusée s'éloigne activement.
-                        console.log(`CollisionEnd avec ${otherBody.label} alors que isLanded=${rocketModel.isLanded}. Confirmation du décollage via SynchronizationManager.`);
+                        // La logique de confirmation du décollage est gérée par SynchronizationManager
                     }
                 }
             }
@@ -267,9 +237,8 @@ class CollisionHandler {
      */
     isRocketLanded(rocketModel, otherBody) {
         const rocketBody = this.physicsController.rocketBody;
-        // Vérifications initiales pour s'assurer que tous les objets nécessaires et leurs propriétés existent.
+        // Vérifications initiales pour s'assurer que tous les objets nécessaires existent
         if (!rocketBody || !otherBody || !otherBody.position || (otherBody.circleRadius === undefined && otherBody.radius === undefined) || !rocketModel) {
-            console.warn("[isRocketLanded] Vérification annulée: rocketBody, otherBody ou leurs propriétés sont indéfinis.", { rocketBody, otherBody, rocketModel });
             return false;
         }
 
@@ -288,15 +257,13 @@ class CollisionHandler {
         const dy = rocketY - bodyY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // CORRECTION: Vérifier que distance est valide avant utilisation
+        // Vérifier que distance est valide avant utilisation
         if (!isFinite(distance) || distance <= 0) {
-            console.warn(`[isRocketLanded] Distance invalide: ${distance} (dx=${dx}, dy=${dy})`);
             return false;
         }
         
-        const bodyRadius = otherBody.circleRadius ?? otherBody.radius; // Utilise circleRadius (Matter.js) ou radius (modèle)
+        const bodyRadius = otherBody.circleRadius ?? otherBody.radius;
         if (bodyRadius === undefined) {
-            console.warn(`[isRocketLanded] Rayon de '${otherBody.label}' indéfini.`);
             return false;
         }
         
@@ -355,42 +322,31 @@ class CollisionHandler {
             }
 
             if (crashReason) {
-                console.error(`CRASH DÉTECTÉ sur ${otherBody.label}! Cause: ${crashReason}`);
-                console.log(`   Détails - Vitesse: ${speed.toFixed(2)}, Angle: ${angleDiffDeg.toFixed(1)}°, Rotation: ${angularVelocity.toFixed(3)}`);
-                rocketModel.landedOn = otherBody.label; // Indique le contact, même si c'est un crash.
-                rocketModel.attachedTo = otherBody.label; // Similaire à landedOn pour la logique de suivi.
-                rocketModel.relativePosition = null; // Force le recalcul de la position relative dans handleLandedOrAttachedRocket
+                rocketModel.landedOn = otherBody.label;
+                rocketModel.attachedTo = otherBody.label;
+                rocketModel.relativePosition = null;
                 
-                // Appliquer des dégâts fatals SI la fusée n'est pas déjà détruite.
+                // Appliquer des dégâts fatals SI la fusée n'est pas déjà détruite
                 let wasJustDestroyedByCrash = false;
                 if (!rocketModel.isDestroyed) {
-                    console.log(`[CollisionHandler.isRocketLanded] Crash détecté. Application de dégâts fatals.`);
                     wasJustDestroyedByCrash = rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1); 
-                    console.log(`[CollisionHandler.isRocketLanded] Après applyDamage (crash). wasJustDestroyedByCrash: ${wasJustDestroyedByCrash}, rocketModel.isDestroyed: ${rocketModel.isDestroyed}`);
-                } else {
-                    console.log(`[CollisionHandler.isRocketLanded] Crash détecté, mais la fusée était déjà détruite avant cet appel à applyDamage.`);
                 }
                 
-                this.playCollisionSound(50); // Jouer un son de gros impact (valeur de vélocité arbitraire élevée).
+                this.playCollisionSound(50);
 
-                // Publier l'événement ROCKET.DESTROYED si la fusée vient d'être détruite par ce crash.
-                if (wasJustDestroyedByCrash) {
-                    console.log('[CollisionHandler.isRocketLanded] Fusée vient d\'être détruite par crash. Publication de ROCKET.DESTROYED via EventBus.');
-                    if (this.physicsController && this.physicsController.eventBus && window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.DESTROYED) {
-                        this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
-                            position: { x: rocketBody.position.x, y: rocketBody.position.y }, // Utiliser la position du corps physique au moment du crash
-                            velocity: { ...rocketBody.velocity }, // Utiliser la vélocité du corps physique
-                            impactVelocity: speed, 
-                            destroyedOn: otherBody.label
-                        });
-                    } else {
-                        console.warn('[CollisionHandler.isRocketLanded] eventBus ou EVENTS.ROCKET.DESTROYED non disponible, impossible de publier l\'événement.');
-                    }
+                // Publier l'événement ROCKET.DESTROYED si la fusée vient d'être détruite
+                if (wasJustDestroyedByCrash && this.physicsController && this.physicsController.eventBus && 
+                    window.EVENTS && window.EVENTS.ROCKET && window.EVENTS.ROCKET.DESTROYED) {
+                    this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
+                        position: { x: rocketBody.position.x, y: rocketBody.position.y },
+                        velocity: { ...rocketBody.velocity },
+                        impactVelocity: speed, 
+                        destroyedOn: otherBody.label
+                    });
                 }
                 
-                // L'ancien CustomEvent ROCKET_CRASH_EXPLOSION. Peut être redondant si EventBus fonctionne.
+                // CustomEvent pour compatibilité
                 if (typeof window !== 'undefined' && window.dispatchEvent) {
-                    console.log('[CollisionHandler.isRocketLanded] Dispatching native CustomEvent ROCKET_CRASH_EXPLOSION.');
                     window.dispatchEvent(new CustomEvent('ROCKET_CRASH_EXPLOSION', {
                         detail: {
                             x: rocketBody.position.x,
@@ -401,10 +357,9 @@ class CollisionHandler {
                 // Simuler l'enfoncement de la fusée dans le sol pour un effet visuel de crash.
                 // CORRECTION: Vérifier distance avant division pour éviter NaN/Infinity
                 if (otherBody.position && bodyRadius !== undefined) {
-                    // Vérifier que distance est valide avant toute utilisation
+                    // Vérifier que distance est valide
                     if (distance <= 0 || !isFinite(distance)) {
-                        console.warn(`[CollisionHandler] Distance invalide lors du crash: ${distance} (dx=${dx}, dy=${dy})`);
-                        return false; // Ne pas traiter le crash si distance invalide
+                        return false;
                     }
                     
                     const CRASH_SINK_DEPTH = 40; // Profondeur d'enfoncement en pixels.

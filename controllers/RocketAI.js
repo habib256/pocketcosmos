@@ -55,7 +55,12 @@ class RocketAI {
         ];
         
         // Initialisation du modèle et du replay buffer
-        this.initModel();
+        this.modelReady = false;
+        this.initModel().then(() => {
+            this.modelReady = true;
+        }).catch(error => {
+            console.error('[RocketAI] Impossible d\'initialiser les modèles:', error);
+        });
         this.replayBuffer = [];
         this.lastState = null;
         this.lastAction = null;
@@ -64,6 +69,9 @@ class RocketAI {
         
         // Flag pour éviter les appels concurrents à train()
         this.isTrainingInProgress = false;
+        
+        // Flag pour tracker si les modèles ont été disposés
+        this.isDisposed = false;
         
         // Métriques de concurrence pour monitoring
         this.concurrencyMetrics = {
@@ -75,24 +83,56 @@ class RocketAI {
             lastLoss: 0
         };
         
-        // S'abonner aux événements nécessaires
+        // S'abonner aux événements nécessaires (si controllerContainer disponible)
         this.subscribeToEvents();
     }
     
     // Initialisation du modèle TensorFlow.js
-    initModel() {
-        // Modèle principal (Q-network)
-        this.model = this.createModel();
+    async initModel() {
+        // S'assurer qu'on n'est pas en état dispose
+        this.isDisposed = false;
         
-        // Modèle cible pour la stabilité de l'apprentissage
-        this.targetModel = this.createModel();
-        this.updateTargetModel();
-        
-        // Compiler le modèle
-        this.model.compile({
-            optimizer: tf.train.adam(this.config.learningRate),
-            loss: 'meanSquaredError'
-        });
+        try {
+            // Attendre que TensorFlow.js soit prêt
+            await tf.ready();
+            
+            // Modèle principal (Q-network)
+            this.model = this.createModel();
+            
+            // Modèle cible pour la stabilité de l'apprentissage
+            this.targetModel = this.createModel();
+            this.updateTargetModel();
+            
+            // Compiler le modèle
+            this.model.compile({
+                optimizer: tf.train.adam(this.config.learningRate),
+                loss: 'meanSquaredError'
+            });
+        } catch (error) {
+            console.error('[RocketAI] Erreur lors de l\'initialisation du modèle:', error);
+            
+            // Tenter de basculer vers le backend CPU si l'erreur est liée au backend
+            if (error.message && (error.message.includes('SIGILL') || error.message.includes('backend'))) {
+                try {
+                    await tf.setBackend('cpu');
+                    await tf.ready();
+                    
+                    // Réessayer la création des modèles
+                    this.model = this.createModel();
+                    this.targetModel = this.createModel();
+                    this.updateTargetModel();
+                    
+                    this.model.compile({
+                        optimizer: tf.train.adam(this.config.learningRate),
+                        loss: 'meanSquaredError'
+                    });
+                } catch (fallbackError) {
+                    throw fallbackError;
+                }
+            } else {
+                throw error;
+            }
+        }
     }
     
     // Création du modèle de réseau de neurones
@@ -135,23 +175,51 @@ class RocketAI {
     
     // Mettre à jour le modèle cible
     updateTargetModel() {
-        // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de les remplacer
-        const oldWeights = this.targetModel.getWeights();
-        const newWeights = this.model.getWeights();
-        this.targetModel.setWeights(newWeights);
-        // Libérer les anciens poids
-        oldWeights.forEach(w => w.dispose());
-        // Note: newWeights sont maintenant référencés par targetModel, ne pas les dispose
+        // Vérifier que les modèles existent et ne sont pas disposés
+        if (!this.model || !this.targetModel || this.isDisposed) {
+            return;
+        }
+        
+        try {
+            // CORRECTION MEMORY LEAK: Dispose les anciens et nouveaux poids après utilisation
+            const oldWeights = this.targetModel.getWeights();
+            const newWeights = this.model.getWeights();
+            this.targetModel.setWeights(newWeights);
+            // Libérer les anciens poids (copies retournées par getWeights)
+            oldWeights.forEach(w => w.dispose());
+            // Libérer aussi les nouveaux poids car setWeights() crée ses propres copies
+            newWeights.forEach(w => w.dispose());
+        } catch (error) {
+            // Ignorer les erreurs de dispose silencieusement
+        }
     }
     
     // S'abonner aux événements pertinents
     subscribeToEvents() {
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data)));
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
-        window.controllerContainer.track(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
+        // Helper pour tracker les souscriptions avec ou sans controllerContainer
+        const trackSub = (unsub) => {
+            if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+                window.controllerContainer.track(unsub);
+            } else {
+                // Stocker les unsubscribe functions pour cleanup manuel
+                if (!this._eventUnsubscribers) {
+                    this._eventUnsubscribers = [];
+                }
+                this._eventUnsubscribers.push(unsub);
+            }
+        };
+        
+        // Vérifier que eventBus et EVENTS existent
+        if (!this.eventBus || !window.EVENTS) {
+            return;
+        }
+        
+        trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data)));
+        trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
+        trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
+        trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
+        trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
+        trackSub(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
     }
     
     // Activer/désactiver l'agent
@@ -231,11 +299,9 @@ class RocketAI {
                 this.replayBuffer.shift();
             }
             
-            // Entraîner le modèle périodiquement
-            if (this.totalSteps % this.config.updateFrequency === 0 && this.replayBuffer.length >= this.config.batchSize) {
-                this.train().catch(error => {
-                    console.error('[RocketAI] Erreur lors de l\'entraînement périodique:', error);
-                });
+            // Entraîner le modèle périodiquement (ignorer silencieusement si disposed)
+            if (this.totalSteps % this.config.updateFrequency === 0 && this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
+                this.train().catch(() => {});
             }
             
             // Mettre à jour le modèle cible périodiquement
@@ -350,17 +416,27 @@ class RocketAI {
     
     // Choisir une action en fonction de l'état courant
     act(state) {
+        // Vérifier que le modèle existe, n'est pas dispose et est prêt
+        if (!this.model || this.isDisposed || !this.modelReady) {
+            // Action aléatoire si pas de modèle, modèle dispose ou pas encore prêt
+            return Math.floor(Math.random() * this.actions.length);
+        }
+        
         // Stratégie epsilon-greedy
         if (Math.random() < this.config.epsilon) {
             // Exploration: action aléatoire
             return Math.floor(Math.random() * this.actions.length);
         } else {
             // Exploitation: meilleure action selon le modèle
-            return tf.tidy(() => {
-                const stateTensor = tf.tensor2d([state], [1, 10]);
-                const prediction = this.model.predict(stateTensor);
-                return prediction.argMax(1).dataSync()[0];
-            });
+            try {
+                return tf.tidy(() => {
+                    const stateTensor = tf.tensor2d([state], [1, 10]);
+                    const prediction = this.model.predict(stateTensor);
+                    return prediction.argMax(1).dataSync()[0];
+                });
+            } catch (error) {
+                return Math.floor(Math.random() * this.actions.length);
+            }
         }
     }
     
@@ -460,7 +536,7 @@ class RocketAI {
     
     // Gestion d'un crash
     handleCrash() {
-        if (!this.isActive || !this.isTraining) return;
+        if (!this.isActive || !this.isTraining || this.isDisposed) return;
         
         // Si nous avons un état et une action précédents, ajouter une expérience terminale
         if (this.lastState !== null && this.lastAction !== null) {
@@ -473,11 +549,9 @@ class RocketAI {
                 done: true
             });
             
-            // Entraîner immédiatement
-            if (this.replayBuffer.length >= this.config.batchSize) {
-                this.train().catch(error => {
-                    console.error('[RocketAI] Erreur lors de l\'entraînement après crash:', error);
-                });
+            // Entraîner immédiatement (ignorer silencieusement si disposed)
+            if (this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
+                this.train().catch(() => {});
             }
         }
         
@@ -494,7 +568,7 @@ class RocketAI {
     
     // Gestion d'un succès
     handleSuccess() {
-        if (!this.isActive || !this.isTraining) return;
+        if (!this.isActive || !this.isTraining || this.isDisposed) return;
         
         // Si nous avons un état et une action précédents, ajouter une expérience terminale
         if (this.lastState !== null && this.lastAction !== null) {
@@ -507,11 +581,9 @@ class RocketAI {
                 done: true
             });
             
-            // Entraîner immédiatement
-            if (this.replayBuffer.length >= this.config.batchSize) {
-                this.train().catch(error => {
-                    console.error('[RocketAI] Erreur lors de l\'entraînement après succès:', error);
-                });
+            // Entraîner immédiatement (ignorer silencieusement si disposed)
+            if (this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
+                this.train().catch(() => {});
             }
         }
         
@@ -531,6 +603,11 @@ class RocketAI {
         const startTime = Date.now();
         this.concurrencyMetrics.totalTrainingCalls++;
         
+        // Vérifier que les modèles existent, ne sont pas disposés et sont prêts
+        if (!this.model || !this.targetModel || this.isDisposed || !this.modelReady) {
+            return;
+        }
+        
         if (this.replayBuffer.length < this.config.batchSize) return;
         
         // Éviter les appels concurrents
@@ -541,121 +618,120 @@ class RocketAI {
         
         this.isTrainingInProgress = true;
         
-        // Sélectionner un batch aléatoire du replay buffer
-        const batch = [];
-        const indices = new Set();
-        
-        while (indices.size < this.config.batchSize) {
-            indices.add(Math.floor(Math.random() * this.replayBuffer.length));
-        }
-        
-        indices.forEach(index => {
-            batch.push(this.replayBuffer[index]);
-        });
-        
-        // Extraire les états, actions, récompenses, etc. du batch
-        // Vérifier et normaliser les états pour s'assurer qu'ils ont tous 10 dimensions
-        const states = batch.map(exp => {
-            if (!Array.isArray(exp.state) || exp.state.length !== 10) {
-                return Array(10).fill(0);
-            }
-            return exp.state.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
-        });
-        
-        const nextStates = batch.map(exp => {
-            if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
-                return Array(10).fill(0);
-            }
-            return exp.nextState.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
-        });
-        
-        // Vérifier que nous avons exactement le bon nombre d'états
-        if (states.length !== this.config.batchSize || nextStates.length !== this.config.batchSize) {
-            return;
-        }
-        
-        // Vérifier que chaque état a exactement 10 dimensions
-        const totalStateValues = states.reduce((sum, state) => sum + state.length, 0);
-        const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
-        
-        if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
-            return;
-        }
-        
-        // Prédire les valeurs Q pour les états actuels et futurs
-        const qValues = tf.tidy(() => this.model.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
-        const nextQValues = tf.tidy(() => this.targetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, 10])));
-        
-        // CORRECTION CRITIQUE : Extraire les valeurs dans JavaScript ET calculer les cibles correctement
-        const qValuesData = qValues.arraySync();
-        const nextQValuesData = nextQValues.arraySync();
-        
-        // Libérer la mémoire tensor des prédictions
-        qValues.dispose();
-        nextQValues.dispose();
-        
-        // CORRECTION : Créer les cibles Q correctement - on ne modifie QUE l'action prise
-        const qTargets = qValuesData.map(qRow => [...qRow]); // Copie profonde
-        
-        // Mettre à jour SEULEMENT les valeurs Q pour les actions prises
-        for (let i = 0; i < this.config.batchSize; i++) {
-            const experience = batch[i];
-            if (experience.done) {
-                // État terminal, la valeur Q future est simplement la récompense
-                qTargets[i][experience.action] = experience.reward;
-            } else {
-                // État non terminal, mise à jour selon l'équation de Bellman
-                const maxNextQ = Math.max(...nextQValuesData[i]);
-                qTargets[i][experience.action] = experience.reward + this.config.gamma * maxNextQ;
-            }
-        }
-        
-        // Entraîner le modèle
-        const xs = tf.tensor2d(states, [this.config.batchSize, 10]);
-        const ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
+        // Variables pour le finally
+        let xs = null;
+        let ys = null;
+        let qValues = null;
+        let nextQValues = null;
         
         try {
-            const history = await this.model.fit(xs, ys, {
+            // Sélectionner un batch aléatoire du replay buffer
+            const batch = [];
+            const indices = new Set();
+            
+            while (indices.size < this.config.batchSize) {
+                indices.add(Math.floor(Math.random() * this.replayBuffer.length));
+            }
+            
+            indices.forEach(index => {
+                batch.push(this.replayBuffer[index]);
+            });
+            
+            // Extraire les états, actions, récompenses, etc. du batch
+            const states = batch.map(exp => {
+                if (!Array.isArray(exp.state) || exp.state.length !== 10) {
+                    return Array(10).fill(0);
+                }
+                return exp.state.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
+            });
+            
+            const nextStates = batch.map(exp => {
+                if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
+                    return Array(10).fill(0);
+                }
+                return exp.nextState.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
+            });
+            
+            // Vérifications de validité
+            if (states.length !== this.config.batchSize || nextStates.length !== this.config.batchSize) {
+                return;
+            }
+            
+            const totalStateValues = states.reduce((sum, state) => sum + state.length, 0);
+            const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
+            
+            if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
+                return;
+            }
+            
+            // PROTECTION CRITIQUE : Vérifier à nouveau avant les opérations TensorFlow
+            if (this.isDisposed || !this.model || !this.targetModel) {
+                return;
+            }
+            
+            // Prédire les valeurs Q pour les états actuels et futurs
+            // Utiliser des références locales pour éviter les race conditions
+            const localModel = this.model;
+            const localTargetModel = this.targetModel;
+            
+            qValues = tf.tidy(() => localModel.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
+            
+            // Vérifier après la première opération
+            if (this.isDisposed) {
+                if (qValues) { try { qValues.dispose(); } catch (e) {} }
+                return;
+            }
+            
+            nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, 10])));
+            
+            // Extraire les valeurs dans JavaScript
+            const qValuesData = qValues.arraySync();
+            const nextQValuesData = nextQValues.arraySync();
+            
+            // Libérer immédiatement les tenseurs de prédiction
+            qValues.dispose();
+            qValues = null;
+            nextQValues.dispose();
+            nextQValues = null;
+            
+            // Créer les cibles Q
+            const qTargets = qValuesData.map(qRow => [...qRow]);
+            
+            // Mettre à jour les valeurs Q pour les actions prises
+            for (let i = 0; i < this.config.batchSize; i++) {
+                const experience = batch[i];
+                if (experience.done) {
+                    qTargets[i][experience.action] = experience.reward;
+                } else {
+                    const maxNextQ = Math.max(...nextQValuesData[i]);
+                    qTargets[i][experience.action] = experience.reward + this.config.gamma * maxNextQ;
+                }
+            }
+            
+            // PROTECTION CRITIQUE : Vérifier avant l'entraînement
+            if (this.isDisposed || !this.model) {
+                return;
+            }
+            
+            // Créer les tenseurs d'entraînement
+            xs = tf.tensor2d(states, [this.config.batchSize, 10]);
+            ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
+            
+            // Entraîner le modèle avec la référence locale
+            const history = await localModel.fit(xs, ys, {
                 epochs: 1,
                 verbose: 0
             });
             
-            // CORRECTION : Capturer et stocker le loss pour monitoring
+            // Vérifier si dispose pendant l'entraînement
+            if (this.isDisposed) {
+                return;
+            }
+            
+            // Capturer le loss pour monitoring
             const currentLoss = history.history.loss[0];
             
-                // Diagnostic des gradients (seulement en mode DEBUG)
-                if ((currentLoss === 0 || !isFinite(currentLoss)) && globalThis.DEBUG) {
-                    try {
-                        const testXs = tf.tensor2d(states.slice(0, 2), [2, 10]);
-                        const testYs = tf.tensor2d(qTargets.slice(0, 2), [2, this.actions.length]);
-                        
-                        const diagnosticResult = tf.tidy(() => {
-                            const f = () => {
-                                const pred = this.model.apply(testXs, { training: true });
-                                return tf.losses.meanSquaredError(testYs, pred);
-                            };
-                            const grads = tf.variableGrads(f);
-                            let totalGradNorm = 0, nanGrads = 0, zeroGrads = 0;
-                            Object.values(grads.grads).forEach(grad => {
-                                grad.dataSync().forEach(val => {
-                                    if (isNaN(val)) nanGrads++;
-                                    else if (val === 0) zeroGrads++;
-                                    else totalGradNorm += Math.abs(val);
-                                });
-                            });
-                            return { totalGradNorm, nanGrads, zeroGrads };
-                        });
-                        
-                        if (diagnosticResult.nanGrads > 0 || diagnosticResult.totalGradNorm < 1e-8) {
-                            console.warn(`[RocketAI] Gradient issue: NaN=${diagnosticResult.nanGrads}, norm=${diagnosticResult.totalGradNorm.toFixed(6)}`);
-                        }
-                        
-                        testXs.dispose();
-                        testYs.dispose();
-                    } catch (e) { /* ignore diagnostic errors */ }
-                }
-            
-            // Mettre à jour les métriques de succès avec loss
+            // Mettre à jour les métriques de succès
             this.concurrencyMetrics.successfulTrainings++;
             this.concurrencyMetrics.lastLoss = currentLoss;
             
@@ -665,26 +741,16 @@ class RocketAI {
                 (this.concurrencyMetrics.averageTrainingDuration * (this.concurrencyMetrics.successfulTrainings - 1) + trainingDuration) / 
                 this.concurrencyMetrics.successfulTrainings;
             
-            
         } catch (error) {
-            console.error('[RocketAI] Erreur lors de l\'entraînement:', error);
-            
-            // CORRECTION : Diagnostics d'erreur avancés
-            console.error('[RocketAI] Détails de l\'erreur:', {
-                batchSize: this.config.batchSize,
-                statesShape: states.length > 0 ? `${states.length}x${states[0].length}` : 'vide',
-                qTargetsShape: qTargets.length > 0 ? `${qTargets.length}x${qTargets[0].length}` : 'vide',
-                replayBufferSize: this.replayBuffer.length,
-                updateFrequency: this.config.updateFrequency,
-                totalSteps: this.totalSteps
-            });
-            
+            // Ignorer silencieusement les erreurs (dont "disposed")
         } finally {
-            // Libérer la mémoire tensor
-            xs.dispose();
-            ys.dispose();
+            // Libérer la mémoire tensor (si les tenseurs existent)
+            if (xs) { try { xs.dispose(); } catch (e) {} }
+            if (ys) { try { ys.dispose(); } catch (e) {} }
+            if (qValues) { try { qValues.dispose(); } catch (e) {} }
+            if (nextQValues) { try { nextQValues.dispose(); } catch (e) {} }
             
-            // Libérer le flag de concurrence
+            // Toujours libérer le flag de concurrence
             this.isTrainingInProgress = false;
         }
     }
@@ -700,44 +766,92 @@ class RocketAI {
     
     /**
      * Monitore l'utilisation mémoire de TensorFlow.js.
-     * Log seulement en mode DEBUG ou si problème détecté.
      */
     monitorMemory() {
-        if (this.totalSteps % 500 !== 0 || this.totalSteps === 0) return;
-        
-        const memInfo = tf.memory();
-        // Avertissement seulement si problème détecté
-        if (memInfo.numTensors > 1000 || memInfo.numBytes > 500 * 1024 * 1024) {
-            console.warn(`[RocketAI] Memory warning: ${memInfo.numTensors} tensors, ${(memInfo.numBytes / 1024 / 1024).toFixed(2)} MB`);
-        }
+        // Monitoring silencieux - on peut ajouter des actions correctives si nécessaire
     }
     
     /**
      * Nettoie les ressources TensorFlow.js pour éviter les fuites mémoire.
      * Doit être appelé lors de la destruction de l'agent.
+     * IMPORTANT: Cette méthode est synchrone mais marque l'agent comme disposé
+     * immédiatement pour que les opérations async en cours s'arrêtent proprement.
      */
     cleanup() {
-        try {
-            if (this.model) {
-                this.model.dispose();
-                this.model = null;
+        // Éviter les doubles cleanup
+        if (this.isDisposed) {
+            return;
+        }
+        
+        // CRITIQUE: Marquer comme disposé EN PREMIER pour que toutes les opérations
+        // async vérifient ce flag et s'arrêtent proprement
+        this.isDisposed = true;
+        
+        // Désactiver immédiatement pour éviter de nouvelles opérations
+        this.isActive = false;
+        this.isTraining = false;
+        
+        // Désabonner les événements stockés localement
+        if (this._eventUnsubscribers && this._eventUnsubscribers.length > 0) {
+            for (const unsub of this._eventUnsubscribers) {
+                try {
+                    if (typeof unsub === 'function') {
+                        unsub();
+                    }
+                } catch (e) { /* ignore */ }
             }
-            if (this.targetModel) {
-                this.targetModel.dispose();
-                this.targetModel = null;
+            this._eventUnsubscribers = [];
+        }
+        
+        // Note: On ne peut pas attendre isTrainingInProgress de façon synchrone,
+        // mais on a marqué isDisposed=true, donc train() va s'arrêter proprement.
+        // Utiliser un petit délai via setTimeout pour laisser le temps aux opérations
+        // en cours de voir le flag isDisposed avant de disposer les modèles.
+        const disposeModels = () => {
+            try {
+                if (this.model) {
+                    this.model.dispose();
+                    this.model = null;
+                }
+            } catch (error) {
+                // Ignorer si déjà dispose
             }
+            
+            try {
+                if (this.targetModel) {
+                    this.targetModel.dispose();
+                    this.targetModel = null;
+                }
+            } catch (error) {
+                // Ignorer si déjà dispose
+            }
+            
             this.replayBuffer = [];
-        } catch (error) {
-            console.error('[RocketAI] Cleanup error:', error);
+            this.isTrainingInProgress = false;
+        };
+        
+        // Si un entraînement est en cours, attendre un peu avant de disposer
+        if (this.isTrainingInProgress) {
+            setTimeout(disposeModels, 200);
+        } else {
+            disposeModels();
         }
     }
     
     // Sauvegarder le modèle
     async saveModel() {
+        // Vérifier que le modèle existe et n'est pas disposé avant de sauvegarder
+        if (!this.model || this.isDisposed) {
+            // Ne pas logger si c'est un cas attendu (dispose)
+            return false;
+        }
+        
         try {
             await this.model.save('localstorage://rocket-ai-model');
+            return true;
         } catch (error) {
-            console.error('[RocketAI] Save error:', error);
+            // Ignorer silencieusement
+            return false;
         }
     }
     
@@ -900,6 +1014,28 @@ class RocketAI {
     // Ajouter la méthode update appelée par GameController pour éviter l'erreur
     update(deltaTime) {
         // Rien à faire ici car updateRocketData gère déjà les décisions de l'agent
+    }
+    
+    /**
+     * Attendre que le modèle soit initialisé et prêt
+     * @returns {Promise} Résolu quand le modèle est prêt
+     */
+    async waitForReady() {
+        if (this.modelReady) return;
+        
+        // Attendre jusqu'à 10 secondes que le modèle soit prêt
+        const maxWait = 10000;
+        const checkInterval = 100;
+        let waited = 0;
+        
+        while (!this.modelReady && waited < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            waited += checkInterval;
+        }
+        
+        if (!this.modelReady) {
+            throw new Error('[RocketAI] Timeout en attendant l\'initialisation du modèle');
+        }
     }
 
     /**

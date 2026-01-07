@@ -124,10 +124,46 @@ class TrainingOrchestrator {
             await this.trainingLoop();
             
         } catch (error) {
-            console.error('[TrainingOrchestrator] Erreur lors du démarrage:', error);
-            this.isTraining = false;
-            this.eventBus.emit(window.EVENTS.AI.TRAINING_ERROR, { error: error.message });
+            // Ignorer silencieusement les erreurs "disposed" car c'est un comportement attendu lors du cleanup
+            const isDisposedError = error.message && error.message.includes('disposed');
+            
+            // Erreurs ignorées silencieusement (dont "disposed")
+            
+            // Nettoyer les ressources en cas d'erreur
+            await this.cleanupAfterError();
+            
+            // N'émettre l'événement d'erreur que pour les vraies erreurs
+            if (!isDisposedError) {
+                this.eventBus.emit(window.EVENTS.AI.TRAINING_ERROR, { error: error.message });
+            }
         }
+    }
+    
+    /**
+     * Nettoie les ressources après une erreur pour permettre un nouveau démarrage
+     */
+    async cleanupAfterError() {
+        this.isTraining = false;
+        this.isPaused = false;
+        
+        // Nettoyer l'agent IA avec un délai suffisant pour que les opérations async s'arrêtent
+        if (this.rocketAI) {
+            try {
+                // Appeler cleanup d'abord pour marquer comme disposé
+                if (typeof this.rocketAI.cleanup === 'function') {
+                    this.rocketAI.cleanup();
+                }
+                
+                // Attendre que les opérations en cours se terminent et que cleanup() dispose les modèles
+                await new Promise(resolve => setTimeout(resolve, 350));
+                
+            } catch (e) { /* ignore */ }
+            this.rocketAI = null;
+        }
+        
+        // Réinitialiser les environnements
+        this.trainingEnv = null;
+        this.evaluationEnv = null;
     }
     
     /**
@@ -244,8 +280,30 @@ class TrainingOrchestrator {
      */
     async initializeAgent() {
         
-        // Créer une nouvelle instance ou utiliser l'existante
+        // Nettoyer l'ancien agent IA s'il existe pour éviter les fuites mémoire TensorFlow
+        if (this.rocketAI) {
+            try {
+                // Marquer comme disposé d'abord
+                if (typeof this.rocketAI.cleanup === 'function') {
+                    this.rocketAI.cleanup();
+                }
+                
+                // Attendre un délai suffisant pour que :
+                // 1. Les opérations async en cours voient le flag isDisposed
+                // 2. Le setTimeout dans cleanup() ait le temps de disposer les modèles
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+            } catch (e) { /* ignore */ }
+            this.rocketAI = null;
+        }
+        
+        // Créer une nouvelle instance
         this.rocketAI = new RocketAI(this.eventBus);
+        
+        // Attendre que le modèle soit initialisé (important pour éviter les erreurs SIGILL)
+        if (typeof this.rocketAI.waitForReady === 'function') {
+            await this.rocketAI.waitForReady();
+        }
         
         // Injecter les dépendances depuis l'environnement d'entraînement
         if (this.trainingEnv) {
@@ -328,6 +386,10 @@ class TrainingOrchestrator {
                 metrics: this.metrics,
                 config: this.config
             });
+            
+            // IMPORTANT: Céder le contrôle au navigateur pour que l'UI reste réactive
+            // Utiliser requestAnimationFrame pour synchroniser avec le rafraîchissement écran
+            await new Promise(resolve => requestAnimationFrame(resolve));
         }
         
         // Finaliser l'entraînement
@@ -346,7 +408,28 @@ class TrainingOrchestrator {
         let totalReward = 0;
         let steps = 0;
         
-        while (!done && steps < this.config.maxStepsPerEpisode) {
+        // Émettre l'événement de début d'épisode pour la visualisation
+        const celestialBodiesData = (this.trainingEnv.universeModel && this.trainingEnv.universeModel.celestialBodies) 
+            ? this.trainingEnv.universeModel.celestialBodies.map(body => ({
+                name: body.name,
+                position: body.position ? { x: body.position.x, y: body.position.y } : { x: 0, y: 0 },
+                radius: body.radius,
+                mass: body.mass,
+                color: body.color
+            })) 
+            : [];
+        
+        this.eventBus.emit(window.EVENTS.AI.EPISODE_STARTED, {
+            episode: this.metrics.episode,
+            celestialBodies: celestialBodiesData
+        });
+        
+        while (!done && steps < this.config.maxStepsPerEpisode && this.isTraining) {
+            // Vérifier que l'agent est toujours disponible
+            if (!this.rocketAI || this.rocketAI.isDisposed) {
+                break;
+            }
+            
             // L'agent choisit une action
             const action = this.getActionFromState(state);
             
@@ -368,23 +451,78 @@ class TrainingOrchestrator {
                 });
             }
             
-            // Entraîner le modèle si suffisamment d'expériences
-            if (this.rocketAI.replayBuffer.length >= this.config.batchSize && steps % this.rocketAI.config.updateFrequency === 0) {
-                await this.rocketAI.train();
+            // Entraîner le modèle si suffisamment d'expériences (et si pas dispose)
+            if (this.rocketAI && !this.rocketAI.isDisposed &&
+                this.rocketAI.replayBuffer.length >= this.config.batchSize &&
+                steps % this.rocketAI.config.updateFrequency === 0) {
+                try {
+                    await this.rocketAI.train();
+                } catch (trainError) {
+                    // Ignorer silencieusement
+                }
             }
             
             state = result.observation;
             totalReward += result.reward;
             done = result.done;
             steps++;
+            
+            // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive
+            // Toutes les 50 steps pour un bon équilibre performance/réactivité
+            if (steps % 50 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            
+            // Émettre l'événement de step pour la visualisation (toutes les 10 étapes pour les performances)
+            if (steps % 10 === 0 && this.trainingEnv.rocketModel) {
+                const stepCelestialBodies = (this.trainingEnv.universeModel && this.trainingEnv.universeModel.celestialBodies) 
+                    ? this.trainingEnv.universeModel.celestialBodies.map(body => ({
+                        name: body.name,
+                        position: body.position ? { x: body.position.x, y: body.position.y } : { x: 0, y: 0 },
+                        radius: body.radius,
+                        mass: body.mass,
+                        color: body.color
+                    })) 
+                    : [];
+                
+                this.eventBus.emit(window.EVENTS.AI.TRAINING_STEP, {
+                    step: steps,
+                    episode: this.metrics.episode,
+                    rocket: {
+                        position: { 
+                            x: this.trainingEnv.rocketModel.x, 
+                            y: this.trainingEnv.rocketModel.y 
+                        },
+                        velocity: { 
+                            x: this.trainingEnv.rocketModel.vx, 
+                            y: this.trainingEnv.rocketModel.vy 
+                        },
+                        angle: this.trainingEnv.rocketModel.angle,
+                        fuel: this.trainingEnv.rocketModel.fuel,
+                        isLanded: this.trainingEnv.rocketModel.isLanded,
+                        isDestroyed: this.trainingEnv.rocketModel.isCrashed
+                    },
+                    celestialBodies: stepCelestialBodies
+                });
+            }
         }
         
-        // CORRECTION : Appliquer la décroissance d'epsilon après chaque épisode
-        if (this.rocketAI.config.epsilon > this.rocketAI.config.epsilonMin) {
+        // CORRECTION : Appliquer la décroissance d'epsilon après chaque épisode (avec protection)
+        if (this.rocketAI && !this.rocketAI.isDisposed && 
+            this.rocketAI.config.epsilon > this.rocketAI.config.epsilonMin) {
             this.rocketAI.config.epsilon *= this.rocketAI.config.epsilonDecay;
         }
         
         const episodeDuration = Date.now() - startTime;
+        
+        // Émettre l'événement de fin d'épisode pour la visualisation
+        this.eventBus.emit(window.EVENTS.AI.EPISODE_ENDED, {
+            episode: this.metrics.episode,
+            totalReward,
+            steps,
+            duration: episodeDuration,
+            success: this.isEpisodeSuccessful(totalReward, steps)
+        });
         
         return {
             totalReward,
@@ -400,6 +538,12 @@ class TrainingOrchestrator {
     getActionFromState(state) {
         // Construire l'état pour l'agent IA (format attendu par RocketAI)
         const aiState = this.buildAIState(state);
+        
+        // Vérifier que l'agent est disponible et non dispose
+        if (!this.rocketAI || this.rocketAI.isDisposed) {
+            // Action par défaut (noAction) si l'agent n'est pas disponible
+            return this.convertActionIndexToEnvironmentAction(4);
+        }
         
         // Obtenir l'index d'action de l'agent
         const actionIndex = this.rocketAI.act(aiState);
@@ -475,6 +619,10 @@ class TrainingOrchestrator {
      * Évalue les performances de l'agent
      */
     async evaluateAgent() {
+        // Protection: vérifier que l'agent est disponible et non disposé
+        if (!this.rocketAI || this.rocketAI.isDisposed || !this.rocketAI.model) {
+            return;
+        }
         
         const numEvaluationEpisodes = 10;
         let totalScore = 0;
@@ -484,64 +632,95 @@ class TrainingOrchestrator {
         const wasTraining = this.rocketAI.isTraining;
         this.rocketAI.isTraining = false; // Désactiver l'exploration
         
-        for (let i = 0; i < numEvaluationEpisodes; i++) {
-            let state = this.evaluationEnv.reset();
-            let episodeReward = 0;
-            let done = false;
-            let steps = 0;
-            
-            while (!done && steps < this.config.maxStepsPerEpisode) {
-                const action = this.getActionFromState(state);
-                const result = this.evaluationEnv.step(action);
+        try {
+            for (let i = 0; i < numEvaluationEpisodes; i++) {
+                // Vérifier à chaque itération que l'agent est toujours disponible
+                if (!this.rocketAI || this.rocketAI.isDisposed) {
+                    break;
+                }
                 
-                state = result.observation;
-                episodeReward += result.reward;
-                done = result.done;
-                steps++;
-            }
-            
-            totalScore += episodeReward;
-            if (this.isEpisodeSuccessful(episodeReward, steps)) {
-                successCount++;
-            }
-        }
-        
-        // Restaurer l'état d'entraînement
-        this.rocketAI.isTraining = wasTraining;
-        
-        const averageScore = totalScore / numEvaluationEpisodes;
-        const successRate = successCount / numEvaluationEpisodes;
-        
-        this.metrics.lastEvaluationScore = averageScore;
-        this.trainingState.recentPerformance.push(averageScore);
-        
-        // Conserver seulement les 10 dernières évaluations
-        if (this.trainingState.recentPerformance.length > 10) {
-            this.trainingState.recentPerformance.shift();
-        }
-        
-        // Sauvegarder le meilleur modèle
-        if (averageScore > this.metrics.bestAverageReward) {
-            this.metrics.bestAverageReward = averageScore;
-            
-            // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de stocker les nouveaux
-            if (this.trainingState.bestModelWeights) {
-                this.trainingState.bestModelWeights.forEach(w => {
-                    if (w && typeof w.dispose === 'function') {
-                        w.dispose();
+                let state = this.evaluationEnv.reset();
+                let episodeReward = 0;
+                let done = false;
+                let steps = 0;
+                
+                while (!done && steps < this.config.maxStepsPerEpisode) {
+                    const action = this.getActionFromState(state);
+                    const result = this.evaluationEnv.step(action);
+                    
+                    state = result.observation;
+                    episodeReward += result.reward;
+                    done = result.done;
+                    steps++;
+                    
+                    // Céder le contrôle au navigateur périodiquement
+                    if (steps % 100 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 0));
                     }
-                });
+                }
+                
+                totalScore += episodeReward;
+                if (this.isEpisodeSuccessful(episodeReward, steps)) {
+                    successCount++;
+                }
+                
+                // Céder le contrôle au navigateur entre les épisodes d'évaluation
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
             
-            this.trainingState.bestModelWeights = await this.rocketAI.model.getWeights();
+            // Restaurer l'état d'entraînement (si l'agent existe encore)
+            if (this.rocketAI && !this.rocketAI.isDisposed) {
+                this.rocketAI.isTraining = wasTraining;
+            }
+            
+            const averageScore = totalScore / numEvaluationEpisodes;
+            const successRate = successCount / numEvaluationEpisodes;
+            
+            this.metrics.lastEvaluationScore = averageScore;
+            this.trainingState.recentPerformance.push(averageScore);
+            
+            // Conserver seulement les 10 dernières évaluations
+            if (this.trainingState.recentPerformance.length > 10) {
+                this.trainingState.recentPerformance.shift();
+            }
+            
+            // Sauvegarder le meilleur modèle (avec protection)
+            if (averageScore > this.metrics.bestAverageReward && 
+                this.rocketAI && !this.rocketAI.isDisposed && this.rocketAI.model) {
+                this.metrics.bestAverageReward = averageScore;
+                
+                // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de stocker les nouveaux
+                if (this.trainingState.bestModelWeights) {
+                    this.trainingState.bestModelWeights.forEach(w => {
+                        if (w && typeof w.dispose === 'function') {
+                            try { w.dispose(); } catch (e) { /* ignore */ }
+                        }
+                    });
+                }
+                
+                try {
+                    this.trainingState.bestModelWeights = await this.rocketAI.model.getWeights();
+                } catch (weightsError) {
+                    // Ignorer les erreurs si le modèle a été disposé entre-temps
+                    if (!weightsError.message.includes('disposed')) {
+                        throw weightsError;
+                    }
+                }
+            }
+            
+            this.eventBus.emit(window.EVENTS.AI.EVALUATION_COMPLETED, {
+                episode: this.metrics.episode,
+                averageScore,
+                successRate,
+                bestScore: this.metrics.bestAverageReward
+            });
+            
+        } catch (error) {
+            // Restaurer l'état d'entraînement même en cas d'erreur
+            if (this.rocketAI && !this.rocketAI.isDisposed) {
+                this.rocketAI.isTraining = wasTraining;
+            }
         }
-        
-        this.eventBus.emit(window.EVENTS.AI.EVALUATION_COMPLETED, {
-            episode: this.metrics.episode,
-            averageScore,
-            successRate,
-            bestScore: this.metrics.bestAverageReward
-        });
     }
     
     /**
@@ -566,7 +745,12 @@ class TrainingOrchestrator {
         // Métriques moyennes (sur les 100 derniers épisodes)
         this.metrics.averageRewards.push(episodeResult.totalReward);
         this.metrics.episodeLengths.push(episodeResult.steps);
-        this.metrics.explorationRates.push(this.rocketAI.config.epsilon);
+        
+        // Protection : vérifier que l'agent existe et n'est pas disposé
+        const currentEpsilon = (this.rocketAI && !this.rocketAI.isDisposed) 
+            ? this.rocketAI.config.epsilon 
+            : this.config.epsilonMin;
+        this.metrics.explorationRates.push(currentEpsilon);
         
         // Limiter la taille des tableaux de métriques
         const maxLength = 100;
@@ -617,11 +801,18 @@ class TrainingOrchestrator {
      * Sauvegarde un checkpoint
      */
     async saveCheckpoint() {
+        // Vérifier que l'agent existe et n'est pas disposé avant de sauvegarder
+        if (!this.rocketAI || this.rocketAI.isDisposed) {
+            return;
+        }
+        
         try {
-            await this.rocketAI.saveModel();
-            this.metrics.lastCheckpointTime = Date.now();
+            const saved = await this.rocketAI.saveModel();
+            if (saved) {
+                this.metrics.lastCheckpointTime = Date.now();
+            }
         } catch (error) {
-            console.error('[TrainingOrchestrator] Save error:', error);
+            // Ignorer silencieusement
         }
     }
     
@@ -631,22 +822,30 @@ class TrainingOrchestrator {
     async finalizeTraining() {
         this.isTraining = false;
 
-        // Restaurer le meilleur modèle
+        // Restaurer le meilleur modèle (avec protection)
+        if (this.trainingState.bestModelWeights && 
+            this.rocketAI && !this.rocketAI.isDisposed && this.rocketAI.model) {
+            try {
+                await this.rocketAI.model.setWeights(this.trainingState.bestModelWeights);
+            } catch (error) {
+                // Ignorer silencieusement
+            }
+        }
+        
+        // CORRECTION MEMORY LEAK: Libérer les tensors de bestModelWeights
         if (this.trainingState.bestModelWeights) {
-            await this.rocketAI.model.setWeights(this.trainingState.bestModelWeights);
-            
-            // CORRECTION MEMORY LEAK: Libérer les tensors de bestModelWeights après restauration
-            // (setWeights crée une copie interne, les originaux peuvent être libérés)
             this.trainingState.bestModelWeights.forEach(w => {
                 if (w && typeof w.dispose === 'function') {
-                    w.dispose();
+                    try { w.dispose(); } catch (e) { /* ignore */ }
                 }
             });
             this.trainingState.bestModelWeights = null;
         }
 
-        // Sauvegarde finale
-        await this.saveCheckpoint();
+        // Sauvegarde finale (avec protection)
+        if (this.rocketAI && !this.rocketAI.isDisposed) {
+            await this.saveCheckpoint();
+        }
         
         // Calcul des statistiques finales
         const trainingDuration = Date.now() - this.metrics.trainingStartTime;

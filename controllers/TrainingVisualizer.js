@@ -15,21 +15,24 @@ class TrainingVisualizer {
         this.rocketTrajectory = [];
         this.allTrajectories = []; // Conserver toutes les trajectoires des épisodes
         this.maxTrajectoryPoints = 1000; // Limiter pour les performances
-        this.maxTrajectoriesCount = 10; // Nombre max de trajectoires à conserver
+        this.maxTrajectoriesCount = 100; // Nombre max de trajectoires à conserver
+        this.cameraInitialized = false; // Flag pour savoir si la caméra a déjà été initialisée
         
         // Données de l'environnement
         this.rocketData = null;
         this.celestialBodies = [];
+        this.lastDataReceived = null; // Timestamp de la dernière donnée reçue
         
         // Configuration de la caméra simplifiée
         this.camera = {
             x: 0,
             y: 0,
-            zoom: 0.0001, // Zoom initial pour voir la Terre et sa zone proche
-            targetZoom: 0.0001,
+            zoom: 0.00005, // Zoom initial pour voir la Terre et sa zone proche
+            targetZoom: 0.00005,
             followRocket: false, // Commencer par une vue centrée sur la Terre
-            minZoom: 0.000001, // Zoom minimum pour voir un système très large (1/1000000)
-            maxZoom: 0.01      // Zoom maximum pour voir la fusée de près
+            minZoom: 0.0000001, // Zoom minimum pour voir un système très large
+            maxZoom: 0.1,       // Zoom maximum pour voir la fusée de près
+            zoomSpeed: 0.15     // Vitesse d'interpolation du zoom (augmentée pour réactivité)
         };
         
         // Configuration visuelle
@@ -48,8 +51,6 @@ class TrainingVisualizer {
         
         // S'abonner aux événements
         this.subscribeToEvents();
-        
-        console.log('[TrainingVisualizer] Initialisé');
     }
     
     /**
@@ -84,8 +85,6 @@ class TrainingVisualizer {
      * Gérer le début d'un nouvel épisode
      */
     onEpisodeStarted(data) {
-        console.log('[TrainingVisualizer] Début d\'épisode:', data);
-        
         // Sauvegarder la trajectoire actuelle si elle existe
         if (this.rocketTrajectory.length > 0) {
             this.allTrajectories.push([...this.rocketTrajectory]);
@@ -101,14 +100,12 @@ class TrainingVisualizer {
         
         // Mettre à jour les corps célestes si fournis
         if (data && data.celestialBodies && data.celestialBodies.length > 0) {
-            console.log('[TrainingVisualizer] Corps célestes reçus au début d\'épisode:', data.celestialBodies);
             this.celestialBodies = data.celestialBodies;
             if (!this.camera.followRocket) {
-                this.initializeCamera();
+                // Préserver le zoom si la caméra a déjà été initialisée
+                this.initializeCamera(this.cameraInitialized);
             }
         } else if (this.celestialBodies.length === 0) {
-            // Si aucun corps céleste n'est fourni et qu'on n'en a pas, utiliser les valeurs par défaut
-            console.log('[TrainingVisualizer] Aucun corps céleste fourni, utilisation des valeurs par défaut');
             this.initializeDefaultCelestialBodies();
         }
     }
@@ -118,7 +115,6 @@ class TrainingVisualizer {
      */
     onEpisodeEnded(data) {
         // La trajectoire sera sauvegardée au début du prochain épisode
-        console.log(`[TrainingVisualizer] Épisode terminé, trajectoire de ${this.rocketTrajectory.length} points`);
     }
     
     /**
@@ -162,8 +158,6 @@ class TrainingVisualizer {
         
         // Initialiser la caméra avec ces corps célestes
         this.initializeCamera();
-        
-        console.log('[TrainingVisualizer] Corps célestes par défaut initialisés:', this.celestialBodies);
     }
     
     /**
@@ -172,15 +166,8 @@ class TrainingVisualizer {
     updateVisualization(data) {
         if (!data) return;
         
-        // Debug: Log des données reçues (seulement occasionnellement pour éviter le spam)
-        if (Math.random() < 0.01) { // 1% de chance de logger
-            console.log('[TrainingVisualizer] Données reçues:', {
-                hasRocket: !!data.rocket,
-                hasCelestialBodies: !!data.celestialBodies,
-                celestialBodiesCount: data.celestialBodies ? data.celestialBodies.length : 0,
-                step: data.step
-            });
-        }
+        // Marquer la réception de données
+        this.lastDataReceived = Date.now();
         
         // Mettre à jour les données de la fusée
         if (data.rocket) {
@@ -206,14 +193,9 @@ class TrainingVisualizer {
             const hadBodies = this.celestialBodies.length > 0;
             this.celestialBodies = data.celestialBodies;
             
-            // Log quand on reçoit de nouveaux corps célestes
-            if (!hadBodies) {
-                console.log('[TrainingVisualizer] Corps célestes reçus:', this.celestialBodies);
-            }
-            
             // Initialiser la caméra si c'est la première fois qu'on reçoit des corps célestes
             if (!hadBodies && this.celestialBodies.length > 0) {
-                this.initializeCamera();
+                this.initializeCamera(this.cameraInitialized);
             }
         }
         
@@ -284,8 +266,9 @@ class TrainingVisualizer {
             this.camera.targetZoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, targetZoom));
         }
         
-        // Interpolation du zoom
-        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * 0.05;
+        // Interpolation du zoom (vitesse augmentée)
+        const zoomSpeed = this.camera.zoomSpeed || 0.15;
+        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
     }
     
     /**
@@ -302,8 +285,51 @@ class TrainingVisualizer {
             this.camera.y += (earth.position.y - this.camera.y) * 0.05;
         }
         
-        // Interpolation du zoom vers la valeur cible
-        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * 0.05;
+        // Interpolation du zoom vers la valeur cible (vitesse augmentée)
+        const zoomSpeed = this.camera.zoomSpeed || 0.15;
+        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
+    }
+    
+    /**
+     * Zoom avant (grossir)
+     */
+    zoomIn(factor = 1.5) {
+        const newZoom = Math.min(this.camera.maxZoom, this.camera.targetZoom * factor);
+        this.camera.targetZoom = newZoom;
+        if (this.isActive) {
+            this.render();
+        }
+    }
+    
+    /**
+     * Zoom arrière (dézoomer)
+     */
+    zoomOut(factor = 1.5) {
+        const newZoom = Math.max(this.camera.minZoom, this.camera.targetZoom / factor);
+        this.camera.targetZoom = newZoom;
+        if (this.isActive) {
+            this.render();
+        }
+    }
+    
+    /**
+     * Définir le mode de suivi de la fusée
+     */
+    setFollowRocket(follow) {
+        this.camera.followRocket = follow;
+        if (!follow) {
+            this.initializeCamera();
+        }
+    }
+    
+    /**
+     * Réinitialiser la vue à la position par défaut
+     */
+    resetView() {
+        this.initializeCamera();
+        if (this.isActive) {
+            this.render();
+        }
     }
     
     /**
@@ -331,14 +357,18 @@ class TrainingVisualizer {
     
     /**
      * Initialiser la caméra pour une vue centrée sur la Terre
+     * @param {boolean} preserveZoom - Si true, préserve le zoom actuel au lieu de le réinitialiser
      */
-    initializeCamera() {
+    initializeCamera(preserveZoom = false) {
         if (this.celestialBodies.length === 0) {
             this.camera.x = 0;
             this.camera.y = 0;
-            this.camera.zoom = 0.0001;
-            this.camera.targetZoom = 0.0001;
+            if (!preserveZoom) {
+                this.camera.zoom = 0.0001;
+                this.camera.targetZoom = 0.0001;
+            }
             this.camera.followRocket = false;
+            this.cameraInitialized = true;
             return;
         }
         
@@ -352,26 +382,31 @@ class TrainingVisualizer {
             this.camera.x = earth.position.x;
             this.camera.y = earth.position.y;
             
-            // Zoom pour voir la Terre et sa zone proche (où la fusée évolue)
-            // Calculer un zoom qui montre environ 8 fois le rayon de la Terre
-            const earthRadius = earth.radius || 6371000;
-            const viewRadius = earthRadius * 8; // Zone de 8 rayons terrestres
-            const canvasSize = Math.min(this.canvas.width, this.canvas.height);
-            
-            // Calculer le zoom pour que la zone d'intérêt occupe environ 60% du canvas
-            this.camera.zoom = (canvasSize * 0.6) / (viewRadius * 2);
-            this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
+            // Ne réinitialiser le zoom que si on ne doit pas le préserver
+            if (!preserveZoom) {
+                // Zoom pour voir la Terre et sa zone proche (où la fusée évolue)
+                // Calculer un zoom qui montre environ 8 fois le rayon de la Terre
+                const earthRadius = earth.radius || 6371000;
+                const viewRadius = earthRadius * 8; // Zone de 8 rayons terrestres
+                const canvasSize = Math.min(this.canvas.width, this.canvas.height);
+                
+                // Calculer le zoom pour que la zone d'intérêt occupe environ 60% du canvas
+                this.camera.zoom = (canvasSize * 0.6) / (viewRadius * 2);
+                this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
+                this.camera.targetZoom = this.camera.zoom;
+            }
         } else {
             // Fallback si pas de Terre trouvée - centrer sur l'origine
             this.camera.x = 0;
             this.camera.y = 0;
-            this.camera.zoom = 0.0001;
+            if (!preserveZoom) {
+                this.camera.zoom = 0.0001;
+                this.camera.targetZoom = 0.0001;
+            }
         }
         
-        this.camera.targetZoom = this.camera.zoom;
         this.camera.followRocket = false; // Toujours commencer par une vue centrée sur la Terre
-        
-        console.log(`[TrainingVisualizer] Caméra initialisée sur la Terre: centre=(${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)}), zoom=${this.camera.zoom.toFixed(6)}`);
+        this.cameraInitialized = true;
     }
     
     /**
@@ -575,7 +610,7 @@ class TrainingVisualizer {
         this.ctx.rotate(angle);
         
         // Taille adaptée au zoom - plus visible à faible zoom
-        const size = Math.max(10, 50000 * this.camera.zoom);
+        const size = Math.max(10, 10000 * this.camera.zoom);
         
         // Dessiner la fusée comme un triangle simple
         this.ctx.fillStyle = this.rocketData.isDestroyed ? '#ff0000' : this.colors.rocket;
@@ -619,43 +654,66 @@ class TrainingVisualizer {
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.font = '12px monospace';
         
+        // Indicateur de réception de données (clignotant)
+        const dataIndicator = this.lastDataReceived && (Date.now() - this.lastDataReceived < 500) ? '🟢' : '🔴';
+        
         const info = [
+            `${dataIndicator} Données: ${this.lastDataReceived ? 'Actif' : 'En attente'}`,
             `Caméra: (${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)})`,
-            `Zoom: ${this.camera.zoom.toExponential(2)} (${this.camera.followRocket ? 'Suit fusée' : 'Vue libre'})`,
+            `Zoom: ${this.camera.zoom.toExponential(2)} → ${this.camera.targetZoom.toExponential(2)}`,
+            `Mode: ${this.camera.followRocket ? '🎯 Suit fusée' : '🌍 Vue Terre'}`,
             `Corps célestes: ${this.celestialBodies.length}`,
             `Trajectoires: ${this.allTrajectories.length} anciennes + 1 actuelle`,
-            `Points trajectoire actuelle: ${this.rocketTrajectory.length}`
+            `Points trajectoire: ${this.rocketTrajectory.length}/${this.maxTrajectoryPoints}`
         ];
         
         if (this.rocketData) {
+            const pos = this.rocketData.position || {};
+            const vel = this.rocketData.velocity || {};
+            const speed = Math.sqrt((vel.x || 0) ** 2 + (vel.y || 0) ** 2);
+            
             info.push(
-                `Position fusée: (${this.rocketData.position?.x?.toFixed(0) || 'N/A'}, ${this.rocketData.position?.y?.toFixed(0) || 'N/A'})`,
-                `Vitesse: ${this.rocketData.velocity ? Math.sqrt(this.rocketData.velocity.x ** 2 + this.rocketData.velocity.y ** 2).toFixed(1) : 'N/A'} m/s`,
-                `Carburant: ${this.rocketData.fuel?.toFixed(0) || 'N/A'}`,
-                `État: ${this.rocketData.isDestroyed ? 'Détruite' : this.rocketData.isLanded ? 'Atterrie' : 'En vol'}`
+                `------- Fusée -------`,
+                `Position: (${(pos.x || 0).toFixed(0)}, ${(pos.y || 0).toFixed(0)})`,
+                `Vitesse: ${speed.toFixed(1)} m/s`,
+                `Carburant: ${(this.rocketData.fuel || 0).toFixed(0)}`,
+                `État: ${this.rocketData.isDestroyed ? '💥 Détruite' : this.rocketData.isLanded ? '✅ Atterrie' : '🚀 En vol'}`
             );
         } else {
-            info.push('Aucune donnée de fusée');
+            info.push('------- Fusée -------');
+            info.push('⏳ Aucune donnée de fusée');
+            info.push('(Démarrez l\'entraînement)');
         }
         
-        // Afficher les corps célestes
+        // Afficher les corps célestes (limité)
         if (this.celestialBodies.length > 0) {
             info.push('--- Corps célestes ---');
-            for (const body of this.celestialBodies) {
+            for (let i = 0; i < Math.min(3, this.celestialBodies.length); i++) {
+                const body = this.celestialBodies[i];
                 if (body.position) {
-                    const distance = this.rocketData && this.rocketData.position ? 
-                        Math.sqrt((body.position.x - this.rocketData.position.x) ** 2 + (body.position.y - this.rocketData.position.y) ** 2) : 0;
-                    info.push(`${body.name}: (${body.position.x.toFixed(0)}, ${body.position.y.toFixed(0)}) - ${distance.toFixed(0)}m - R:${body.radius}`);
-                } else {
-                    info.push(`${body.name}: Position manquante`);
+                    info.push(`${body.name}: R=${(body.radius/1000).toFixed(0)}km`);
                 }
             }
-        } else {
-            info.push('--- Aucun corps céleste ---');
         }
         
+        // Contrôles
+        info.push('------ Contrôles ------');
+        info.push('🔍+/- : Zoom');
+        info.push('🎯 : Suivre fusée');
+        info.push('🧹 : Effacer trajectoire');
+        
+        // Fond semi-transparent pour le texte
+        const lineHeight = 14;
+        const padding = 5;
+        const textWidth = 200;
+        const textHeight = info.length * lineHeight + padding * 2;
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(5, 5, textWidth, textHeight);
+        
+        this.ctx.fillStyle = '#FFFFFF';
         for (let i = 0; i < info.length; i++) {
-            this.ctx.fillText(info[i], 10, 20 + i * 15);
+            this.ctx.fillText(info[i], 10, 18 + i * lineHeight);
         }
     }
     

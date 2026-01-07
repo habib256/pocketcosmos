@@ -112,8 +112,26 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <!-- Plugin Matter Attractors (ignorer le warning de compatibilité, il fonctionne quand même) -->
     <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
-    <!-- TensorFlow.js -->
+    <!-- TensorFlow.js - avec fallback backend pour éviter SIGILL -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    <script>
+        // Forcer le backend CPU si WebGL échoue pour éviter les erreurs SIGILL
+        (async function() {
+            try {
+                await tf.setBackend('webgl');
+                console.log('[TensorFlow.js] Backend WebGL activé');
+            } catch (e) {
+                console.warn('[TensorFlow.js] WebGL non disponible, utilisation du backend CPU');
+                try {
+                    await tf.setBackend('cpu');
+                    console.log('[TensorFlow.js] Backend CPU activé');
+                } catch (e2) {
+                    console.error('[TensorFlow.js] Erreur backend:', e2);
+                }
+            }
+            await tf.ready();
+        })();
+    </script>
     <!-- Audio manager -->
     <script src="controllers/AudioManager.js"></script>
 </head>

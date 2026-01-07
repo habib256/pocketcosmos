@@ -47,6 +47,10 @@
             background: rgba(255, 255, 255, 0.1);
             color: white;
         }
+        select option {
+            background: #1a1a2e;
+            color: white;
+        }
         button {
             background: linear-gradient(45deg, #4a90e2, #7b68ee);
             cursor: pointer;
@@ -109,6 +113,7 @@
         .log-error { color: #ff6b6b; }
         .log-success { color: #51cf66; }
         .log-info { color: #74c0fc; }
+        .log-warning { color: #ffd43b; }
         .charts {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -156,14 +161,46 @@
             align-items: center;
         }
         .visualization-controls button {
-            padding: 6px 12px;
-            font-size: 12px;
+            padding: 8px 14px;
+            font-size: 13px;
             white-space: nowrap;
-            min-width: 80px;
+            min-width: 50px;
+            transition: all 0.2s ease;
+        }
+        .visualization-controls button:hover {
+            transform: scale(1.05);
+        }
+        .visualization-controls button:active {
+            transform: scale(0.95);
+        }
+        .zoom-button {
+            min-width: 40px !important;
+            font-weight: bold;
+            font-size: 16px !important;
         }
     </style>
-    <!-- TensorFlow.js -->
+    <!-- TensorFlow.js - Version CPU pour éviter les erreurs SIGILL -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    <script>
+        // Forcer le backend CPU pour éviter les erreurs SIGILL avec WASM/WebGL
+        (async function() {
+            try {
+                // Tenter d'abord WebGL (plus rapide)
+                await tf.setBackend('webgl');
+                console.log('[TensorFlow.js] Backend WebGL activé');
+            } catch (e) {
+                console.warn('[TensorFlow.js] WebGL non disponible, utilisation du backend CPU');
+                try {
+                    await tf.setBackend('cpu');
+                    console.log('[TensorFlow.js] Backend CPU activé');
+                } catch (e2) {
+                    console.error('[TensorFlow.js] Erreur d\'initialisation du backend:', e2);
+                }
+            }
+            await tf.ready();
+            console.log('[TensorFlow.js] Backend actif:', tf.getBackend());
+        })();
+    </script>
     <!-- Chart.js pour les graphiques -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
@@ -306,9 +343,11 @@
                 <h2 style="margin: 0;">🎯 Visualisation de l'Entraînement</h2>
                 <div class="visualization-controls">
                     <button id="toggleVisualization">👁️ Activer</button>
+                    <button id="followRocket">🎯 Suivre fusée</button>
+                    <button id="resetView">🌍 Vue Terre</button>
                     <button id="clearTrajectory">🧹 Effacer</button>
-                    <button id="zoomOut">🔍- Zoom</button>
-                    <button id="zoomIn">🔍+ Zoom</button>
+                    <button id="zoomOut" class="zoom-button">➖</button>
+                    <button id="zoomIn" class="zoom-button">➕</button>
                 </div>
             </div>
             <div style="display: flex; justify-content: center; align-items: center; height: calc(100% - 50px);">
@@ -613,12 +652,18 @@
                 
                 // Événements de visualisation
                 document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
+                document.getElementById('followRocket').addEventListener('click', () => this.toggleFollowRocket());
+                document.getElementById('resetView').addEventListener('click', () => this.resetView());
                 document.getElementById('clearTrajectory').addEventListener('click', () => this.clearTrajectory());
                 document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
                 document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
                 
                 // Gérer le changement de mode d'entraînement
-                document.getElementById('trainingMode').addEventListener('change', (e) => this.onTrainingModeChanged(e.target.value));
+                const trainingModeSelect = document.getElementById('trainingMode');
+                trainingModeSelect.addEventListener('change', (e) => this.onTrainingModeChanged(e.target.value));
+                
+                // Initialiser le panneau de visualisation selon la valeur initiale du sélecteur
+                this.onTrainingModeChanged(trainingModeSelect.value);
             }
 
             setupTrainingEventListeners() {
@@ -866,9 +911,14 @@
             }
             
             updateTrainingStatistics(metrics) {
+                // Récupérer les métriques de l'orchestrateur pour accéder aux données complètes
+                const orchestratorMetrics = this.trainingOrchestrator && this.trainingOrchestrator.metrics 
+                    ? this.trainingOrchestrator.metrics 
+                    : null;
+                
                 // Calculer le temps total d'entraînement
-                if (this.trainingOrchestrator && this.trainingOrchestrator.metrics && this.trainingOrchestrator.metrics.trainingStartTime) {
-                    const totalTime = Date.now() - this.trainingOrchestrator.metrics.trainingStartTime;
+                if (orchestratorMetrics && orchestratorMetrics.trainingStartTime) {
+                    const totalTime = Date.now() - orchestratorMetrics.trainingStartTime;
                     const totalSeconds = Math.floor(totalTime / 1000);
                     const hours = Math.floor(totalSeconds / 3600);
                     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -892,9 +942,9 @@
                     document.getElementById('averageEpisodeTime').textContent = '0s';
                 }
                 
-                // Meilleure récompense
-                if (metrics.averageRewards && metrics.averageRewards.length > 0) {
-                    const bestReward = Math.max(...metrics.averageRewards);
+                // Meilleure récompense - utiliser les métriques de l'orchestrateur
+                if (orchestratorMetrics && orchestratorMetrics.averageRewards && orchestratorMetrics.averageRewards.length > 0) {
+                    const bestReward = Math.max(...orchestratorMetrics.averageRewards);
                     document.getElementById('bestReward').textContent = bestReward.toFixed(2);
                 } else {
                     document.getElementById('bestReward').textContent = '0.00';
@@ -1062,6 +1112,12 @@
                 if (mode === 'visual') {
                     panel.style.display = 'block';
                     this.resizeVisualizationCanvas();
+                    
+                    // Activer automatiquement la visualisation si elle ne l'est pas
+                    if (!this.visualizationActive && this.visualizer) {
+                        this.toggleVisualization();
+                    }
+                    
                     this.log('Mode de visualisation activé', 'info');
                 } else {
                     panel.style.display = 'none';
@@ -1099,20 +1155,47 @@
             }
             
             zoomIn() {
-                if (this.visualizer) {
-                    const factor = this.visualizer.camera.targetZoom < 0.0001 ? 2.0 : 1.5;
-                    const newZoom = Math.min(this.visualizer.camera.maxZoom, this.visualizer.camera.targetZoom * factor);
-                    this.visualizer.camera.targetZoom = newZoom;
-                    this.log(`Zoom avant: ${newZoom.toExponential(2)}`, 'info');
+                if (this.visualizer && typeof this.visualizer.zoomIn === 'function') {
+                    this.visualizer.zoomIn(1.8);
+                    this.log(`Zoom: ${this.visualizer.camera.targetZoom.toExponential(2)}`, 'info');
                 }
             }
             
             zoomOut() {
-                if (this.visualizer) {
-                    const factor = this.visualizer.camera.targetZoom > 0.0001 ? 1.5 : 2.0;
-                    const newZoom = Math.max(this.visualizer.camera.minZoom, this.visualizer.camera.targetZoom / factor);
-                    this.visualizer.camera.targetZoom = newZoom;
-                    this.log(`Zoom arrière: ${newZoom.toExponential(2)}`, 'info');
+                if (this.visualizer && typeof this.visualizer.zoomOut === 'function') {
+                    this.visualizer.zoomOut(1.8);
+                    this.log(`Zoom: ${this.visualizer.camera.targetZoom.toExponential(2)}`, 'info');
+                }
+            }
+            
+            toggleFollowRocket() {
+                if (this.visualizer && typeof this.visualizer.setFollowRocket === 'function') {
+                    const currentFollow = this.visualizer.camera.followRocket;
+                    this.visualizer.setFollowRocket(!currentFollow);
+                    
+                    const followBtn = document.getElementById('followRocket');
+                    if (!currentFollow) {
+                        followBtn.textContent = '🎯 Suivre fusée ✓';
+                        followBtn.style.background = 'linear-gradient(45deg, #51cf66, #40c057)';
+                        this.log('Mode suivi fusée activé', 'info');
+                    } else {
+                        followBtn.textContent = '🎯 Suivre fusée';
+                        followBtn.style.background = '';
+                        this.log('Mode suivi fusée désactivé', 'info');
+                    }
+                }
+            }
+            
+            resetView() {
+                if (this.visualizer && typeof this.visualizer.resetView === 'function') {
+                    this.visualizer.resetView();
+                    
+                    // Réinitialiser le bouton suivre fusée
+                    const followBtn = document.getElementById('followRocket');
+                    followBtn.textContent = '🎯 Suivre fusée';
+                    followBtn.style.background = '';
+                    
+                    this.log('Vue réinitialisée sur la Terre', 'info');
                 }
             }
         }
