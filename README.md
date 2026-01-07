@@ -1,4 +1,4 @@
-# Pocket Cosmos : Simulation de Fusée 🚀 - Version 1.0
+# Pocket Cosmos : Simulation de Fusée 🚀
 
 Une simulation interactive et physique d'une fusée utilisant Matter.js, avec des missions, de la gestion de cargo et une IA optionnelle. 🌌
 
@@ -25,25 +25,38 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 
 ## ✨ Fonctionnalités Principales
 
-*   **Physique Réaliste (Matter.js) 😂:** Simulation basée sur Matter.js avec gestion de la gravité via le plugin Attractors.
+### Simulation & Physique
+*   **Physique Réaliste (Matter.js):** Simulation basée sur Matter.js 0.19.0 avec gestion de la gravité via le plugin matter-attractors.
+*   **Mécaniques d'Atterrissage/Crash 😬💥:** Maîtrisez les atterrissages en douceur ou subissez les conséquences d'un crash.
+*   **Champ de Gravité et Lignes Équipotentielles 🌀:** Visualisez le champ de gravité sous forme de flèches ou de lignes équipotentielles (isopotentielles).
+
+### Gameplay
 *   **Système de Missions 🏆:** Acceptez et accomplissez des missions de transport entre corps célestes.
 *   **Gestion de Cargo 📦:** Collectez, transportez et livrez différentes cargaisons (carburant, outils, etc.).
 *   **Système de Crédits 💰:** Gagnez des crédits en réussissant des missions.
+*   **6 Mondes Disponibles 🌍:** Système solaire, Kerbol, Outer Wilds, Tatoo, Endor, et un monde alien.
+*   **Stations Spatiales 🛰️:** Amarrez-vous aux stations pour vous ravitailler.
+
+### Contrôles & Interface
 *   **Pilotage Intuitif 👍:** Contrôlez précisément votre fusée avec plusieurs propulseurs.
-*   **Exploration Spatiale 🪐:** Naviguez autour d'une planète et de sa lune en orbite.
-*   **Mécaniques d'Atterrissage/Crash 😬💥:** Maîtrisez les atterrissages en douceur ou subissez les conséquences d'un crash.
-*   **IA Optionnelle (TensorFlow.js) 🤖:** Activez un agent IA pour observer son comportement (basé sur TensorFlow.js).
-*   **Effets Visuels ✨:** Particules pour les propulseurs, débris de crash, étoiles scintillantes, atmosphères ombrées, anneaux rendus en deux passes (back/front).
+*   **Caméra Dynamique 🎥:** Suivi de la fusée et zoom ajustable.
 *   **Interface Utilisateur Complète 📊:** Suivez vitesse, altitude, fuel, santé, mission active, cargo, crédits.
 *   **Trajectoire Visible 📈:** Activez la trace pour visualiser votre parcours.
-*   **Caméra Dynamique 🎥:** Suivi de la fusée et zoom ajustable.
-*   **Santé et Carburant ❤️‍🩹⛽:** Gérez vos ressources vitales.
-*   **Aide au Pilotage 🤓:** Activez les contrôles assistés pour une meilleure stabilisation.
-*   **Ambiance Sonore Riche 🔊:** Musique d'ambiance spatiale variée, sons pour les propulseurs, collisions et crashs (voir dossier assets/sound/ et assets/sound/ambiant/).
-*   **(Debug) Visualisation des Forces 🔬:** Activez l'affichage des vecteurs pour comprendre la physique.
-*   **Architecture Modulaire (EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
-*   **(Nouveau) Champ de Gravité et Lignes Équipotentielles 🌀:** Visualisez le champ de gravité généré par tous les corps célestes sous forme de flèches ou de lignes équipotentielles (isopotentielles), pour explorer la structure du potentiel gravitationnel multi-corps en temps réel.
-*   **(Nouveau) Ombres/Pénombres planétaires + Atmosphères**: ombrage jour→nuit orienté par l'étoile centrale, s'appliquant aussi aux atmosphères.
+*   **Aide au Pilotage 🤓:** Contrôles assistés pour une meilleure stabilisation.
+
+### Visuels & Audio
+*   **Effets Visuels ✨:** Particules pour les propulseurs, débris de crash, étoiles scintillantes.
+*   **Ombres/Pénombres Planétaires:** Ombrage jour→nuit orienté par l'étoile centrale, atmosphères ombrées.
+*   **Anneaux Planétaires:** Rendus en deux passes (back/front) pour un effet réaliste.
+*   **Ambiance Sonore Riche 🔊:** Musique d'ambiance spatiale variée, sons pour les propulseurs, collisions et crashs.
+
+### Intelligence Artificielle
+*   **IA Optionnelle (TensorFlow.js) 🤖:** Agent Deep Q-Network pour piloter automatiquement la fusée.
+*   **Interface d'Entraînement Complète:** Application web dédiée (`training-interface.html`) avec graphiques temps réel, métriques et visualisation.
+
+### Architecture
+*   **Architecture Modulaire (MVC + EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
+*   **Génération Procédurale:** Support pour le chargement de mondes préconfigurés ou générés aléatoirement.
 
 ## 🎮 Contrôles
 
@@ -67,28 +80,77 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 
 ## 🔧 Technologies
 
-- **Matter.js** (`0.19.0`) + **Matter-Attractors** (`0.1.6`)
-- **TensorFlow.js** (`4.13.0`)
-- **HTML5 Canvas**
-- **JavaScript** (ES6+)
+- **Matter.js** (`0.19.0`) + **Matter-Attractors** (`0.1.6`) - Moteur physique et gravité
+- **TensorFlow.js** (`4.13.0`) - Intelligence artificielle (Deep Q-Network)
+- **HTML5 Canvas** - Rendu graphique
+- **JavaScript** (ES6+) - Logique applicative
 
-_(Le code est structuré de manière modulaire (inspiration MVC étendue + EventBus) pour faciliter la compréhension et les modifications 😉)._
+## 🏗️ Architecture
+
+Le projet suit une architecture **MVC étendue avec EventBus** pour une communication découplée :
+
+```
+├── models/         # État des données (RocketModel, UniverseModel, etc.)
+├── views/          # Rendu visuel (RocketView, UniverseView, UIView, etc.)
+├── controllers/    # Logique métier (GameController, PhysicsController, etc.)
+├── assets/worlds/  # Presets de mondes JSON
+├── constants.js    # Constantes globales
+└── EventTypes.js   # Définitions des événements
+```
+
+**Fichiers clés :**
+- `GameController.js` - Chef d'orchestre, boucle de jeu principale
+- `RocketModel.js` - État complet de la fusée
+- `RenderingController.js` - Coordination du rendu
+
+> 📖 **Pour les développeurs :** Consultez `CLAUDE.md` pour la documentation technique complète de l'architecture.
 
 **Nouveauté pédagogique :**
 - L'affichage du champ de gravité (touche G) permet d'explorer visuellement l'influence gravitationnelle de chaque corps céleste, et de comprendre la notion de potentiel gravitationnel (lignes équipotentielles) dans un système multi-corps. Outil idéal pour l'enseignement ou l'expérimentation !
 
 ## 🚀 Installation
 
+### Pour Jouer
 1.  Clonez ce dépôt : `git clone https://github.com/habib256/pocketcosmos.git` 📥
 2.  Naviguez dans le dossier `pocketcosmos`.
 3.  Ouvrez le fichier `index.html` dans votre navigateur web moderne. 🎉
 
+### Pour Développer
+1. Clonez le dépôt
+2. Lancez un serveur local : `python -m http.server 8000`
+3. Ouvrez `http://localhost:8000/index.html` dans votre navigateur
+4. Pour l'interface d'entraînement IA : `http://localhost:8000/training-interface.html`
+
 **Remarques :**
-- Tous les scripts sont chargés via `<script>` dans `index.html` (pas d'import ES6).
-- Le plugin `matter-attractors` peut afficher un avertissement de version; il est compatible avec `matter-js@0.19.0` ici.
+- Tous les scripts sont chargés via `<script>` dans les fichiers HTML (pas d'import ES6, pas de build step).
+- Le plugin `matter-attractors` peut afficher un avertissement de version; il est compatible avec `matter-js@0.19.0`.
+- Pas de npm/package.json : toutes les dépendances sont chargées via CDN.
+
+## 🤖 Intelligence Artificielle
+
+Le projet inclut un système d'IA basé sur **Deep Q-Network (DQN)** avec TensorFlow.js.
+
+### Interface d'Entraînement (`training-interface.html`)
+L'interface web complète permet de :
+- Configurer les paramètres d'entraînement (épisodes, learning rate, etc.)
+- Visualiser les performances en temps réel (graphiques)
+- Suivre les métriques (récompense, epsilon, etc.)
+- Observer la trajectoire de l'agent
+
+### Composants IA
+- **`RocketAI.js`** - Agent DQN qui prend les décisions de pilotage
+- **`TrainingOrchestrator.js`** - Gestion des épisodes et récompenses
+- **`HeadlessRocketEnvironment.js`** - Simulation rapide sans rendu graphique
+- **`TrainingVisualizer.js`** - Visualisation temps réel des métriques
+
+### Utilisation
+1. **Interface Web** (recommandé) : Ouvrez `training-interface.html`
+2. **Console** : Utilisez les scripts dans `train.js`
+3. **En jeu** : Appuyez sur `I` pour activer/désactiver le contrôle IA
 
 ## 📝 Personnalisation
 
+### Constantes (`constants.js`)
 Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu ! Modifiez :
 
 - La gravité (`PHYSICS.G`)
@@ -96,23 +158,50 @@ Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu 
 - Les caractéristiques de la fusée (masse, carburant max, résistance `ROCKET.MAX_HEALTH`)
 - Les paramètres d'orbite des corps célestes (`UNIVERSE`)
 - Les seuils de difficulté (atterrissage, crash `PHYSICS.LANDING_MAX_SPEED`, `PHYSICS.IMPACT_DAMAGE_FACTOR`)
-- ...et bien plus ! 🛠️
+- Les paramètres d'entraînement IA (`AI`)
 
-### Presets de mondes 🌍
-Sélectionnez le monde au démarrage (Monde 1 par défaut) : `assets/worlds/1_solar.json`, `2_kerbol.json`, `3_outerwilds.json`, `4_Tatoo.json`, `5_Endor.json`, `6_alien.json`.
+### Presets de Mondes 🌍
+Sélectionnez le monde au démarrage (Monde 1 par défaut). Les fichiers sont dans `assets/worlds/` :
+
+| Fichier | Description |
+|---------|-------------|
+| `1_solar.json` | Système solaire simplifié |
+| `2_kerbol.json` | Système Kerbol (inspiré de KSP) |
+| `3_outerwilds.json` | Système Outer Wilds |
+| `4_Tatoo.json` | Système Tatoo (Star Wars) |
+| `5_Endor.json` | Système Endor (Star Wars) |
+| `6_alien.json` | Système alien |
+
+### Structure des Presets JSON
 Chaque preset peut définir :
-- `bodies[]` (dont `hasRings`, `atmosphere { exists, height, color }`)
-- `rocket.spawn` (hostName+angle ou position/velocity/angle)
-- `stations[]`, `asteroidBelts[]`, `starsConfig`, `narratives`, `missions[]`.
+- `bodies[]` - Corps célestes avec :
+  - `hasRings` - Anneaux planétaires
+  - `atmosphere { exists, height, color }` - Atmosphère
+- `rocket.spawn` - Position de départ :
+  - Par corps céleste : `{ hostName, angle }`
+  - Par coordonnées : `{ position, velocity, angle }`
+- `stations[]` - Stations spatiales ancrées aux corps
+- `asteroidBelts[]` - Ceintures d'astéroïdes procédurales
+- `starsConfig` - Configuration des étoiles d'arrière-plan
+- `missions[]` - Missions disponibles
+- `narratives` - Éléments narratifs
 
 ## 📈 Perspectives Futures
 
-- Plus de missions variées (exploration, réparation ?)
-- Davantage de corps célestes et de systèmes solaires ?
-- Amélioration de l'IA et options d'entraînement ?
-- Optimisations des performances.
-- Raffinements visuels et sonores.
+- **Missions** : Plus de missions variées (exploration, réparation, sauvetage)
+- **Univers** : Davantage de corps célestes et de systèmes solaires
+- **IA** : Architectures avancées (Actor-Critic, LSTM) et environnements plus complexes
+- **Performance** : Optimisations (quad-tree pour gravité)
+- **Multijoueur** : Support multijoueur potentiel
+- **Éditeur de Mondes** : Interface pour créer ses propres systèmes
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! Pour contribuer :
+1. Consultez `CLAUDE.md` pour comprendre l'architecture
+2. Consultez `TODO.md` pour les bugs connus et améliorations planifiées
+3. Ouvrez une issue ou une pull request
 
 ## 📜 Licence
 
-Ce projet est sous licence GPL3. 👍
+Ce projet est sous licence **GPL-3.0**. Voir le fichier `LICENSE` pour plus de détails.

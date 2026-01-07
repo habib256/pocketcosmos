@@ -98,8 +98,12 @@ class PhysicsController {
         this.rocketModel = rocketModel;
         this.universeModel = universeModel;
 
-        // Vider le monde précédent
+        // CORRECTION: Nettoyage explicite des anciens corps physiques avant reconstruction
+        // Cela évite les fuites mémoire lors du rechargement d'univers
+        const previousBodyCount = this.engine.world.bodies ? this.engine.world.bodies.length : 0;
         this.Composite.clear(this.engine.world);
+        console.log(`[PhysicsController.initPhysics] Monde physique nettoyé (${previousBodyCount} corps supprimés)`);
+        
         this.rocketBody = null;
         this.celestialBodies = [];
         this.collisionHandler.initTime = Date.now(); // Réinitialiser le délai de collision

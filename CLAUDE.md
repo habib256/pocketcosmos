@@ -151,9 +151,16 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - **Visualization**: `TrainingVisualizer.js` - Real-time training metrics
 
 **Training methods**:
-1. Web interface: `training-interface.html` (recommended)
-2. Console: `train.js` scripts
+1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
+2. Console: `train.js` scripts for quick training or benchmarking
 3. Direct programming via `TrainingOrchestrator`
+
+**Training Interface Features** (`training-interface.html`):
+- Configure training parameters (episodes, learning rate, etc.)
+- Real-time performance graphs
+- Live metrics display
+- Trajectory visualization
+- Start/stop/pause training controls
 
 **Known issues** (see TODO.md):
 - AI emits wrong event types (uses `INPUT.KEYDOWN` instead of semantic events)
@@ -161,13 +168,41 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - Training constants use unrealistic Earth/Moon values
 - Memory leaks in TensorFlow gradient calculations
 
+## Key Events Reference
+
+Here are the most important events flowing through the `EventBus`:
+
+| Event                        | Description                                             | Publisher                         | Consumer                            |
+|------------------------------|---------------------------------------------------------|-----------------------------------|--------------------------------------|
+| `INPUT_ROTATE_COMMAND` / `INPUT_ZOOM_COMMAND` | Continuous rotation/zoom inputs               | `InputController`                 | `RocketController`, `CameraController` |
+| `RENDER_TOGGLE_VECTORS`      | Show/hide force vectors                                 | `InputController` (V key)         | `RenderingController`                |
+| `RENDER_TOGGLE_TRACES`       | Toggle trajectory trace display                         | `InputController` (T key)         | `RenderingController`                |
+| `RENDER_TOGGLE_GRAVITY_FIELD`| Cycle gravity field mode (off/arrows/lines)            | `InputController` (G key)         | `RenderingController`                |
+| `ROCKET_LANDED` / `ROCKET_CRASHED` | Rocket has landed or crashed                      | `CollisionHandler`                | `GameController`, `AudioManager`     |
+| `ROCKET_LIFTOFF`             | Rocket has lifted off                                   | `SynchronizationManager`          | `AudioManager`                       |
+| `ROCKET_SET_THRUSTER_POWER`  | Set thruster power (idempotent)                        | `InputController`, `RocketAI`     | `RocketController`                   |
+| `AI_START_TRAINING`          | Start an AI training session                           | `training-interface.html` (UI)    | `TrainingOrchestrator`               |
+| `AI_EPISODE_ENDED`           | A training episode has ended                           | `TrainingOrchestrator`            | `TrainingVisualizer`, UI             |
+| `AI_CONTROL_ACTION`          | AI action trace/diagnostic                             | `RocketAI`                        | UI / Logs                            |
+| `SIMULATION_UPDATED`         | Aggregated global simulation state                     | `GameController`                  | `RenderingController`, UI            |
+| `GAME_STATE_CHANGED`         | Game state change (FSM)                                | `GameController`                  | UI                                   |
+| `UI_SHOW_*` / `UI_HIDE_*`    | UI screens (Loading, Pause, Game Over)                 | `GameController`                  | `UIView`                             |
+| `UNIVERSE_LOAD_REQUESTED`    | Request universe load (preset/procedural)              | UI/Debug/AI                       | `GameController`                     |
+| `UNIVERSE_STATE_UPDATED`     | New universe state ready                               | `GameController`/Setup            | Views/Controllers                    |
+| `UNIVERSE_RELOAD_COMPLETED`  | Reload finished and synchronized                       | `GameController`                  | All                                  |
+| `STATION_DOCKED` / `STATION_REFUELED` | Docking and refueling at a station             | `GameController`                  | UI/Audio                             |
+| `system:canvasResized`       | Canvas resize                                          | `RenderingController`             | Camera/Controllers                   |
+| `particles:explosionCompleted`| Explosion animation finished                           | `ParticleController`              | `GameController`                     |
+
 ## Key Files Reference
 
 ### Models (Data State)
 - `RocketModel.js` - Rocket state (CRITICAL)
-- `UniverseModel.js` - Celestial bodies, stars, asteroids
+- `UniverseModel.js` - Celestial bodies, stars, asteroids. Also stores `spawnInfo` from preset for rocket reset.
 - `CameraModel.js` - Camera position/zoom/target
 - `CelestialBodyModel.js` - Individual body properties
+- `ParticleSystemModel.js` - Particle system state
+- `ParticleModel.js` - Individual particle properties
 
 ### Controllers (Logic)
 - `GameController.js` - Main orchestrator (CRITICAL)
@@ -182,16 +217,17 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - `CameraController.js` - Camera logic
 - `MissionManager.js` - Mission system
 - `AudioManager.js` - Sound management
+- `ParticleController.js` - Particle effects management
 
 ### Views (Rendering)
-- `RocketView.js` - Draws the rocket
-- `UniverseView.js` - Background and celestial bodies
-- `CelestialBodyView.js` - Individual body rendering with shadows/atmosphere
-- `UIView.js` - HUD and modal screens
-- `VectorsView.js` - Debug vectors and gravity field
+- `RocketView.js` - Draws the rocket with thrusters
+- `UniverseView.js` - Background, stars (with twinkling), celestial bodies, asteroid belts
+- `CelestialBodyView.js` - Individual body rendering with day/night shadows, atmosphere shadows, rings (back/front passes)
+- `UIView.js` - HUD and modal screens (Loading, Pause, Game Over, Mission Success)
+- `VectorsView.js` - Debug vectors (thrust, velocity, acceleration, attractions) and gravity field (arrows or equipotential lines)
 - `TraceView.js` - Trajectory trail
 - `ParticleView.js` - Particle effects
-- `StationView.js` - Station icons on bodies
+- `StationView.js` - Station icons/labels anchored to celestial bodies
 
 ### Factories
 - `CelestialBodyFactory.js` - Creates celestial body models and Matter.js bodies
@@ -245,7 +281,7 @@ Since the project doesn't use ES6 modules:
 │   ├── image/          # Visual assets
 │   ├── sound/          # Audio files (ambient/, effects/)
 │   ├── video/          # Video assets
-│   ├── worlds/         # Universe preset JSON files
+│   ├── worlds/         # Universe preset JSON files (6 worlds)
 │   └── screenshots/    # Documentation images
 ├── controllers/        # All game logic and orchestration
 ├── models/            # Data structures (state only)
@@ -256,11 +292,29 @@ Since the project doesn't use ES6 modules:
 ├── main.js            # Initialization logic
 ├── training-interface.html  # AI training web interface
 ├── train.js           # AI training console scripts
-└── codefilelist.md    # Detailed architecture documentation
+├── CLAUDE.md          # This file - architecture documentation for AI
+└── README.md          # User documentation and controls
 ```
+
+## UI Startup Flow
+
+The game starts with a **startup screen** featuring:
+- **World selector** on the left: choose from 6 available presets (1_solar, 2_kerbol, 3_outerwilds, 4_Tatoo, 5_Endor, 6_alien)
+- **"Prêt !" button** on the right: starts the game with the selected world
+
+After selection, `UNIVERSE_LOAD_REQUESTED` is emitted with the chosen preset URL.
+
+## Future Development Roadmap
+
+Potential improvements and extensions:
+
+- **Refactoring**: Split monolithic controllers (e.g., `GameController.js`) into smaller, specialized modules
+- **Performance**: Consider optimized data structures (e.g., quad-tree) for gravity calculations as body count increases
+- **Gamepad**: Create a dedicated `GamepadController` to centralize controller management
+- **AI**: Explore advanced architectures (Actor-Critic, LSTM) and more complex training environments
+- **Game Features**: Extend mission system, add resource management, more celestial bodies
 
 ## Additional Resources
 
-- **Architecture deep-dive**: See `codefilelist.md` for comprehensive documentation
 - **Known issues**: See `TODO.md` for bugs and planned improvements
 - **Controls**: See README.md for full keyboard/mouse controls

@@ -129,9 +129,23 @@ class GameSetupController {
      * @returns {{universeModel: UniverseModel}}
      */
     buildWorldFromData(data, existingRocketModel) {
+        // CORRECTION: Validation des propriétés requises du JSON
+        if (!data) {
+            throw new Error('[GameSetupController.buildWorldFromData] data est requis');
+        }
+        if (!data.bodies || !Array.isArray(data.bodies)) {
+            throw new Error('[GameSetupController.buildWorldFromData] data.bodies doit être un tableau');
+        }
+        if (data.bodies.length === 0) {
+            console.warn('[GameSetupController.buildWorldFromData] data.bodies est vide, aucun corps céleste ne sera créé');
+        }
+        if (existingRocketModel && (!data.rocket || !data.rocket.spawn)) {
+            console.warn('[GameSetupController.buildWorldFromData] data.rocket.spawn est absent, la fusée ne sera pas repositionnée');
+        }
+
         // Appliquer les paramètres physiques spécifiques au monde avant de créer UniverseModel
         try {
-            if (data && data.physics && typeof data.physics.G === 'number') {
+            if (data.physics && typeof data.physics.G === 'number') {
                 PHYSICS.G = data.physics.G;
             }
         } catch (e) {
@@ -246,7 +260,28 @@ class GameSetupController {
                     // Mode 1: hostName + angle (spécifie l'astre de départ et l'angle à la surface)
                     if (spawn.hostName && typeof spawn.angle === 'number') {
                         const host = universeModel.celestialBodies.find(b => b.name === spawn.hostName);
-                        if (host && host.position && typeof host.radius === 'number') {
+                        // CORRECTION: Valider que le corps hôte existe avant de l'utiliser
+                        if (!host) {
+                            console.error(`[GameSetupController.buildWorldFromData] Corps hôte '${spawn.hostName}' non trouvé pour le spawn. Recherche d'un fallback...`);
+                            // Fallback: utiliser le premier corps céleste disponible
+                            const fallbackHost = universeModel.celestialBodies[0];
+                            if (fallbackHost && fallbackHost.position && typeof fallbackHost.radius === 'number') {
+                                console.warn(`[GameSetupController.buildWorldFromData] Utilisation du fallback: '${fallbackHost.name}'`);
+                                const r = fallbackHost.radius + ROCKET.HEIGHT / 2 + 1;
+                                const x = fallbackHost.position.x + Math.cos(spawn.angle) * r;
+                                const y = fallbackHost.position.y + Math.sin(spawn.angle) * r;
+                                existingRocketModel.setPosition(x, y);
+                                existingRocketModel.setVelocity(fallbackHost.velocity?.x || 0, fallbackHost.velocity?.y || 0);
+                                existingRocketModel.setAngle(spawn.angle);
+                                existingRocketModel.isLanded = true;
+                                existingRocketModel.landedOn = fallbackHost.name;
+                            } else {
+                                console.error('[GameSetupController.buildWorldFromData] Aucun corps céleste disponible pour le spawn, fusée positionnée à (0,0)');
+                                existingRocketModel.setPosition(0, 0);
+                                existingRocketModel.isLanded = false;
+                                existingRocketModel.landedOn = null;
+                            }
+                        } else if (host.position && typeof host.radius === 'number') {
                             const r = host.radius + ROCKET.HEIGHT / 2 + 1;
                             const x = host.position.x + Math.cos(spawn.angle) * r;
                             const y = host.position.y + Math.sin(spawn.angle) * r;
@@ -255,6 +290,8 @@ class GameSetupController {
                             existingRocketModel.setAngle(spawn.angle);
                             existingRocketModel.isLanded = true;
                             existingRocketModel.landedOn = host.name;
+                        } else {
+                            console.error(`[GameSetupController.buildWorldFromData] Corps hôte '${spawn.hostName}' invalide (position ou radius manquant)`);
                         }
                     }
                     // Mode 2: position/velocity/angle absolus
