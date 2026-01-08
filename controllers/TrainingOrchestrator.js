@@ -181,11 +181,22 @@ class TrainingOrchestrator {
         // Position initiale de la fusée : sur la surface de la Terre, côté +Y
         const rocketStartY = aiEnvConfig.EARTH_POSITION.y + CELESTIAL_BODY.RADIUS + aiEnvConfig.ROCKET_INITIAL_OFFSET;
         
+        // Calculer l'angle correct pour pointer vers l'extérieur de la Terre (vers le haut)
+        // Si la fusée est au-dessus de la Terre (y positif), elle doit pointer vers le haut (-π/2)
+        // L'angle vers le centre de la Terre depuis la position de la fusée
+        const angleToEarthCenter = Math.atan2(
+            rocketStartY - aiEnvConfig.EARTH_POSITION.y,
+            aiEnvConfig.EARTH_POSITION.x - aiEnvConfig.EARTH_POSITION.x
+        );
+        // Angle perpendiculaire pointant vers l'extérieur (comme dans CollisionHandler)
+        const rocketInitialAngle = angleToEarthCenter + Math.PI / 2;
+        
         const trainingConfig = {
             maxStepsPerEpisode: this.config.maxStepsPerEpisode,
             rocketInitialState: {
                 position: { x: aiEnvConfig.EARTH_POSITION.x, y: rocketStartY },
                 velocity: { x: 0, y: 0 },
+                angle: rocketInitialAngle, // CORRECTION: Angle correct pour pointer vers l'extérieur
                 fuel: ROCKET.FUEL_MAX,
                 health: 100
             },
