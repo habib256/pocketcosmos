@@ -23,16 +23,21 @@ class TrainingVisualizer {
         this.celestialBodies = [];
         this.lastDataReceived = null; // Timestamp de la dernière donnée reçue
         
+        // Points de navigation pour l'objectif 'navigate'
+        this.targetPoint = null; // Point B (destination)
+        this.startPoint = null; // Point A (départ)
+        
         // Configuration de la caméra simplifiée
         this.camera = {
             x: 0,
             y: 0,
-            zoom: 0.00005, // Zoom initial pour voir la Terre et sa zone proche
-            targetZoom: 0.00005,
-            followRocket: false, // Commencer par une vue centrée sur la Terre
+            zoom: 0.0027, // CORRECTION: Zoom par défaut pour navigate (2.7e-3), sera ajusté selon le mode
+            targetZoom: 0.0027,
+            followRocket: true, // CORRECTION: Suivre la fusée par défaut
             minZoom: 0.0000001, // Zoom minimum pour voir un système très large
             maxZoom: 0.1,       // Zoom maximum pour voir la fusée de près
-            zoomSpeed: 0.15     // Vitesse d'interpolation du zoom (augmentée pour réactivité)
+            zoomSpeed: 0.15,     // Vitesse d'interpolation du zoom (augmentée pour réactivité)
+            manualZoomControl: false // CORRECTION: Flag pour indiquer que l'utilisateur contrôle le zoom manuellement
         };
         
         // Configuration visuelle
@@ -199,93 +204,72 @@ class TrainingVisualizer {
             }
         }
         
+        // CORRECTION: Récupérer les points de navigation pour l'objectif 'navigate'
+        let pointsChanged = false;
+        if (data.targetPoint) {
+            this.targetPoint = data.targetPoint; // Point B (destination)
+            pointsChanged = true;
+        }
+        if (data.startPoint) {
+            this.startPoint = data.startPoint; // Point A (départ)
+            pointsChanged = true;
+        }
+        
+        // Initialiser la caméra si les points de navigation sont disponibles et que la caméra n'a pas encore été initialisée
+        if (pointsChanged && this.startPoint && this.targetPoint && !this.cameraInitialized) {
+            this.initializeCamera(false);
+        }
+        
         // Mettre à jour la caméra seulement si on suit la fusée
         if (this.rocketData && this.rocketData.position && this.camera.followRocket) {
             this.updateCamera();
         }
         
-        // Maintenir la caméra centrée sur la Terre si on ne suit pas la fusée
-        if (!this.camera.followRocket) {
-            this.maintainEarthCenteredView();
+        // CORRECTION: Vue absolue - ne pas centrer sur la Terre
+        // Si on ne suit pas la fusée, maintenir la vue absolue (pas de mouvement automatique)
+        // CORRECTION: Zoom fixe - ne pas interpoler automatiquement
+        if (!this.camera.followRocket && this.camera.manualZoomControl) {
+            // Interpolation du zoom vers la valeur cible seulement si l'utilisateur l'a modifié
+            const zoomSpeed = this.camera.zoomSpeed || 0.15;
+            this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
         }
     }
     
     /**
-     * Mettre à jour la position de la caméra pour suivre la fusée
+     * Mettre à jour la position de la caméra pour suivre la fusée (vue absolue)
      */
     updateCamera() {
         if (!this.rocketData || !this.rocketData.position) return;
         
-        // Suivre la fusée avec un léger décalage
+        // CORRECTION: Vue absolue - suivre la fusée sans référence à la Terre
         const targetX = this.rocketData.position.x;
         const targetY = this.rocketData.position.y;
         
-        // Interpolation douce
-        this.camera.x += (targetX - this.camera.x) * 0.1;
-        this.camera.y += (targetY - this.camera.y) * 0.1;
+        // CORRECTION: Interpolation plus rapide pour suivre la fusée immédiatement
+        // Utiliser une interpolation plus rapide (0.3 au lieu de 0.1) pour un suivi plus réactif
+        this.camera.x += (targetX - this.camera.x) * 0.3;
+        this.camera.y += (targetY - this.camera.y) * 0.3;
         
-        // Ajuster le zoom automatiquement selon l'altitude de la fusée
-        const earth = this.celestialBodies.find(body => 
-            body.name === 'Terre' || body.name === 'Earth'
-        );
+        // CORRECTION: Zoom fixe - ne pas ajuster automatiquement le zoom
+        // L'utilisateur contrôle le zoom manuellement, il reste fixe
         
-        if (earth && earth.position) {
-            const distanceFromEarth = Math.sqrt(
-                (this.rocketData.position.x - earth.position.x) ** 2 + 
-                (this.rocketData.position.y - earth.position.y) ** 2
-            );
-            
-            const earthRadius = earth.radius || 6371000;
-            const altitude = distanceFromEarth - earthRadius;
-            
-            // Zoom adaptatif basé sur l'altitude
-            let targetZoom;
-            if (altitude < earthRadius) {
-                // Proche de la Terre : zoom plus serré
-                targetZoom = 0.005;
-            } else if (altitude < earthRadius * 5) {
-                // Altitude moyenne : zoom intermédiaire
-                targetZoom = 0.001;
-            } else {
-                // Haute altitude : zoom plus large
-                targetZoom = 0.0002;
-            }
-            
-            // Ajuster selon la vitesse pour anticiper les mouvements
-            if (this.rocketData.velocity) {
-                const speed = Math.sqrt(
-                    this.rocketData.velocity.x ** 2 + this.rocketData.velocity.y ** 2
-                );
-                
-                // Réduire le zoom si la fusée va vite pour mieux voir sa trajectoire
-                if (speed > 1000) {
-                    targetZoom *= 0.7;
-                }
-            }
-            
-            this.camera.targetZoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, targetZoom));
+        // CORRECTION: Zoom fixe - ne pas interpoler le zoom automatiquement
+        // Le zoom reste à sa valeur initiale sauf si l'utilisateur le modifie manuellement
+        // Interpolation du zoom seulement si l'utilisateur a modifié manuellement
+        if (this.camera.manualZoomControl) {
+            const zoomSpeed = this.camera.zoomSpeed || 0.15;
+            this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
         }
-        
-        // Interpolation du zoom (vitesse augmentée)
-        const zoomSpeed = this.camera.zoomSpeed || 0.15;
-        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
     }
     
     /**
-     * Maintenir la caméra centrée sur la Terre
+     * Maintenir la vue absolue (ne plus utilisé - remplacé par la logique dans updateVisualization)
+     * Conservé pour compatibilité mais ne fait rien car on utilise maintenant une vue absolue
      */
     maintainEarthCenteredView() {
-        const earth = this.celestialBodies.find(body => 
-            body.name === 'Terre' || body.name === 'Earth'
-        );
-        
-        if (earth && earth.position) {
-            // Maintenir la caméra centrée sur la Terre avec une interpolation douce
-            this.camera.x += (earth.position.x - this.camera.x) * 0.05;
-            this.camera.y += (earth.position.y - this.camera.y) * 0.05;
-        }
-        
-        // Interpolation du zoom vers la valeur cible (vitesse augmentée)
+        // CORRECTION: Vue absolue - ne plus centrer sur la Terre
+        // Cette méthode n'est plus utilisée, la vue reste fixe à sa position absolue
+        // Interpolation du zoom vers la valeur cible
         const zoomSpeed = this.camera.zoomSpeed || 0.15;
         this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
     }
@@ -294,6 +278,8 @@ class TrainingVisualizer {
      * Zoom avant (grossir)
      */
     zoomIn(factor = 1.5) {
+        // CORRECTION: Activer le contrôle manuel du zoom pour empêcher l'ajustement automatique
+        this.camera.manualZoomControl = true;
         const newZoom = Math.min(this.camera.maxZoom, this.camera.targetZoom * factor);
         this.camera.targetZoom = newZoom;
         if (this.isActive) {
@@ -305,6 +291,8 @@ class TrainingVisualizer {
      * Zoom arrière (dézoomer)
      */
     zoomOut(factor = 1.5) {
+        // CORRECTION: Activer le contrôle manuel du zoom pour empêcher l'ajustement automatique
+        this.camera.manualZoomControl = true;
         const newZoom = Math.max(this.camera.minZoom, this.camera.targetZoom / factor);
         this.camera.targetZoom = newZoom;
         if (this.isActive) {
@@ -326,6 +314,8 @@ class TrainingVisualizer {
      * Réinitialiser la vue à la position par défaut
      */
     resetView() {
+        // CORRECTION: Réinitialiser le contrôle manuel du zoom lors de la réinitialisation
+        this.camera.manualZoomControl = false;
         this.initializeCamera();
         if (this.isActive) {
             this.render();
@@ -356,56 +346,106 @@ class TrainingVisualizer {
     }
     
     /**
-     * Initialiser la caméra pour une vue centrée sur la Terre
+     * Initialiser la caméra pour une vue absolue (pas centrée sur la Terre)
      * @param {boolean} preserveZoom - Si true, préserve le zoom actuel au lieu de le réinitialiser
      */
     initializeCamera(preserveZoom = false) {
-        if (this.celestialBodies.length === 0) {
+        // CORRECTION: Si on suit la fusée, centrer directement sur elle au lieu du point de départ
+        // Protection contre NaN et valeurs invalides
+        const canvasSize = Math.min(this.canvas.width || 400, this.canvas.height || 400);
+        
+        // CORRECTION: Si on suit la fusée et qu'elle a une position, l'utiliser directement
+        if (this.camera.followRocket && this.rocketData && this.rocketData.position &&
+            typeof this.rocketData.position.x === 'number' && typeof this.rocketData.position.y === 'number' &&
+            isFinite(this.rocketData.position.x) && isFinite(this.rocketData.position.y)) {
+            // Centrer directement sur la fusée
+            this.camera.x = this.rocketData.position.x;
+            this.camera.y = this.rocketData.position.y;
+
+            if (!preserveZoom) {
+                // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+                // Si on a des points de navigation, utiliser le zoom pour navigate
+                const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+                this.camera.zoom = defaultZoom;
+                this.camera.targetZoom = defaultZoom;
+            }
+        } else if (this.startPoint && this.targetPoint &&
+            typeof this.startPoint.x === 'number' && typeof this.startPoint.y === 'number' &&
+            typeof this.targetPoint.x === 'number' && typeof this.targetPoint.y === 'number' &&
+            isFinite(this.startPoint.x) && isFinite(this.startPoint.y) &&
+            isFinite(this.targetPoint.x) && isFinite(this.targetPoint.y)) {
+            // Pour l'objectif 'navigate' sans position de fusée, centrer la vue pour voir les deux points
+            const centerX = (this.startPoint.x + this.targetPoint.x) / 2;
+            const centerY = (this.startPoint.y + this.targetPoint.y) / 2;
+
+            this.camera.x = isFinite(centerX) ? centerX : 0;
+            this.camera.y = isFinite(centerY) ? centerY : 0;
+
+            if (!preserveZoom) {
+                // CORRECTION: Zoom par défaut pour le mode navigate (2.7e-3)
+                this.camera.zoom = 0.0027;
+                this.camera.targetZoom = 0.0027;
+            }
+        } else if (this.celestialBodies.length === 0) {
+            // Vue absolue centrée sur l'origine (pas de planètes, pas de points de navigation)
             this.camera.x = 0;
             this.camera.y = 0;
             if (!preserveZoom) {
-                this.camera.zoom = 0.0001;
-                this.camera.targetZoom = 0.0001;
-            }
-            this.camera.followRocket = false;
-            this.cameraInitialized = true;
-            return;
-        }
-        
-        // Trouver la Terre pour centrer la caméra dessus
-        const earth = this.celestialBodies.find(body => 
-            body.name === 'Terre' || body.name === 'Earth'
-        );
-        
-        if (earth && earth.position) {
-            // Centrer la caméra exactement sur la Terre
-            this.camera.x = earth.position.x;
-            this.camera.y = earth.position.y;
-            
-            // Ne réinitialiser le zoom que si on ne doit pas le préserver
-            if (!preserveZoom) {
-                // Zoom pour voir la Terre et sa zone proche (où la fusée évolue)
-                // Calculer un zoom qui montre environ 8 fois le rayon de la Terre
-                const earthRadius = earth.radius || 6371000;
-                const viewRadius = earthRadius * 8; // Zone de 8 rayons terrestres
-                const canvasSize = Math.min(this.canvas.width, this.canvas.height);
-                
-                // Calculer le zoom pour que la zone d'intérêt occupe environ 60% du canvas
-                this.camera.zoom = (canvasSize * 0.6) / (viewRadius * 2);
-                this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
-                this.camera.targetZoom = this.camera.zoom;
+                // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+                const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+                this.camera.zoom = defaultZoom;
+                this.camera.targetZoom = defaultZoom;
             }
         } else {
-            // Fallback si pas de Terre trouvée - centrer sur l'origine
-            this.camera.x = 0;
-            this.camera.y = 0;
-            if (!preserveZoom) {
-                this.camera.zoom = 0.0001;
-                this.camera.targetZoom = 0.0001;
+            // Il y a des corps célestes mais pas de points de navigation
+            // Centrer sur le premier corps céleste ou l'origine
+            const firstBody = this.celestialBodies[0];
+            if (firstBody && firstBody.position && 
+                typeof firstBody.position.x === 'number' && typeof firstBody.position.y === 'number' &&
+                isFinite(firstBody.position.x) && isFinite(firstBody.position.y)) {
+                this.camera.x = firstBody.position.x;
+                this.camera.y = firstBody.position.y;
+                
+                if (!preserveZoom) {
+                    const bodyRadius = firstBody.radius || 6371000;
+                    const viewRadius = bodyRadius * 8;
+                    if (canvasSize > 0 && viewRadius > 0) {
+                        this.camera.zoom = (canvasSize * 0.6) / (viewRadius * 2);
+                        this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
+                        if (!isFinite(this.camera.zoom)) {
+                            // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+                            const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+                            this.camera.zoom = defaultZoom;
+                        }
+                    } else {
+                        // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+                        const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+                        this.camera.zoom = defaultZoom;
+                    }
+                    this.camera.targetZoom = this.camera.zoom;
+                }
+            } else {
+                this.camera.x = 0;
+                this.camera.y = 0;
+                if (!preserveZoom) {
+                    // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+                    const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+                    this.camera.zoom = defaultZoom;
+                    this.camera.targetZoom = defaultZoom;
+                }
             }
         }
         
-        this.camera.followRocket = false; // Toujours commencer par une vue centrée sur la Terre
+        // CORRECTION: Protection finale contre NaN
+        if (!isFinite(this.camera.x)) this.camera.x = 0;
+        if (!isFinite(this.camera.y)) this.camera.y = 0;
+        // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+        const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+        if (!isFinite(this.camera.zoom)) this.camera.zoom = defaultZoom;
+        if (!isFinite(this.camera.targetZoom)) this.camera.targetZoom = defaultZoom;
+        
+        // CORRECTION: Suivre la fusée par défaut
+        this.camera.followRocket = true;
         this.cameraInitialized = true;
     }
     
@@ -457,9 +497,12 @@ class TrainingVisualizer {
         // Dessiner les corps célestes
         this.renderCelestialBodies();
         
+        // Dessiner les points de navigation (A et B) pour l'objectif 'navigate'
+        this.renderNavigationPoints();
+
         // Dessiner la trajectoire
         this.renderTrajectory();
-        
+
         // Dessiner la fusée
         this.renderRocket();
         
@@ -474,12 +517,19 @@ class TrainingVisualizer {
      * Appliquer la transformation de la caméra
      */
     applyCamera() {
-        const centerX = this.canvas.width / 2;
-        const centerY = this.canvas.height / 2;
+        // CORRECTION: Protection contre NaN dans la transformation de la caméra
+        const centerX = (this.canvas.width || 400) / 2;
+        const centerY = (this.canvas.height || 400) / 2;
         
+        const cameraX = isFinite(this.camera.x) ? this.camera.x : 0;
+        const cameraY = isFinite(this.camera.y) ? this.camera.y : 0;
+        // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
+        const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
+        const zoom = isFinite(this.camera.zoom) && this.camera.zoom > 0 ? this.camera.zoom : defaultZoom;
+
         this.ctx.translate(centerX, centerY);
-        this.ctx.scale(this.camera.zoom, this.camera.zoom);
-        this.ctx.translate(-this.camera.x, -this.camera.y);
+        this.ctx.scale(zoom, zoom);
+        this.ctx.translate(-cameraX, -cameraY);
     }
     
     /**
@@ -497,6 +547,78 @@ class TrainingVisualizer {
         }
         
         this.ctx.globalAlpha = 1.0;
+    }
+    
+    /**
+     * Dessiner les points de navigation (A et B) pour l'objectif 'navigate'
+     */
+    renderNavigationPoints() {
+        // Dessiner le point A (départ) si disponible
+        if (this.startPoint) {
+            this.ctx.save();
+            this.ctx.fillStyle = '#00ff00'; // Vert pour le point de départ
+            this.ctx.strokeStyle = '#00ff00';
+            this.ctx.lineWidth = Math.max(2, 3 / this.camera.zoom);
+            
+            const pointSize = Math.max(15, 20000 * this.camera.zoom);
+            
+            // Cercle extérieur
+            this.ctx.beginPath();
+            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointSize, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Cercle intérieur
+            this.ctx.fillStyle = '#0a0a0a';
+            this.ctx.beginPath();
+            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointSize * 0.6, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Contour
+            this.ctx.stroke();
+            
+            // Label "Point A"
+            this.ctx.fillStyle = '#00ff00';
+            const fontSize = Math.max(12, Math.min(20, 18 / this.camera.zoom));
+            this.ctx.font = `bold ${fontSize}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('Point A', this.startPoint.x, this.startPoint.y - pointSize - fontSize - 5);
+            
+            this.ctx.restore();
+        }
+        
+        // Dessiner le point B (destination) si disponible
+        if (this.targetPoint) {
+            this.ctx.save();
+            this.ctx.fillStyle = '#ff6b6b'; // Rouge pour le point d'arrivée
+            this.ctx.strokeStyle = '#ff6b6b';
+            this.ctx.lineWidth = Math.max(2, 3 / this.camera.zoom);
+            
+            const pointSize = Math.max(15, 20000 * this.camera.zoom);
+            
+            // Cercle extérieur avec animation pulsante
+            const pulse = Math.sin(Date.now() / 500) * 0.2 + 1; // Pulsation entre 0.8 et 1.2
+            this.ctx.beginPath();
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointSize * pulse, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Cercle intérieur
+            this.ctx.fillStyle = '#0a0a0a';
+            this.ctx.beginPath();
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointSize * 0.6, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Contour
+            this.ctx.stroke();
+            
+            // Label "Point B"
+            this.ctx.fillStyle = '#ff6b6b';
+            const fontSize = Math.max(12, Math.min(20, 18 / this.camera.zoom));
+            this.ctx.font = `bold ${fontSize}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('Point B', this.targetPoint.x, this.targetPoint.y - pointSize * pulse - fontSize - 5);
+            
+            this.ctx.restore();
+        }
     }
     
     /**
@@ -631,15 +753,15 @@ class TrainingVisualizer {
             const vx = this.rocketData.velocity.x;
             const vy = this.rocketData.velocity.y;
             const speed = Math.sqrt(vx * vx + vy * vy);
-            
+
             if (speed > 1) {
                 this.ctx.strokeStyle = '#00ff00';
                 this.ctx.lineWidth = Math.max(2, 4 / this.camera.zoom);
                 this.ctx.beginPath();
                 this.ctx.moveTo(0, 0);
-                // Adapter la longueur du vecteur vitesse au zoom
+                // CORRECTION: Adapter la longueur du vecteur vitesse au zoom (divisé par 5)
                 const vectorScale = Math.max(0.1, 1 / this.camera.zoom);
-                this.ctx.lineTo(vx * vectorScale / 100, vy * vectorScale / 100);
+                this.ctx.lineTo(vx * vectorScale / 500, vy * vectorScale / 500); // Divisé par 500 au lieu de 100 (5x plus petit)
                 this.ctx.stroke();
             }
         }
@@ -657,14 +779,16 @@ class TrainingVisualizer {
         // Indicateur de réception de données (clignotant)
         const dataIndicator = this.lastDataReceived && (Date.now() - this.lastDataReceived < 500) ? '🟢' : '🔴';
         
+        // CORRECTION: Protection contre NaN dans l'affichage
+        const cameraX = isFinite(this.camera.x) ? this.camera.x : 0;
+        const cameraY = isFinite(this.camera.y) ? this.camera.y : 0;
+        const zoom = isFinite(this.camera.zoom) ? this.camera.zoom : 0.00711; // Zoom par défaut pour l'entraînement
+        const targetZoom = isFinite(this.camera.targetZoom) ? this.camera.targetZoom : 0.00711;
+        
         const info = [
             `${dataIndicator} Données: ${this.lastDataReceived ? 'Actif' : 'En attente'}`,
-            `Caméra: (${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)})`,
-            `Zoom: ${this.camera.zoom.toExponential(2)} → ${this.camera.targetZoom.toExponential(2)}`,
-            `Mode: ${this.camera.followRocket ? '🎯 Suit fusée' : '🌍 Vue Terre'}`,
-            `Corps célestes: ${this.celestialBodies.length}`,
-            `Trajectoires: ${this.allTrajectories.length} anciennes + 1 actuelle`,
-            `Points trajectoire: ${this.rocketTrajectory.length}/${this.maxTrajectoryPoints}`
+            `Caméra: (${cameraX.toFixed(0)}, ${cameraY.toFixed(0)})`,
+            `Zoom: ${zoom.toExponential(2)} → ${targetZoom.toExponential(2)}`
         ];
         
         if (this.rocketData) {
@@ -685,21 +809,9 @@ class TrainingVisualizer {
             info.push('(Démarrez l\'entraînement)');
         }
         
-        // Afficher les corps célestes (limité)
-        if (this.celestialBodies.length > 0) {
-            info.push('--- Corps célestes ---');
-            for (let i = 0; i < Math.min(3, this.celestialBodies.length); i++) {
-                const body = this.celestialBodies[i];
-                if (body.position) {
-                    info.push(`${body.name}: R=${(body.radius/1000).toFixed(0)}km`);
-                }
-            }
-        }
-        
         // Contrôles
         info.push('------ Contrôles ------');
         info.push('🔍+/- : Zoom');
-        info.push('🎯 : Suivre fusée');
         info.push('🧹 : Effacer trajectoire');
         
         // Fond semi-transparent pour le texte

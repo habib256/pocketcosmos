@@ -69,6 +69,7 @@ class HeadlessRocketEnvironment {
         this.currentStep = 0;
         this.totalRewardInEpisode = 0;
         this._missionAlreadyRewardedThisEpisode = false;
+        this._startupGracePeriod = 0; // Compteur pour le délai de grâce au démarrage
 
         this.reset();
     }
@@ -88,6 +89,14 @@ class HeadlessRocketEnvironment {
 
         // Réinitialiser les modèles à un état de base ou selon la config
         this.rocketModel.reset(); // RocketModel.reset() ne prend pas d'arguments
+        
+        // CORRECTION: Activer le carburant infini si configuré (avant d'appliquer l'état initial)
+        if (this.config.infiniteFuel) {
+            this.rocketModel._infiniteFuel = true;
+        } else {
+            this.rocketModel._infiniteFuel = false;
+        }
+        
         if (this.config.rocketInitialState) {
             // Appliquer l'état initial après le reset
             Object.keys(this.config.rocketInitialState).forEach(key => {
@@ -133,6 +142,13 @@ class HeadlessRocketEnvironment {
             this.universeModel.addCelestialBody(earth);
         }
         
+        // CORRECTION: Réinitialiser toutes les variables pour le système de récompense avancé
+        this._initialDistanceToTarget = null;
+        this._previousDistanceToTarget = null; // Pour delta distance reward
+        this._previousPotential = null; // Pour potential-based reward shaping
+        this._missionAlreadyRewardedThisEpisode = false;
+        this._zonesReached = new Set(); // Pour tracker les zones déjà récompensées
+        
         // Réinitialiser les missions
         this.missionManager.resetMissions(); // Vide les missions existantes et crée les missions par défaut
         
@@ -144,6 +160,11 @@ class HeadlessRocketEnvironment {
             // Créer les missions selon la configuration
             if (this.config.missionConfig.objective) {
                 switch (this.config.missionConfig.objective) {
+                    case 'navigate':
+                        // CORRECTION: Mission de navigation point à point (sans planètes)
+                        // Pas de mission traditionnelle, juste navigation vers un point
+                        this.missionManager.createMission("Point A", "Point B", [{ type: "NavigateToken", quantity: 1 }], 200);
+                        break;
                     case 'orbit':
                         // Mission d'orbite : pas de cargo requis, succès basé sur la performance
                         // Utiliser un cargo impossible à obtenir pour éviter la complétion automatique
@@ -153,13 +174,17 @@ class HeadlessRocketEnvironment {
                         // Mission d'atterrissage : atterrir sur un corps céleste
                         this.missionManager.createMission("Terre", "Lune", [{ type: "LandingToken", quantity: 1 }], 200);
                         break;
+                    case 'crash_moon':
+                        // Mission de crash : se crasher sur la Lune (objectif d'entraînement)
+                        this.missionManager.createMission("Terre", "Lune", [{ type: "CrashToken", quantity: 1 }], 200);
+                        break;
                     case 'explore':
                         // Mission d'exploration : visiter plusieurs corps célestes
                         this.missionManager.createMission("Terre", "Mars", [{ type: "ExploreToken", quantity: 1 }], 300);
                         break;
                     default:
-                        // Mission par défaut
-                        this.missionManager.createMission("Terre", "Lune", [{ type: "LandingToken", quantity: 1 }], 150);
+                        // Mission par défaut (navigation)
+                        this.missionManager.createMission("Point A", "Point B", [{ type: "NavigateToken", quantity: 1 }], 200);
                 }
             } else if (this.config.missionConfig.missions) {
                 // Missions personnalisées définies explicitement
@@ -180,6 +205,7 @@ class HeadlessRocketEnvironment {
         this.currentStep = 0;
         this.totalRewardInEpisode = 0;
         this._missionAlreadyRewardedThisEpisode = false;
+        this._startupGracePeriod = 0; // Réinitialiser le délai de grâce au démarrage
         
         // Réinitialiser les compteurs de succès spécifiques
         this.orbitSuccessCounter = 0;
@@ -200,7 +226,7 @@ class HeadlessRocketEnvironment {
     emitVisualizationData() {
         // Émettre seulement si nécessaire (éviter le spam)
         if (this.currentStep % 2 === 0) { // Émettre tous les 2 pas pour réduire la charge
-            this.eventBus.emit(this.EVENT_TYPES.AI.TRAINING_STEP, {
+            const visualizationData = {
                 rocket: {
                     position: { ...this.rocketModel.position },
                     velocity: { ...this.rocketModel.velocity },
@@ -221,7 +247,21 @@ class HeadlessRocketEnvironment {
                 })),
                 step: this.currentStep,
                 reward: this.totalRewardInEpisode
-            });
+            };
+            
+            // CORRECTION: Ajouter les points de navigation pour l'objectif 'navigate'
+            if (this.config.missionConfig && this.config.missionConfig.objective === 'navigate') {
+                const targetPoint = this.config.missionConfig.targetPoint;
+                if (targetPoint) {
+                    visualizationData.targetPoint = { ...targetPoint }; // Point B (destination)
+                }
+                // Point A = position initiale de la fusée
+                if (this.config.rocketInitialState && this.config.rocketInitialState.position) {
+                    visualizationData.startPoint = { ...this.config.rocketInitialState.position }; // Point A (départ)
+                }
+            }
+            
+            this.eventBus.emit(this.EVENT_TYPES.AI.TRAINING_STEP, visualizationData);
         }
     }
 
@@ -291,10 +331,25 @@ class HeadlessRocketEnvironment {
         // 3. Obtenir les résultats pour ce pas
         const observation = this.getObservation();
         const reward = this.calculateReward();
+
+        // CORRECTION: Incrémenter le compteur de délai de grâce au démarrage
+        this._startupGracePeriod++;
+
         const done = this.isDone();
         
+        // Ajouter la récompense au total
         this.totalRewardInEpisode += reward;
         this.currentStep++;
+        
+        // CORRECTION: Ajouter pénalité de timeout pour l'objectif 'navigate' (après l'incrément)
+        if (done && this.config.missionConfig?.objective === 'navigate' && 
+            this.currentStep >= this.maxStepsPerEpisode && 
+            !this.checkNavigateSuccess()) {
+            const timeoutPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
+                ? AI_TRAINING.NAVIGATE_REWARDS.TIMEOUT_PENALTY 
+                : -50;
+            this.totalRewardInEpisode += timeoutPenalty;
+        }
 
         // Émettre les données pour la visualisation (si activée)
         this.emitVisualizationData();
@@ -365,23 +420,44 @@ class HeadlessRocketEnvironment {
         let reward = 0;
         const FUEL_PENALTY_FACTOR = 0.005; // Facteur de pénalité pour la consommation de carburant
 
-        // Pénalité de base pour chaque pas (pour encourager l'efficacité)
-        reward -= 0.01; 
+        // CORRECTION: Pénalité de base adaptée selon l'objectif
+        const objective = this.config.missionConfig?.objective;
+        const stepPenalty = (objective === 'navigate' && typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
+            ? AI_TRAINING.NAVIGATE_REWARDS.STEP_PENALTY 
+            : -0.01;
+        reward += stepPenalty; 
 
-        // Pénalité pour la consommation de carburant (proportionnelle à la puissance des propulseurs)
-        let normalizedPowerSum = 0;
-        if (this.rocketModel && this.rocketModel.thrusters) {
-            for (const thruster of Object.values(this.rocketModel.thrusters)) {
-                if (thruster.maxPower > 0) { // Éviter la division par zéro si maxPower est 0
-                    normalizedPowerSum += (thruster.power / thruster.maxPower);
+        // CORRECTION: Pénalité pour la consommation de carburant (sauf si carburant infini)
+        if (objective !== 'navigate' || !this.config.infiniteFuel) {
+            let normalizedPowerSum = 0;
+            if (this.rocketModel && this.rocketModel.thrusters) {
+                for (const thruster of Object.values(this.rocketModel.thrusters)) {
+                    if (thruster.maxPower > 0) { // Éviter la division par zéro si maxPower est 0
+                        normalizedPowerSum += (thruster.power / thruster.maxPower);
+                    }
                 }
             }
+            reward -= (normalizedPowerSum * FUEL_PENALTY_FACTOR);
         }
-        reward -= (normalizedPowerSum * FUEL_PENALTY_FACTOR);
 
-        // Grosse pénalité pour crash
+        // CORRECTION: Pénalité pour crash seulement si ce n'est PAS l'objectif
+        // Si l'objectif est 'crash_moon', le crash sur la Lune est récompensé ailleurs
         if (this.rocketModel.isDestroyed) {
-            reward -= 100; 
+            const objective = this.config.missionConfig?.objective;
+            // Ne pas pénaliser si l'objectif est de se crasher sur la Lune ET que c'est sur la Lune
+            if (objective === 'crash_moon') {
+                const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+                if (moon && (this.rocketModel.landedOn === 'Lune' || this.rocketModel.attachedTo === 'Lune')) {
+                    // Crash sur la Lune = objectif atteint, pas de pénalité
+                    // La récompense sera donnée dans le case 'crash_moon'
+                } else {
+                    // Crash ailleurs = pénalité
+                    reward -= 100;
+                }
+            } else {
+                // Pour les autres objectifs, crash = pénalité
+                reward -= 100;
+            }
         }
         
         // Récompenses spécifiques selon l'objectif de mission
@@ -457,6 +533,49 @@ class HeadlessRocketEnvironment {
                     }
                     break;
                     
+                case 'navigate':
+                    // CORRECTION: Système de récompense avancé pour navigation
+                    reward += this.calculateNavigateReward();
+                    
+                    // Récompense de terminaison (succès)
+                    if (this.checkNavigateSuccess() && !this._missionAlreadyRewardedThisEpisode) {
+                        const successReward = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
+                            ? AI_TRAINING.NAVIGATE_REWARDS.SUCCESS_REWARD 
+                            : 1000;
+                        reward += successReward;
+                        this._missionAlreadyRewardedThisEpisode = true;
+                    }
+                    break;
+                    
+                case 'crash_moon':
+                    // CORRECTION: Objectif = se crasher sur la Lune
+                    // Récompense pour se rapprocher de la Lune
+                    const moonForCrash = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+                    if (moonForCrash) {
+                        const dx = this.rocketModel.position.x - moonForCrash.position.x;
+                        const dy = this.rocketModel.position.y - moonForCrash.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const altitude = distance - moonForCrash.radius;
+                        
+                        // Récompense progressive pour approche de la Lune
+                        if (altitude < 50000) {
+                            reward += 0.1; // Récompense pour être dans la zone lunaire
+                            if (altitude < 10000) {
+                                reward += 0.5; // Plus proche
+                                if (altitude < 1000) {
+                                    reward += 1.0; // Très proche
+                                }
+                            }
+                        }
+                        
+                        // GROSSE récompense pour crash sur la Lune (objectif atteint !)
+                        if (this.checkCrashMoonSuccess() && !this._missionAlreadyRewardedThisEpisode) {
+                            reward += 200; // Récompense massive pour crash réussi sur la Lune
+                            this._missionAlreadyRewardedThisEpisode = true;
+                        }
+                    }
+                    break;
+                    
                 case 'explore':
                     // Récompense pour mouvement et exploration
                     const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
@@ -493,20 +612,283 @@ class HeadlessRocketEnvironment {
         
         if (!this.rocketModel || !this.universeModel) return reward;
         
-        // Déterminer l'objectif basé sur la destination de la mission
-        const objective = mission.to === 'Orbite' ? 'orbit' : 
-                         mission.to === 'Lune' || mission.to === 'Mars' ? 'land' : 'explore';
+        // CORRECTION: Utiliser l'objectif depuis la config plutôt que de le déduire de la mission
+        const objective = this.config.missionConfig?.objective || 
+                         (mission.to === 'Orbite' ? 'orbit' : 
+                          mission.to === 'Point B' ? 'navigate' :
+                          mission.to === 'Lune' || mission.to === 'Mars' ? 'land' : 'explore');
         
         switch (objective) {
+            case 'navigate':
+                // CORRECTION: Récompense pour approche du point cible (navigation sera récompensée dans le switch principal)
+                reward += this.calculateNavigateReward();
+                break;
             case 'orbit':
                 reward += this.calculateOrbitReward();
                 break;
             case 'land':
                 reward += this.calculateLandingReward();
                 break;
+            case 'crash_moon':
+                // CORRECTION: Récompense pour approche de la Lune (crash sera récompensé dans le switch principal)
+                reward += this.calculateCrashMoonReward();
+                break;
             case 'explore':
                 reward += this.calculateExplorationReward();
                 break;
+        }
+        
+        return reward;
+    }
+    
+    /**
+     * Calcule la récompense avancée pour l'objectif de navigation point à point
+     * Implémente plusieurs composantes basées sur les meilleures pratiques RL
+     */
+    calculateNavigateReward() {
+        let reward = 0;
+        
+        const targetPoint = this.config.missionConfig?.targetPoint;
+        if (!targetPoint) return reward;
+        
+        // Récupérer la configuration des récompenses
+        const config = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
+            ? AI_TRAINING.NAVIGATE_REWARDS 
+            : {
+                DISTANCE_DELTA: 10.0,
+                HEADING_ALIGNMENT: 2.0,
+                VELOCITY_OPTIMAL: 1.0,
+                POTENTIAL: 0.5,
+                ZONE: 1.0,
+                VELOCITY_TARGET: 30.0,
+                VELOCITY_SIGMA: 15.0,
+                ZONE_REWARDS: [5, 10, 20, 50],
+                ZONE_THRESHOLDS: [0.8, 0.5, 0.2, 0.05],
+                POTENTIAL_GAMMA: 0.99
+            };
+        
+        // Initialiser la distance initiale si nécessaire
+        if (!this._initialDistanceToTarget) {
+            const startDx = this.config.rocketInitialState?.position?.x - targetPoint.x || 0;
+            const startDy = this.config.rocketInitialState?.position?.y - targetPoint.y || 0;
+            this._initialDistanceToTarget = Math.sqrt(startDx * startDx + startDy * startDy);
+        }
+        
+        // Calculer la distance actuelle
+        const currentDistance = this.calculateDistanceToTarget(targetPoint);
+        if (!currentDistance || !isFinite(currentDistance)) return reward;
+        
+        // 1. Delta Distance Reward (priorité haute)
+        const deltaDistanceReward = this.calculateDeltaDistanceReward(currentDistance, config);
+        reward += deltaDistanceReward;
+        
+        // 2. Heading Alignment Reward (priorité haute)
+        const headingReward = this.calculateHeadingAlignmentReward(targetPoint, config);
+        reward += headingReward;
+        
+        // 3. Velocity Control Reward (priorité moyenne)
+        const velocityReward = this.calculateVelocityReward(targetPoint, config);
+        reward += velocityReward;
+        
+        // 4. Potential-Based Reward Shaping (priorité basse)
+        const potentialReward = this.calculatePotentialReward(currentDistance, config);
+        reward += potentialReward;
+        
+        // 5. Progressive Zone Rewards (priorité moyenne)
+        const zoneReward = this.calculateZoneReward(currentDistance, config);
+        reward += zoneReward;
+        
+        return reward;
+    }
+    
+    /**
+     * Calcule la distance au point cible
+     */
+    calculateDistanceToTarget(targetPoint) {
+        if (!targetPoint || !this.rocketModel || !this.rocketModel.position) return null;
+        const dx = this.rocketModel.position.x - targetPoint.x;
+        const dy = this.rocketModel.position.y - targetPoint.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    /**
+     * 1. Delta Distance Reward - Récompense basée sur la réduction de distance
+     */
+    calculateDeltaDistanceReward(currentDistance, config) {
+        if (!this._initialDistanceToTarget || this._initialDistanceToTarget <= 0) return 0;
+        
+        // Calculer le changement de distance
+        const previousDistance = this._previousDistanceToTarget || this._initialDistanceToTarget;
+        const deltaDistance = previousDistance - currentDistance; // Positif = rapprochement
+        
+        // Normaliser par la distance initiale pour éviter les biais d'échelle
+        const normalizedDelta = deltaDistance / this._initialDistanceToTarget;
+        
+        // Récompense proportionnelle au rapprochement
+        const reward = normalizedDelta * config.DISTANCE_DELTA;
+        
+        // Mettre à jour la distance précédente
+        this._previousDistanceToTarget = currentDistance;
+        
+        return reward;
+    }
+    
+    /**
+     * 2. Heading Alignment Reward - Récompense pour l'orientation vers la cible
+     */
+    calculateHeadingAlignmentReward(targetPoint, config) {
+        if (!targetPoint || !this.rocketModel || !this.rocketModel.position) return 0;
+        
+        // Vecteur vers la cible
+        const dx = targetPoint.x - this.rocketModel.position.x;
+        const dy = targetPoint.y - this.rocketModel.position.y;
+        const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
+        if (distanceToTarget <= 0) return 0;
+        
+        // Direction vers la cible (normalisée)
+        const targetDirX = dx / distanceToTarget;
+        const targetDirY = dy / distanceToTarget;
+        
+        // Direction de la fusée (basée sur son angle)
+        const rocketAngle = this.rocketModel.angle || 0;
+        const rocketDirX = Math.cos(rocketAngle);
+        const rocketDirY = Math.sin(rocketAngle);
+        
+        // Produit scalaire = cos(angle entre les deux directions)
+        const alignment = targetDirX * rocketDirX + targetDirY * rocketDirY;
+        // alignment = 1 si parfaitement aligné, -1 si opposé
+        
+        // Récompense basée sur l'alignement
+        let reward = alignment * config.HEADING_ALIGNMENT;
+        
+        // Bonus si la fusée se déplace vers la cible (vitesse radiale positive)
+        if (this.rocketModel.velocity) {
+            const radialVelocity = (this.rocketModel.velocity.x * targetDirX + 
+                                   this.rocketModel.velocity.y * targetDirY);
+            if (radialVelocity > 0) {
+                // Bonus proportionnel à la vitesse radiale vers la cible
+                reward += (radialVelocity / 100) * 0.5; // Normalisé
+            }
+        }
+        
+        return reward;
+    }
+    
+    /**
+     * 3. Velocity Control Reward - Récompense pour vitesse optimale
+     */
+    calculateVelocityReward(targetPoint, config) {
+        if (!this.rocketModel || !this.rocketModel.velocity) return 0;
+        
+        const speed = Math.sqrt(
+            this.rocketModel.velocity.x ** 2 + 
+            this.rocketModel.velocity.y ** 2
+        );
+        
+        // Récompense gaussienne autour de la vitesse cible
+        const diff = speed - config.VELOCITY_TARGET;
+        const gaussian = Math.exp(-(diff * diff) / (2 * config.VELOCITY_SIGMA * config.VELOCITY_SIGMA));
+        const velocityReward = gaussian * config.VELOCITY_OPTIMAL;
+        
+        // Pénalité si vitesse trop faible ou trop élevée
+        let penalty = 0;
+        if (speed < config.VELOCITY_MIN) {
+            penalty = -0.1 * (config.VELOCITY_MIN - speed) / config.VELOCITY_MIN;
+        } else if (speed > config.VELOCITY_MAX) {
+            penalty = -0.1 * (speed - config.VELOCITY_MAX) / config.VELOCITY_MAX;
+        }
+        
+        // Bonus pour vitesse radiale vers la cible
+        let radialBonus = 0;
+        if (targetPoint && this.rocketModel.position) {
+            const dx = targetPoint.x - this.rocketModel.position.x;
+            const dy = targetPoint.y - this.rocketModel.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 0) {
+                const targetDirX = dx / distance;
+                const targetDirY = dy / distance;
+                const radialVelocity = this.rocketModel.velocity.x * targetDirX + 
+                                      this.rocketModel.velocity.y * targetDirY;
+                if (radialVelocity > 0) {
+                    radialBonus = (radialVelocity / config.VELOCITY_TARGET) * 0.2;
+                }
+            }
+        }
+        
+        return velocityReward + penalty + radialBonus;
+    }
+    
+    /**
+     * 4. Potential-Based Reward Shaping
+     */
+    calculatePotentialReward(currentDistance, config) {
+        if (!this._initialDistanceToTarget || this._initialDistanceToTarget <= 0) return 0;
+        
+        // Potentiel basé sur la distance (normalisé)
+        const currentPotential = -currentDistance / this._initialDistanceToTarget;
+        const previousPotential = this._previousPotential !== null 
+            ? this._previousPotential 
+            : -1.0; // Potentiel initial (distance maximale)
+        
+        // Potential-based reward shaping
+        const potentialReward = config.POTENTIAL_GAMMA * currentPotential - previousPotential;
+        
+        // Mettre à jour le potentiel précédent
+        this._previousPotential = currentPotential;
+        
+        return potentialReward * config.POTENTIAL;
+    }
+    
+    /**
+     * 5. Progressive Zone Rewards - Récompenses par zones concentriques
+     */
+    calculateZoneReward(currentDistance, config) {
+        if (!this._initialDistanceToTarget || this._initialDistanceToTarget <= 0) return 0;
+        
+        // Ratio de distance restante (0 = arrivé, 1 = départ)
+        const distanceRatio = currentDistance / this._initialDistanceToTarget;
+        
+        let reward = 0;
+        
+        // Vérifier chaque zone (du plus loin au plus proche)
+        for (let i = 0; i < config.ZONE_THRESHOLDS.length; i++) {
+            const threshold = config.ZONE_THRESHOLDS[i];
+            const zoneReward = config.ZONE_REWARDS[i];
+            const zoneId = `zone_${i}`;
+            
+            // Si on est dans cette zone et qu'on ne l'a pas encore récompensée
+            if (distanceRatio <= threshold && !this._zonesReached.has(zoneId)) {
+                reward += zoneReward * config.ZONE;
+                this._zonesReached.add(zoneId);
+            }
+        }
+        
+        return reward;
+    }
+    
+    /**
+     * Calcule la récompense pour l'objectif de crash sur la Lune
+     */
+    calculateCrashMoonReward() {
+        let reward = 0;
+        
+        const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+        if (!moon) return reward;
+        
+        const dx = this.rocketModel.position.x - moon.position.x;
+        const dy = this.rocketModel.position.y - moon.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const altitude = distance - moon.radius;
+        
+        // Récompense progressive pour approche de la Lune
+        if (altitude < 50000) {
+            reward += 0.1; // Récompense pour être dans la zone lunaire
+            if (altitude < 10000) {
+                reward += 0.5; // Plus proche
+                if (altitude < 1000) {
+                    reward += 1.0; // Très proche
+                }
+            }
         }
         
         return reward;
@@ -637,12 +1019,17 @@ class HeadlessRocketEnvironment {
      */
     isDone() {
         if (this.rocketModel.isDestroyed) return true;
-        if (this.rocketModel.fuel <= 0) return true;
+        
+        // CORRECTION: Pour 'navigate', ne pas terminer si fuel <= 0 (carburant infini)
+        const objective = this.config.missionConfig?.objective;
+        if (objective !== 'navigate' && this.rocketModel.fuel <= 0) return true;
+        
         if (this.currentStep >= this.maxStepsPerEpisode) return true;
         
         // CONDITION DE CRASH ANTICIPÉ : Terminer immédiatement si crash imminent sur une planète
         // Cela accélère l'entraînement en évitant d'attendre la détection de collision par Matter.js
-        if (this.checkImminentCrash()) {
+        // CORRECTION: Ne pas détecter de crash pour 'navigate' (pas de planètes)
+        if (objective !== 'navigate' && this.checkImminentCrash()) {
             // Marquer comme détruite pour cohérence
             this.rocketModel.isDestroyed = true;
             return true;
@@ -651,12 +1038,18 @@ class HeadlessRocketEnvironment {
         // Vérifier les conditions de succès spécifiques selon l'objectif
         if (this.config.missionConfig && this.config.missionConfig.objective) {
             switch (this.config.missionConfig.objective) {
+                case 'navigate':
+                    // CORRECTION: Mission de navigation réussie si le point cible est atteint
+                    return this.checkNavigateSuccess();
                 case 'orbit':
                     // Mission d'orbite réussie si altitude et vitesse appropriées pendant plusieurs pas
                     return this.checkOrbitSuccess();
                 case 'land':
                     // Mission d'atterrissage réussie si atterri sur la cible
                     return this.checkLandingSuccess();
+                case 'crash_moon':
+                    // CORRECTION: Mission de crash réussie si crash sur la Lune
+                    return this.checkCrashMoonSuccess();
                 case 'explore':
                     // Mission d'exploration réussie si certaines zones visitées
                     return this.checkExplorationSuccess();
@@ -673,6 +1066,17 @@ class HeadlessRocketEnvironment {
      */
     checkImminentCrash() {
         if (!this.rocketModel || !this.universeModel || this.rocketModel.isDestroyed) {
+            return false;
+        }
+        
+        // CORRECTION: Ne pas détecter de crash au démarrage (délai de grâce de 30 pas)
+        // La fusée peut être proche de la surface au démarrage sans être en crash
+        if (this._startupGracePeriod < 30) {
+            return false;
+        }
+        
+        // CORRECTION: Ne pas détecter de crash si la fusée est atterrie (elle est censée être au repos)
+        if (this.rocketModel.isLanded) {
             return false;
         }
         
@@ -693,6 +1097,11 @@ class HeadlessRocketEnvironment {
                 this.rocketModel.velocity.x ** 2 + 
                 this.rocketModel.velocity.y ** 2
             );
+            
+            // CORRECTION: Ne pas détecter de crash si la vitesse est très faible (au repos)
+            if (speed < 1.0) {
+                return false;
+            }
             
             // Utiliser les seuils de crash depuis PHYSICS (ou valeurs par défaut)
             const CRASH_SPEED_THRESHOLD = this.PHYSICS_CONSTS?.CRASH_SPEED_THRESHOLD || 10.0;
@@ -775,7 +1184,51 @@ class HeadlessRocketEnvironment {
         }
         return false;
     }
-
+    
+    /**
+     * Vérifie si la mission de crash sur la Lune est réussie
+     * CORRECTION: Objectif d'entraînement = se crasher sur la Lune
+     */
+    checkCrashMoonSuccess() {
+        // Succès si la fusée est détruite ET qu'elle s'est crashée sur la Lune
+        if (this.rocketModel.isDestroyed) {
+            // Vérifier si le crash a eu lieu sur la Lune
+            const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
+            if (moon && (this.rocketModel.landedOn === 'Lune' || this.rocketModel.attachedTo === 'Lune')) {
+                // Calculer la distance pour confirmer
+                const dx = this.rocketModel.position.x - moon.position.x;
+                const dy = this.rocketModel.position.y - moon.position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const altitude = distance - moon.radius;
+                
+                // Si très proche de la surface de la Lune (crash confirmé)
+                if (altitude < 100) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Vérifie si la mission de navigation point à point est réussie
+     * CORRECTION: Objectif d'entraînement = atteindre le point cible
+     */
+    checkNavigateSuccess() {
+        const targetPoint = this.config.missionConfig?.targetPoint;
+        if (!targetPoint) return false;
+        
+        // Calculer la distance au point cible
+        const dx = this.rocketModel.position.x - targetPoint.x;
+        const dy = this.rocketModel.position.y - targetPoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // CORRECTION: Ajuster le seuil de succès selon la distance totale
+        // Pour une distance de ~71km, un seuil de 5km (7%) est raisonnable
+        const SUCCESS_DISTANCE_THRESHOLD = 5000; // 5 km de tolérance
+        return distance < SUCCESS_DISTANCE_THRESHOLD;
+    }
+    
     /**
      * Vérifie si la mission d'exploration est réussie
      */
@@ -793,6 +1246,6 @@ class HeadlessRocketEnvironment {
 }
 
 // Pour rendre la classe accessible globalement si aucun système de module n'est utilisé :
-// if (typeof window !== 'undefined') {
-//     window.HeadlessRocketEnvironment = HeadlessRocketEnvironment;
-// } 
+if (typeof window !== 'undefined') {
+    window.HeadlessRocketEnvironment = HeadlessRocketEnvironment;
+} 

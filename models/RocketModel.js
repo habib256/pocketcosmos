@@ -91,6 +91,8 @@ class RocketModel {
         this.fuel = ROCKET.FUEL_MAX;
         /** @type {number} Santé restante (depuis ROCKET.MAX_HEALTH) */
         this.health = ROCKET.MAX_HEALTH;
+        /** @type {boolean} Flag pour carburant infini (pour l'objectif 'navigate') */
+        this._infiniteFuel = false;
         /** @type {boolean} Indique si la fusée est détruite (santé <= 0) */
         this.isDestroyed = false;
         /** @type {boolean} Indique si la fusée est actuellement posée sur un corps céleste */
@@ -213,7 +215,8 @@ class RocketModel {
         if (!this.thrusters[thrusterName]) return; // Sécurité
 
         // Si plus de carburant ou fusée détruite, aucun propulseur ne doit fonctionner
-        if (this.fuel <= 0 || this.isDestroyed) {
+        // CORRECTION: Ignorer la vérification de carburant si carburant infini activé
+        if ((!this._infiniteFuel && this.fuel <= 0) || this.isDestroyed) {
             this.thrusters[thrusterName].power = 0;
             return;
         }
@@ -443,22 +446,26 @@ class RocketModel {
 
         // Consommation de carburant: source unique ici
         // Alignée sur l'ancienne échelle (puissance absolue * taux * deltaTime)
+        // CORRECTION: Skip la consommation si carburant infini activé
         let fuelConsumedThisFrame = 0;
-        for (const thrusterName in this.thrusters) {
-            const thruster = this.thrusters[thrusterName];
-            if (thruster.power > 0) {
-                let rate = 0;
-                if (thrusterName === 'main') rate = ROCKET.FUEL_CONSUMPTION.MAIN;
-                else if (thrusterName === 'rear') rate = ROCKET.FUEL_CONSUMPTION.REAR;
-                else if (thrusterName === 'left' || thrusterName === 'right') rate = ROCKET.FUEL_CONSUMPTION.LATERAL;
-                // Accumuler la conso frame
-                fuelConsumedThisFrame += thruster.power * (rate || 0) * deltaTime;
+        if (!this._infiniteFuel) {
+            for (const thrusterName in this.thrusters) {
+                const thruster = this.thrusters[thrusterName];
+                if (thruster.power > 0) {
+                    let rate = 0;
+                    if (thrusterName === 'main') rate = ROCKET.FUEL_CONSUMPTION.MAIN;
+                    else if (thrusterName === 'rear') rate = ROCKET.FUEL_CONSUMPTION.REAR;
+                    else if (thrusterName === 'left' || thrusterName === 'right') rate = ROCKET.FUEL_CONSUMPTION.LATERAL;
+                    // Accumuler la conso frame
+                    fuelConsumedThisFrame += thruster.power * (rate || 0) * deltaTime;
+                }
             }
+            if (fuelConsumedThisFrame > 0) this.consumeFuel(fuelConsumedThisFrame);
         }
-        if (fuelConsumedThisFrame > 0) this.consumeFuel(fuelConsumedThisFrame);
 
         // Si plus de carburant, couper tous les propulseurs
-        if (this.fuel <= 0) {
+        // CORRECTION: Ignorer cette vérification si carburant infini activé
+        if (!this._infiniteFuel && this.fuel <= 0) {
             for (const thrusterName in this.thrusters) {
                 if (this.thrusters[thrusterName].power > 0) {
                     this.setThrusterPower(thrusterName, 0); // setThrusterPower gère déjà la condition fuel <= 0

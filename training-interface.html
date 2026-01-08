@@ -275,6 +275,8 @@
                 <div class="control-group">
                     <label>Objectif d'entraînement:</label>
                     <select id="objective">
+                        <option value="navigate" selected>Navigation point à point (sans planètes)</option>
+                        <option value="crash_moon">Crash sur la Lune</option>
                         <option value="orbit">Maintenir orbite</option>
                         <option value="land">Atterrissage précis</option>
                         <option value="explore">Exploration libre</option>
@@ -343,8 +345,7 @@
                 <h2 style="margin: 0;">🎯 Visualisation de l'Entraînement</h2>
                 <div class="visualization-controls">
                     <button id="toggleVisualization">👁️ Activer</button>
-                    <button id="followRocket">🎯 Suivre fusée</button>
-                    <button id="resetView">🌍 Vue Terre</button>
+                    <button id="resetView">🌌 Vue absolue</button>
                     <button id="clearTrajectory">🧹 Effacer</button>
                     <button id="zoomOut" class="zoom-button">➖</button>
                     <button id="zoomIn" class="zoom-button">➕</button>
@@ -652,7 +653,6 @@
                 
                 // Événements de visualisation
                 document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
-                document.getElementById('followRocket').addEventListener('click', () => this.toggleFollowRocket());
                 document.getElementById('resetView').addEventListener('click', () => this.resetView());
                 document.getElementById('clearTrajectory').addEventListener('click', () => this.clearTrajectory());
                 document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
@@ -680,18 +680,24 @@
                     
                     const metrics = data.metrics;
                     
+                    // CORRECTION: Utiliser le numéro d'épisode depuis data.episode (qui commence à 1)
+                    // et totalEpisodes depuis data.totalEpisodes si disponible
+                    const currentEpisode = data.episode !== undefined ? data.episode : (metrics.episode || 0);
+                    const totalEpisodes = data.totalEpisodes !== undefined ? data.totalEpisodes : this.getTrainingConfig().episodes;
+                    
                     // Calculer les métriques pour l'affichage avec des valeurs par défaut sûres
                     const avgReward = (metrics.averageRewards && metrics.averageRewards.length > 0) ? 
                         metrics.averageRewards.reduce((a, b) => a + b, 0) / metrics.averageRewards.length : 0;
-                    const successRate = (metrics.successfulEpisodes && metrics.episode > 0) ? 
-                        (metrics.successfulEpisodes / metrics.episode) * 100 : 0;
+                    const successRate = (metrics.successfulEpisodes && currentEpisode > 0) ? 
+                        (metrics.successfulEpisodes / currentEpisode) * 100 : 0;
                     const currentEpsilon = (metrics.explorationRates && metrics.explorationRates.length > 0) ? 
                         metrics.explorationRates[metrics.explorationRates.length - 1] : 1.0;
                     const currentLoss = (metrics.losses && metrics.losses.length > 0) ? 
                         metrics.losses[metrics.losses.length - 1] : 0;
                     
                     this.updateMetrics({
-                        episode: metrics.episode || 0,
+                        episode: currentEpisode,
+                        totalEpisodes: totalEpisodes,
                         totalSteps: metrics.totalSteps || 0,
                         avgReward: avgReward,
                         successRate: successRate,
@@ -699,14 +705,23 @@
                         loss: currentLoss
                     });
                     
-                    // Mettre à jour les graphiques périodiquement
-                    if (metrics.episode && metrics.episode % 10 === 0) {
-                        this.updateCharts(metrics.episode, avgReward, currentLoss);
+                    // CORRECTION: Mettre à jour les graphiques périodiquement (même si loss est 0)
+                    if (currentEpisode && currentEpisode % 10 === 0) {
+                        this.updateCharts(currentEpisode, avgReward, currentLoss);
+                    }
+                    
+                    // CORRECTION: Mettre à jour le graphique de loss même si elle est 0 (pour afficher dès le début)
+                    // Cela permet de voir la progression même avant le premier entraînement
+                    if (currentEpisode > 0 && currentEpisode % 10 === 0) {
+                        // S'assurer que le graphique de loss est mis à jour
+                        if (this.lossChart && this.trainingData.losses.length > 0) {
+                            this.lossChart.update('none');
+                        }
                     }
                     
                     // Log périodique
-                    if (metrics.episode && metrics.episode % 50 === 0) {
-                        this.log(`Épisode ${metrics.episode}: Récompense=${avgReward.toFixed(2)}, Succès=${successRate.toFixed(1)}%`, 'info');
+                    if (currentEpisode && currentEpisode % 50 === 0) {
+                        this.log(`Épisode ${currentEpisode}/${totalEpisodes}: Récompense=${avgReward.toFixed(2)}, Succès=${successRate.toFixed(1)}%`, 'info');
                     }
                 });
                 
@@ -822,7 +837,7 @@
                     gamma: parseFloat(document.getElementById('gamma').value) || 0.99,
                     batchSize: parseInt(document.getElementById('batchSize').value) || 32,
                     updateFreq: parseInt(document.getElementById('updateFreq').value) || 4,
-                    objective: document.getElementById('objective').value || 'orbit',
+                    objective: document.getElementById('objective').value || 'navigate',
                     trainingMode: document.getElementById('trainingMode').value || 'headless'
                 };
             }
@@ -866,12 +881,13 @@
                 document.getElementById('explorationRate').textContent = (metrics.epsilon || 0).toFixed(3);
                 document.getElementById('trainingLoss').textContent = (metrics.loss || 0).toFixed(4);
                 
-                // Mise à jour de la barre de progression
-                const totalEpisodes = this.getTrainingConfig().episodes;
-                const progress = ((metrics.episode || 0) / totalEpisodes) * 100;
+                // CORRECTION: Utiliser totalEpisodes depuis metrics si disponible, sinon depuis la config
+                const totalEpisodes = metrics.totalEpisodes !== undefined ? metrics.totalEpisodes : this.getTrainingConfig().episodes;
+                const currentEpisode = metrics.episode || 0;
+                const progress = totalEpisodes > 0 ? ((currentEpisode / totalEpisodes) * 100) : 0;
                 document.getElementById('trainingProgress').style.width = `${Math.min(progress, 100)}%`;
-                document.getElementById('progressText').textContent = 
-                    `Épisode ${metrics.episode || 0} / ${totalEpisodes}`;
+                document.getElementById('progressText').textContent =
+                    `Épisode ${currentEpisode} / ${totalEpisodes}`;
                 
                 // Mise à jour des métriques de concurrence TensorFlow.js
                 if (this.trainingOrchestrator && this.trainingOrchestrator.rocketAI && 
@@ -899,15 +915,19 @@
                 
                 this.trainingData.episodes.push(episode);
                 this.trainingData.rewards.push(reward);
-                this.trainingData.losses.push(loss);
+                // CORRECTION: Toujours ajouter la loss, même si elle est 0 (pour afficher la progression)
+                this.trainingData.losses.push(loss || 0);
                 
                 this.rewardChart.data.labels = this.trainingData.episodes;
                 this.rewardChart.data.datasets[0].data = this.trainingData.rewards;
                 this.rewardChart.update('none');
                 
-                this.lossChart.data.labels = this.trainingData.episodes;
-                this.lossChart.data.datasets[0].data = this.trainingData.losses;
-                this.lossChart.update('none');
+                // CORRECTION: S'assurer que le graphique de loss est mis à jour avec les bonnes données
+                if (this.lossChart) {
+                    this.lossChart.data.labels = this.trainingData.episodes;
+                    this.lossChart.data.datasets[0].data = this.trainingData.losses;
+                    this.lossChart.update('none');
+                }
             }
             
             updateTrainingStatistics(metrics) {
@@ -1168,34 +1188,10 @@
                 }
             }
             
-            toggleFollowRocket() {
-                if (this.visualizer && typeof this.visualizer.setFollowRocket === 'function') {
-                    const currentFollow = this.visualizer.camera.followRocket;
-                    this.visualizer.setFollowRocket(!currentFollow);
-                    
-                    const followBtn = document.getElementById('followRocket');
-                    if (!currentFollow) {
-                        followBtn.textContent = '🎯 Suivre fusée ✓';
-                        followBtn.style.background = 'linear-gradient(45deg, #51cf66, #40c057)';
-                        this.log('Mode suivi fusée activé', 'info');
-                    } else {
-                        followBtn.textContent = '🎯 Suivre fusée';
-                        followBtn.style.background = '';
-                        this.log('Mode suivi fusée désactivé', 'info');
-                    }
-                }
-            }
-            
             resetView() {
                 if (this.visualizer && typeof this.visualizer.resetView === 'function') {
                     this.visualizer.resetView();
-                    
-                    // Réinitialiser le bouton suivre fusée
-                    const followBtn = document.getElementById('followRocket');
-                    followBtn.textContent = '🎯 Suivre fusée';
-                    followBtn.style.background = '';
-                    
-                    this.log('Vue réinitialisée sur la Terre', 'info');
+                    this.log('Vue réinitialisée en vue absolue', 'info');
                 }
             }
         }

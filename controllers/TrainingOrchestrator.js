@@ -55,7 +55,7 @@ class TrainingOrchestrator {
         
         // État d'entraînement
         this.trainingState = {
-            currentObjective: 'orbit',
+            currentObjective: 'navigate', // CORRECTION: Premier objectif = navigation point à point sans planètes
             bestModelWeights: null,
             earlyStoppingCounter: 0,
             recentPerformance: []
@@ -100,12 +100,29 @@ class TrainingOrchestrator {
         // Fusionner la configuration utilisateur avec la configuration par défaut
         this.config = { ...this.config, ...userConfig };
         
+        // CORRECTION: S'assurer que maxEpisodes est bien défini et valide
+        if (!this.config.maxEpisodes || this.config.maxEpisodes < 1) {
+            this.config.maxEpisodes = 1000; // Valeur par défaut
+        }
+        
         // Mettre à jour l'objectif actuel si fourni
         if (this.config.objectives && this.config.objectives.length > 0) {
             this.trainingState.currentObjective = this.config.objectives[0];
         }
         
+        // CORRECTION: Réinitialiser les métriques au début de l'entraînement
+        this.metrics.episode = 0;
+        this.metrics.totalSteps = 0;
+        this.metrics.totalReward = 0;
+        this.metrics.successfulEpisodes = 0; // CORRECTION: Réinitialiser le compteur de succès
+        this.metrics.averageRewards = [];
+        this.metrics.losses = [];
+        this.metrics.explorationRates = [];
+        this.metrics.episodeLengths = [];
+        this.metrics.lastEvaluationScore = 0;
+        this.metrics.bestAverageReward = -Infinity;
         this.metrics.trainingStartTime = Date.now();
+        this.metrics.lastCheckpointTime = null;
         this.isTraining = true;
             
             // Initialiser les environnements
@@ -171,82 +188,102 @@ class TrainingOrchestrator {
      */
     async initializeEnvironments() {
         
-        // Configuration pour l'environnement d'entraînement (avec Terre et Lune)
-        // CORRECTION: Utiliser AI_TRAINING pour des positions cohérentes
+        // CORRECTION: Définir aiEnvConfig avant le if/else pour qu'il soit disponible partout
         const aiEnvConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ENVIRONMENT : {
             EARTH_POSITION: { x: 0, y: 0 },
             ROCKET_INITIAL_OFFSET: 50
         };
         
-        // Position initiale de la fusée : sur la surface de la Terre, côté +Y
-        const rocketStartY = aiEnvConfig.EARTH_POSITION.y + CELESTIAL_BODY.RADIUS + aiEnvConfig.ROCKET_INITIAL_OFFSET;
+        // CORRECTION: Configuration différente selon l'objectif d'entraînement
+        let trainingConfig;
         
-        // Calculer l'angle correct pour pointer vers l'extérieur de la Terre (vers le haut)
-        // Si la fusée est au-dessus de la Terre (y positif), elle doit pointer vers le haut (-π/2)
-        // L'angle vers le centre de la Terre depuis la position de la fusée
-        const angleToEarthCenter = Math.atan2(
-            rocketStartY - aiEnvConfig.EARTH_POSITION.y,
-            aiEnvConfig.EARTH_POSITION.x - aiEnvConfig.EARTH_POSITION.x
-        );
-        // Angle perpendiculaire pointant vers l'extérieur (comme dans CollisionHandler)
-        const rocketInitialAngle = angleToEarthCenter + Math.PI / 2;
+        if (this.trainingState.currentObjective === 'navigate') {
+            // Objectif 'navigate' : navigation point à point sans planètes
+            // CORRECTION: Portée doublée - distance augmentée
+            const pointA = { x: 0, y: 0 };
+            const pointB = { x: 100000, y: 100000 }; // CORRECTION: Portée doublée - ~141km (diagonale)
+            
+            // Angle initial pointant vers le point B
+            const dx = pointB.x - pointA.x;
+            const dy = pointB.y - pointA.y;
+            const rocketInitialAngle = Math.atan2(dy, dx);
+            
+            // CORRECTION: Augmenter significativement le nombre de steps pour l'objectif 'navigate'
+            // La simulation DOIT durer 3 fois plus longtemps pour que la fusée atteigne le point rouge
+            const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 150000); // Augmenté à 150000 steps (3x plus long)
+            
+            trainingConfig = {
+                maxStepsPerEpisode: navigateMaxSteps,
+                infiniteFuel: true, // CORRECTION: Carburant infini pour l'objectif 'navigate'
+                rocketInitialState: {
+                    position: { ...pointA },
+                    velocity: { x: 0, y: 0 },
+                    angle: rocketInitialAngle, // Pointant vers le point B
+                    fuel: ROCKET.FUEL_MAX * 6, // CORRECTION: Carburant multiplié par 6 pour la portée doublée (36000)
+                    health: 100,
+                    isLanded: false, // Pas de planète, donc pas d'atterrissage
+                    landedOn: null
+                },
+                universeConfig: {
+                    // Pas de planètes pour cet objectif
+                    celestialBodies: [],
+                    // Point cible pour la navigation
+                    targetPoint: pointB
+                },
+                missionConfig: {
+                    objective: 'navigate',
+                    targetPoint: pointB
+                }
+            };
+        } else {
+            // Configuration par défaut avec Terre et Lune
+            // Position initiale de la fusée : sur la surface de la Terre, côté +Y
+            const rocketStartY = aiEnvConfig.EARTH_POSITION.y + CELESTIAL_BODY.RADIUS + aiEnvConfig.ROCKET_INITIAL_OFFSET;
+            const rocketInitialAngle = -Math.PI / 2; // Pointant vers le haut pour décoller
+            
+            trainingConfig = {
+                maxStepsPerEpisode: this.config.maxStepsPerEpisode,
+                rocketInitialState: {
+                    position: { x: aiEnvConfig.EARTH_POSITION.x, y: rocketStartY },
+                    velocity: { x: 0, y: 0 },
+                    angle: rocketInitialAngle,
+                    fuel: ROCKET.FUEL_MAX,
+                    health: 100,
+                    isLanded: true,
+                    landedOn: 'Terre'
+                },
+                universeConfig: {
+                    celestialBodies: [
+                        {
+                            name: 'Terre',
+                            mass: CELESTIAL_BODY.MASS,
+                            radius: CELESTIAL_BODY.RADIUS,
+                            position: { ...aiEnvConfig.EARTH_POSITION },
+                            color: '#1E88E5'
+                        },
+                        {
+                            name: 'Lune',
+                            mass: CELESTIAL_BODY.MOON.MASS,
+                            radius: CELESTIAL_BODY.MOON.RADIUS,
+                            position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: aiEnvConfig.EARTH_POSITION.y },
+                            color: '#CCCCCC'
+                        }
+                    ]
+                },
+                missionConfig: {
+                    objective: this.trainingState.currentObjective
+                }
+            };
+        }
         
-        const trainingConfig = {
-            maxStepsPerEpisode: this.config.maxStepsPerEpisode,
-            rocketInitialState: {
-                position: { x: aiEnvConfig.EARTH_POSITION.x, y: rocketStartY },
-                velocity: { x: 0, y: 0 },
-                angle: rocketInitialAngle, // CORRECTION: Angle correct pour pointer vers l'extérieur
-                fuel: ROCKET.FUEL_MAX,
-                health: 100
-            },
-            universeConfig: {
-                // Configuration avec Terre et Lune pour l'entraînement
-                // CORRECTION: Terre au centre, Lune en orbite
-                celestialBodies: [
-                    {
-                        name: 'Terre',
-                        mass: CELESTIAL_BODY.MASS,
-                        radius: CELESTIAL_BODY.RADIUS,
-                        position: { ...aiEnvConfig.EARTH_POSITION },
-                        color: '#1E88E5'
-                    },
-                    {
-                        name: 'Lune',
-                        mass: CELESTIAL_BODY.MOON.MASS,
-                        radius: CELESTIAL_BODY.MOON.RADIUS,
-                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: aiEnvConfig.EARTH_POSITION.y },
-                        color: '#CCCCCC'
-                    }
-                ]
-            },
-            missionConfig: {
-                objective: this.trainingState.currentObjective
-            }
-        };
-        
-        // Configuration pour l'environnement d'évaluation (plus réaliste)
-        // Utilise la même configuration de base que l'entraînement pour cohérence
+        // Configuration pour l'environnement d'évaluation
+        // CORRECTION: Utiliser la même configuration que l'entraînement pour cohérence
+        // Pour 'navigate', utiliser la même config (sans planètes)
+        // Pour les autres objectifs, utiliser la config avec Terre et Lune
         const evaluationConfig = {
             ...trainingConfig,
-            universeConfig: {
-                // Configuration complète pour l'évaluation
-                // CORRECTION: Mêmes positions que l'entraînement pour cohérence
-                celestialBodies: [
-                    {
-                        name: 'Terre',
-                        mass: CELESTIAL_BODY.MASS,
-                        radius: CELESTIAL_BODY.RADIUS,
-                        position: { ...aiEnvConfig.EARTH_POSITION }
-                    },
-                    {
-                        name: 'Lune',
-                        mass: CELESTIAL_BODY.MOON.MASS,
-                        radius: CELESTIAL_BODY.MOON.RADIUS,
-                        position: { x: CELESTIAL_BODY.MOON.ORBIT_DISTANCE, y: aiEnvConfig.EARTH_POSITION.y }
-                    }
-                ]
-            }
+            // Pour l'évaluation, on peut utiliser la même config que l'entraînement
+            // ou adapter selon les besoins (pour l'instant, on copie simplement)
         };
         
         // Créer les environnements avec l'EventBus partagé
@@ -352,8 +389,15 @@ class TrainingOrchestrator {
      * Boucle d'entraînement principale
      */
     async trainingLoop() {
+        // CORRECTION: S'assurer que maxEpisodes est bien défini et > 0
+        const maxEpisodes = Math.max(1, this.config.maxEpisodes || 1000);
         
-        for (let episode = 0; episode < this.config.maxEpisodes && this.isTraining; episode++) {
+        for (let episode = 0; episode < maxEpisodes && this.isTraining; episode++) {
+            // Vérifier que l'entraînement n'a pas été arrêté
+            if (!this.isTraining) {
+                break;
+            }
+            
             if (this.isPaused) {
                 await this.waitForResume();
             }
@@ -363,6 +407,11 @@ class TrainingOrchestrator {
             // Exécuter un épisode d'entraînement
             const episodeResult = await this.runTrainingEpisode();
             
+            // Vérifier à nouveau après l'épisode (au cas où runTrainingEpisode aurait modifié isTraining)
+            if (!this.isTraining) {
+                break;
+            }
+            
             // Mettre à jour les métriques
             this.updateMetrics(episodeResult);
             
@@ -371,29 +420,39 @@ class TrainingOrchestrator {
                 this.logProgress();
             }
             
-            // Évaluation périodique
-            if (episode % this.config.evaluationInterval === 0) {
-                await this.evaluateAgent();
+            // Évaluation périodique (avec protection contre les erreurs)
+            if (episode % this.config.evaluationInterval === 0 && episode > 0) {
+                try {
+                    await this.evaluateAgent();
+                } catch (error) {
+                    // Ignorer les erreurs d'évaluation pour ne pas arrêter l'entraînement
+                }
             }
             
-            // Sauvegarde périodique
-            if (episode % this.config.checkpointInterval === 0) {
-                await this.saveCheckpoint();
+            // Sauvegarde périodique (avec protection contre les erreurs)
+            if (episode % this.config.checkpointInterval === 0 && episode > 0) {
+                try {
+                    await this.saveCheckpoint();
+                } catch (error) {
+                    // Ignorer les erreurs de sauvegarde pour ne pas arrêter l'entraînement
+                }
             }
             
-            // Vérification de convergence
-            if (this.checkConvergence()) {
+            // CORRECTION: Vérification de convergence (seulement après PLUS de 100 épisodes)
+            // Utiliser > au lieu de >= pour permettre au moins 100 épisodes complets
+            if (episode > this.config.evaluationInterval && this.checkConvergence()) {
                 break;
             }
             
-            // Early stopping
-            if (this.checkEarlyStopping()) {
+            // Early stopping (seulement après un minimum d'épisodes)
+            if (episode >= this.config.evaluationInterval * 2 && this.checkEarlyStopping()) {
                 break;
             }
             
             // Émission d'événement de progression
             this.eventBus.emit(window.EVENTS.AI.TRAINING_PROGRESS, {
-                episode,
+                episode: episode + 1, // CORRECTION: Afficher le numéro d'épisode commençant à 1 pour l'interface
+                totalEpisodes: maxEpisodes,
                 metrics: this.metrics,
                 config: this.config
             });
@@ -403,8 +462,10 @@ class TrainingOrchestrator {
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
         
-        // Finaliser l'entraînement
-        await this.finalizeTraining();
+        // Finaliser l'entraînement seulement si on a atteint la fin normale
+        if (this.isTraining) {
+            await this.finalizeTraining();
+        }
     }
     
     /**
@@ -526,13 +587,26 @@ class TrainingOrchestrator {
         
         const episodeDuration = Date.now() - startTime;
         
+        // CORRECTION: Récupérer la loss pour l'événement
+        let currentLoss = 0;
+        if (this.rocketAI && !this.rocketAI.isDisposed) {
+            try {
+                const concurrencyMetrics = this.rocketAI.getConcurrencyMetrics();
+                currentLoss = concurrencyMetrics.lastLoss || 0;
+            } catch (error) {
+                // Ignorer les erreurs si l'agent est disposé entre-temps
+                currentLoss = 0;
+            }
+        }
+        
         // Émettre l'événement de fin d'épisode pour la visualisation
         this.eventBus.emit(window.EVENTS.AI.EPISODE_ENDED, {
             episode: this.metrics.episode,
             totalReward,
             steps,
             duration: episodeDuration,
-            success: this.isEpisodeSuccessful(totalReward, steps)
+            success: this.isEpisodeSuccessful(totalReward, steps),
+            loss: currentLoss
         });
         
         return {
@@ -738,8 +812,56 @@ class TrainingOrchestrator {
      * Détermine si un épisode est réussi
      */
     isEpisodeSuccessful(reward, steps) {
-        // Critères de succès : récompense positive et durée raisonnable
-        return reward > 0 && steps < this.config.maxStepsPerEpisode * 0.8;
+        // CORRECTION: Pour l'objectif 'navigate', vérifier si le point cible est atteint
+        if (this.trainingState.currentObjective === 'navigate') {
+            if (this.trainingEnv) {
+                const targetPoint = this.trainingEnv.config?.missionConfig?.targetPoint;
+                if (targetPoint) {
+                    const rocketModel = this.trainingEnv.rocketModel;
+                    if (rocketModel) {
+                        const dx = rocketModel.position.x - targetPoint.x;
+                        const dy = rocketModel.position.y - targetPoint.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // Succès si très proche du point cible (dans un rayon de 5000 mètres)
+                        if (distance < 5000) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Pour 'navigate', si le point n'est pas atteint, ce n'est pas un succès
+            return false;
+        }
+        
+        // CORRECTION: Pour l'objectif 'crash_moon', vérifier si la fusée s'est crashée sur la Lune
+        if (this.trainingState.currentObjective === 'crash_moon') {
+            if (this.trainingEnv) {
+                const rocketModel = this.trainingEnv.rocketModel;
+                if (rocketModel && rocketModel.isDestroyed) {
+                    // Vérifier si le crash a eu lieu sur la Lune
+                    const moon = this.trainingEnv.universeModel?.celestialBodies?.find(body => body.name === 'Lune');
+                    if (moon) {
+                        // Calculer la distance pour confirmer le crash sur la Lune
+                        const dx = rocketModel.position.x - moon.position.x;
+                        const dy = rocketModel.position.y - moon.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const altitude = distance - moon.radius;
+                        
+                        // Crash sur la Lune = succès pour cet objectif (très proche de la surface)
+                        if (altitude < 100 && (rocketModel.landedOn === 'Lune' || rocketModel.attachedTo === 'Lune')) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Pour 'crash_moon', si pas de crash sur la Lune, ce n'est pas un succès
+            return false;
+        }
+        
+        // Critères de succès par défaut : récompense positive significative et durée raisonnable
+        // CORRECTION: Être plus strict sur la récompense (au moins 10 points)
+        return reward >= 10 && steps < this.config.maxStepsPerEpisode * 0.8;
     }
     
     /**
@@ -748,27 +870,41 @@ class TrainingOrchestrator {
     updateMetrics(episodeResult) {
         this.metrics.totalSteps += episodeResult.steps;
         this.metrics.totalReward += episodeResult.totalReward;
-        
+
         if (episodeResult.success) {
             this.metrics.successfulEpisodes++;
         }
-        
+
         // Métriques moyennes (sur les 100 derniers épisodes)
         this.metrics.averageRewards.push(episodeResult.totalReward);
         this.metrics.episodeLengths.push(episodeResult.steps);
-        
+
         // Protection : vérifier que l'agent existe et n'est pas disposé
-        const currentEpsilon = (this.rocketAI && !this.rocketAI.isDisposed) 
-            ? this.rocketAI.config.epsilon 
+        const currentEpsilon = (this.rocketAI && !this.rocketAI.isDisposed)
+            ? this.rocketAI.config.epsilon
             : this.config.epsilonMin;
         this.metrics.explorationRates.push(currentEpsilon);
-        
+
+        // CORRECTION: Collecter la loss depuis RocketAI
+        let currentLoss = 0;
+        if (this.rocketAI && !this.rocketAI.isDisposed) {
+            try {
+                const concurrencyMetrics = this.rocketAI.getConcurrencyMetrics();
+                currentLoss = concurrencyMetrics.lastLoss || 0;
+            } catch (error) {
+                // Ignorer les erreurs si l'agent est disposé entre-temps
+                currentLoss = 0;
+            }
+        }
+        this.metrics.losses.push(currentLoss);
+
         // Limiter la taille des tableaux de métriques
         const maxLength = 100;
         if (this.metrics.averageRewards.length > maxLength) {
             this.metrics.averageRewards.shift();
             this.metrics.episodeLengths.shift();
             this.metrics.explorationRates.shift();
+            this.metrics.losses.shift();
         }
     }
     
@@ -783,7 +919,13 @@ class TrainingOrchestrator {
      * Vérifie la convergence de l'entraînement
      */
     checkConvergence() {
-        if (this.metrics.episode < this.config.evaluationInterval) return false;
+        // CORRECTION: Ne pas activer la convergence trop tôt
+        // Utiliser > au lieu de >= pour permettre au moins 100 épisodes complets
+        if (this.metrics.episode <= this.config.evaluationInterval) return false;
+        if (this.metrics.episode <= 100) return false; // Minimum 100 épisodes avant convergence
+        
+        // Protection contre division par zéro
+        if (this.metrics.episode === 0) return false;
         
         const successRate = this.metrics.successfulEpisodes / this.metrics.episode;
         return successRate >= this.config.targetSuccessRate;
@@ -793,7 +935,9 @@ class TrainingOrchestrator {
      * Vérifie l'early stopping
      */
     checkEarlyStopping() {
+        // CORRECTION: Ne pas activer l'early stopping trop tôt
         if (this.trainingState.recentPerformance.length < 5) return false;
+        if (this.metrics.episode < 200) return false; // Minimum 200 épisodes avant early stopping
         
         // Vérifier si les performances n'augmentent plus
         const recent = this.trainingState.recentPerformance.slice(-5);
@@ -805,7 +949,9 @@ class TrainingOrchestrator {
             this.trainingState.earlyStoppingCounter = 0;
         }
         
-        return this.trainingState.earlyStoppingCounter >= this.config.patience / this.config.evaluationInterval;
+        // CORRECTION: Calculer le seuil correctement
+        const patienceThreshold = Math.ceil(this.config.patience / this.config.evaluationInterval);
+        return this.trainingState.earlyStoppingCounter >= patienceThreshold;
     }
     
     /**
@@ -860,7 +1006,10 @@ class TrainingOrchestrator {
         
         // Calcul des statistiques finales
         const trainingDuration = Date.now() - this.metrics.trainingStartTime;
-        const finalSuccessRate = this.metrics.successfulEpisodes / this.metrics.episode;
+        // CORRECTION: Protection contre division par zéro
+        const finalSuccessRate = (this.metrics.episode > 0) 
+            ? this.metrics.successfulEpisodes / this.metrics.episode 
+            : 0;
         
         const finalStats = {
             episodes: this.metrics.episode,
