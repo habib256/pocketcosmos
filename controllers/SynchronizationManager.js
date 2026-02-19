@@ -6,6 +6,7 @@ class SynchronizationManager {
         this.ROCKET = ROCKET;
         this.PHYSICS = PHYSICS;
         this._lastLandedCheck = null;
+        this._lastLandedEventBody = null; // Tracks which body ROCKET_LANDED was last emitted for
 
         // Je me connecte aux events Matter.js pour rendre le manager autonome
         this.engine = this.physicsController.engine;
@@ -159,6 +160,7 @@ class SynchronizationManager {
                     rocketModel.isLanded = false;
                     rocketModel.landedOn = null;
                     rocketModel.relativePosition = null;
+                    this._lastLandedEventBody = null;
                     // Démarrer le délai de grâce pour empêcher isLanded d'être remis à true trop vite
                     rocketModel.startLiftoffGracePeriod(500);
                     // Appeler handleLiftoff pour l'impulsion, en passant le nom du corps sauvegardé
@@ -244,6 +246,7 @@ class SynchronizationManager {
                  rocketModel.isLanded = false; // Forcer le décollage pour éviter blocage
                  rocketModel.landedOn = null;
                  rocketModel.relativePosition = null;
+                 this._lastLandedEventBody = null;
             }
         } // fin if(rocketModel.isLanded)
 
@@ -384,7 +387,7 @@ class SynchronizationManager {
 
                 // Si c'est un NOUVEL atterrissage (on n'était pas posé, ou sur un autre corps)
                 // OU si le modèle a été mis à jour par CollisionHandler mais que l'événement n'a pas encore été envoyé pour CET atterrissage
-                if (!initialModelIsLanded || initialModelLandedOn !== currentLandedOnBody) {
+                if (!initialModelIsLanded || initialModelLandedOn !== currentLandedOnBody || this._lastLandedEventBody !== currentLandedOnBody) {
                     console.log(`État d'atterrissage DÉTECTÉ et CONFIRMÉ (périodique) sur ${currentLandedOnBody}.`);
                     // Appeler handleLandedOrAttachedRocket pour appliquer la stabilisation immédiatement
                     // et recalculer relativePosition si nécessaire.
@@ -399,6 +402,7 @@ class SynchronizationManager {
 
                         // Émettre l'événement ROCKET_LANDED
                         this.eventBus.emit(EVENTS.ROCKET.LANDED, { landedOn: currentLandedOnBody });
+                        this._lastLandedEventBody = currentLandedOnBody;
                     }
                 } else if (initialModelIsLanded && initialModelLandedOn === currentLandedOnBody) {
                     // On était déjà posé sur ce corps selon le modèle au début de la fonction.
@@ -425,6 +429,7 @@ class SynchronizationManager {
                      rocketModel.isLanded = false;
                      rocketModel.landedOn = null;
                      rocketModel.relativePosition = null;
+                     this._lastLandedEventBody = null;
                  } else {
                      // Décollage actif (géré par handleLandedOrAttachedRocket et la logique de poussée).
                      // Ne rien faire ici pour éviter les conflits.

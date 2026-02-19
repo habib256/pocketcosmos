@@ -761,7 +761,7 @@ class GameController {
         // car les changements de caméra sont pilotés par des événements dans CameraController.
 
         if (this.missionManager && this.rocketModel && !this.rocketModel.isDestroyed) {
-            this.missionManager.checkMissionCompletion(this.rocketModel, this.universeModel);
+            this.missionManager.update(deltaTime, this.rocketModel, this.universeModel);
         }
 
         // Vérifier les conditions de Game Over
