@@ -697,7 +697,21 @@ class HeadlessRocketEnvironment {
         // 5. Progressive Zone Rewards (priorité moyenne)
         const zoneReward = this.calculateZoneReward(currentDistance, config);
         reward += zoneReward;
-        
+
+        // 6. Stabilisation Reward - Bonus pour ralentir près du point B
+        const speed = Math.sqrt(
+            this.rocketModel.velocity.x ** 2 +
+            this.rocketModel.velocity.y ** 2
+        );
+        const distRatio = currentDistance / (this._initialDistanceToTarget || 1);
+        const stabilizeZone = config.STABILIZE_ZONE_RATIO || 0.1;
+        const stabilizeSpeedRef = config.STABILIZE_SPEED_REF || 100;
+        if (distRatio < stabilizeZone) {
+            // Proche du point B : forte récompense pour vitesse basse
+            const stabilReward = Math.max(0, 1 - speed / stabilizeSpeedRef) * (config.DISTANCE_DELTA || 50);
+            reward += stabilReward;
+        }
+
         return reward;
     }
     
@@ -776,29 +790,51 @@ class HeadlessRocketEnvironment {
     
     /**
      * 3. Velocity Control Reward - Récompense pour vitesse optimale
+     * La vitesse cible diminue à l'approche du point B pour forcer le freinage.
      */
     calculateVelocityReward(targetPoint, config) {
         if (!this.rocketModel || !this.rocketModel.velocity) return 0;
-        
+
         const speed = Math.sqrt(
-            this.rocketModel.velocity.x ** 2 + 
+            this.rocketModel.velocity.x ** 2 +
             this.rocketModel.velocity.y ** 2
         );
-        
-        // Récompense gaussienne autour de la vitesse cible
-        const diff = speed - config.VELOCITY_TARGET;
-        const gaussian = Math.exp(-(diff * diff) / (2 * config.VELOCITY_SIGMA * config.VELOCITY_SIGMA));
-        const velocityReward = gaussian * config.VELOCITY_OPTIMAL;
-        
-        // Pénalité si vitesse trop faible ou trop élevée
-        let penalty = 0;
-        if (speed < config.VELOCITY_MIN) {
-            penalty = -0.1 * (config.VELOCITY_MIN - speed) / config.VELOCITY_MIN;
-        } else if (speed > config.VELOCITY_MAX) {
-            penalty = -0.1 * (speed - config.VELOCITY_MAX) / config.VELOCITY_MAX;
+
+        // Vitesse cible adaptative : proportionnelle à la distance restante
+        // Loin → vitesse croisière, Proche → quasi immobile
+        let adaptiveTarget = config.VELOCITY_TARGET;
+        let adaptiveSigma = config.VELOCITY_SIGMA;
+        let adaptiveMax = config.VELOCITY_MAX;
+
+        if (targetPoint && this.rocketModel.position && this._initialDistanceToTarget > 0) {
+            const dx = targetPoint.x - this.rocketModel.position.x;
+            const dy = targetPoint.y - this.rocketModel.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            // Ratio : 1.0 = au point A, 0.0 = au point B
+            const ratio = Math.min(1, distance / this._initialDistanceToTarget);
+
+            // Phase de freinage : en dessous du seuil, réduire la vitesse cible
+            const brakeZone = config.BRAKE_ZONE_RATIO || 0.2;
+            if (ratio < brakeZone) {
+                const brakeRatio = ratio / brakeZone; // 1 au seuil, 0 au point B
+                adaptiveTarget = config.VELOCITY_TARGET * brakeRatio;
+                adaptiveSigma = config.VELOCITY_SIGMA * Math.max(0.2, brakeRatio);
+                adaptiveMax = config.VELOCITY_MAX * Math.max(0.1, brakeRatio);
+            }
         }
-        
-        // Bonus pour vitesse radiale vers la cible
+
+        // Récompense gaussienne autour de la vitesse cible adaptative
+        const diff = speed - adaptiveTarget;
+        const gaussian = Math.exp(-(diff * diff) / (2 * adaptiveSigma * adaptiveSigma));
+        const velocityReward = gaussian * config.VELOCITY_OPTIMAL;
+
+        // Pénalité si vitesse trop élevée (surtout près du point B)
+        let penalty = 0;
+        if (speed > adaptiveMax) {
+            penalty = -0.3 * (speed - adaptiveMax) / adaptiveMax;
+        }
+
+        // Bonus pour vitesse radiale vers la cible (seulement si loin)
         let radialBonus = 0;
         if (targetPoint && this.rocketModel.position) {
             const dx = targetPoint.x - this.rocketModel.position.x;
@@ -807,14 +843,17 @@ class HeadlessRocketEnvironment {
             if (distance > 0) {
                 const targetDirX = dx / distance;
                 const targetDirY = dy / distance;
-                const radialVelocity = this.rocketModel.velocity.x * targetDirX + 
+                const radialVelocity = this.rocketModel.velocity.x * targetDirX +
                                       this.rocketModel.velocity.y * targetDirY;
-                if (radialVelocity > 0) {
+                const ratio = distance / (this._initialDistanceToTarget || 1);
+                // Bonus radial seulement quand on est loin (hors zone de freinage)
+                const brakeZoneR = config.BRAKE_ZONE_RATIO || 0.2;
+                if (radialVelocity > 0 && ratio > brakeZoneR) {
                     radialBonus = (radialVelocity / config.VELOCITY_TARGET) * 0.2;
                 }
             }
         }
-        
+
         return velocityReward + penalty + radialBonus;
     }
     
@@ -1217,16 +1256,20 @@ class HeadlessRocketEnvironment {
     checkNavigateSuccess() {
         const targetPoint = this.config.missionConfig?.targetPoint;
         if (!targetPoint) return false;
-        
-        // Calculer la distance au point cible
+
         const dx = this.rocketModel.position.x - targetPoint.x;
         const dy = this.rocketModel.position.y - targetPoint.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // CORRECTION: Ajuster le seuil de succès selon la distance totale
-        // Pour une distance de ~71km, un seuil de 5km (7%) est raisonnable
-        const SUCCESS_DISTANCE_THRESHOLD = 5000; // 5 km de tolérance
-        return distance < SUCCESS_DISTANCE_THRESHOLD;
+
+        const speed = Math.sqrt(
+            this.rocketModel.velocity.x ** 2 +
+            this.rocketModel.velocity.y ** 2
+        );
+
+        // Succès = proche du point B ET stabilisé (vitesse quasi nulle)
+        const SUCCESS_DISTANCE_THRESHOLD = 3000;
+        const SUCCESS_SPEED_THRESHOLD = 30; // Quasi immobile
+        return distance < SUCCESS_DISTANCE_THRESHOLD && speed < SUCCESS_SPEED_THRESHOLD;
     }
     
     /**

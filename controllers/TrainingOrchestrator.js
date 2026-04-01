@@ -199,35 +199,33 @@ class TrainingOrchestrator {
         
         if (this.trainingState.currentObjective === 'navigate') {
             // Objectif 'navigate' : navigation point à point sans planètes
-            // CORRECTION: Portée doublée - distance augmentée
             const pointA = { x: 0, y: 0 };
-            const pointB = { x: 100000, y: 100000 }; // CORRECTION: Portée doublée - ~141km (diagonale)
-            
-            // Angle initial pointant vers le point B
-            const dx = pointB.x - pointA.x;
-            const dy = pointB.y - pointA.y;
-            const rocketInitialAngle = Math.atan2(dy, dx);
-            
-            // CORRECTION: Augmenter significativement le nombre de steps pour l'objectif 'navigate'
-            // La simulation DOIT durer 3 fois plus longtemps pour que la fusée atteigne le point rouge
-            const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 150000); // Augmenté à 150000 steps (3x plus long)
-            
+            const pointB = { x: 90000, y: 90000 }; // ~127k unités (diagonale)
+
+            // Angle initial aléatoire pour forcer l'IA à s'orienter
+            const rocketInitialAngle = Math.random() * Math.PI * 2;
+
+            // Budget de steps : distance ~127k, vitesse cible ~500 m/s → ~254s → ~15000 steps
+            const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 20000);
+
+            // IMPORTANT: Mettre à jour this.config pour que la boucle d'entraînement (runEpisode)
+            // utilise aussi cette limite, pas seulement l'environnement
+            this.config.maxStepsPerEpisode = navigateMaxSteps;
+
             trainingConfig = {
                 maxStepsPerEpisode: navigateMaxSteps,
-                infiniteFuel: true, // CORRECTION: Carburant infini pour l'objectif 'navigate'
+                infiniteFuel: true,
                 rocketInitialState: {
                     position: { ...pointA },
                     velocity: { x: 0, y: 0 },
-                    angle: rocketInitialAngle, // Pointant vers le point B
-                    fuel: ROCKET.FUEL_MAX * 6, // CORRECTION: Carburant multiplié par 6 pour la portée doublée (36000)
+                    angle: rocketInitialAngle,
+                    fuel: ROCKET.FUEL_MAX,
                     health: 100,
-                    isLanded: false, // Pas de planète, donc pas d'atterrissage
+                    isLanded: false,
                     landedOn: null
                 },
                 universeConfig: {
-                    // Pas de planètes pour cet objectif
                     celestialBodies: [],
-                    // Point cible pour la navigation
                     targetPoint: pointB
                 },
                 missionConfig: {

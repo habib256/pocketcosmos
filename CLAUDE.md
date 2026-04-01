@@ -79,9 +79,10 @@ The EventBus is the heart of inter-module communication:
 
 **Collision Handling**:
 1. Matter.js detects collision
-2. `CollisionHandler` analyzes impact (speed, angle)
-3. Updates `rocketModel.isLanded` or `rocketModel.isCrashed`
+2. `CollisionHandler` analyzes impact (speed, angle, angular velocity) against thresholds in `constants.js`
+3. Updates `rocketModel.isLanded` or `rocketModel.isCrashed`, recalculates relative position on landing
 4. `SynchronizationManager` creates physical constraint to "attach" rocket
+5. Landing triggers `MISSION_COMPLETED` check via `MissionManager`
 
 ## Universe System (Presets & Procedural)
 
@@ -97,6 +98,7 @@ The universe can be loaded from JSON presets or generated procedurally:
 ### World Preset Schema
 
 JSON files in `assets/worlds/` can define:
+- `physics.G`: Override for the gravitational constant (replaces `PHYSICS.G` from `constants.js`)
 - `bodies[]`: Celestial bodies with `hasRings`, `atmosphere { exists, height, color }`
 - `rocket.spawn`: Spawn location (hostName+angle OR position/velocity/angle)
 - `stations[]`: Stations anchored to bodies
@@ -117,13 +119,16 @@ JSON files in `assets/worlds/` can define:
 ## Constants & Configuration
 
 **`constants.js`** is the single source of truth for all magic numbers:
-- Physics constants (`PHYSICS.G`, thresholds)
-- Rocket parameters (`ROCKET.THRUSTER_POWER`, `FUEL_EFFICIENCY`)
-- Universe defaults (`UNIVERSE`)
+- Physics constants (`PHYSICS.G`, thresholds, assisted controls)
+- Rocket parameters (`ROCKET.THRUSTER_POWER`, `FUEL_CONSUMPTION`, `THRUSTER_EFFECTIVENESS`)
+- Celestial body defaults (`CELESTIAL_BODY`) with per-planet/moon parameters
 - Collision categories
-- AI training parameters
+- AI training parameters (`AI_TRAINING` with orbit, landing, navigation rewards, and safety limits)
+- Station parameters (`STATIONS`)
+- Rendering constants (`RENDER`)
+- Particle constants (`PARTICLES`)
 
-World-specific data (body masses, positions) should come from preset JSON files, not constants.
+World-specific data (body masses, positions) should come from preset JSON files, not constants. When a preset is loaded, `GameSetupController.buildWorldFromData()` overrides relevant constants (e.g., `PHYSICS.G`) with values from the preset.
 
 ## Rendering System
 
@@ -147,8 +152,26 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 
 - **Agent**: `RocketAI.js` - Makes piloting decisions
 - **Training**: `TrainingOrchestrator.js` - Manages episodes/rewards
-- **Environment**: `HeadlessRocketEnvironment.js` - Fast simulation without rendering
-- **Visualization**: `TrainingVisualizer.js` - Real-time training metrics
+- **Environment**: `HeadlessRocketEnvironment.js` - Fast simulation without rendering, includes imminent crash detection to accelerate training
+- **Visualization**: `TrainingVisualizer.js` - Real-time training metrics with navigation point display
+
+**Training objectives**:
+- `navigate` - Point-to-point navigation (default): the rocket must fly from point A `(0,0)` to point B `(90000, 90000)` (~127k units diagonal), then **brake and stabilize** at point B. Success requires distance < 3000 AND speed < 30. Random initial angle forces the AI to learn orientation. Budget: 20000 steps, infinite fuel.
+- `orbit` - Achieve stable orbit at target altitude
+- `land` - Soft landing on a celestial body
+- `crash` - (used for crash avoidance training)
+
+**Navigate reward system** (6 components, configured in `AI_TRAINING.NAVIGATE_REWARDS`):
+1. **Delta Distance** (priority high): reward proportional to distance reduction, normalized by initial distance
+2. **Heading Alignment** (priority high): dot product between rocket heading and direction to target
+3. **Velocity Control** (priority medium): gaussian reward around adaptive speed target. In the **braking zone** (< 20% distance remaining, `BRAKE_ZONE_RATIO`), the target speed decreases linearly to 0
+4. **Potential-Based Shaping** (priority low): `gamma * phi(s') - phi(s)` for theoretical convergence
+5. **Progressive Zones** (priority medium): one-time bonuses when crossing distance thresholds (80%, 50%, 20%, 5%)
+6. **Stabilization** (in last 10%, `STABILIZE_ZONE_RATIO`): strong reward for low speed near point B (`max(0, 1 - speed/STABILIZE_SPEED_REF) * DISTANCE_DELTA`)
+
+**Other reward configs** (`AI_TRAINING` in `constants.js`):
+- `REWARDS`: Standard reward values for orbit, landing, and penalties
+- `ORBIT`: Calculated orbital parameters consistent with physics (G=0.0001)
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
@@ -159,8 +182,11 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - Configure training parameters (episodes, learning rate, etc.)
 - Real-time performance graphs
 - Live metrics display
-- Trajectory visualization
+- Trajectory visualization with navigation points (A - DEPART, B - ARRIVEE) and dashed connecting line
+- Adaptive trajectory sampling: keeps full trajectory from start to end by dynamically reducing sample rate
 - Start/stop/pause training controls
+- Follow rocket / reset view (centers between A and B with auto-calculated zoom)
+- TensorFlow.js fallback to CPU backend if WebGL fails
 
 ## Key Events Reference
 
@@ -184,6 +210,7 @@ Here are the most important events flowing through the `EventBus`:
 | `UNIVERSE_LOAD_REQUESTED`    | Request universe load (preset/procedural)              | UI/Debug/AI                       | `GameController`                     |
 | `UNIVERSE_STATE_UPDATED`     | New universe state ready                               | `GameController`/Setup            | Views/Controllers                    |
 | `UNIVERSE_RELOAD_COMPLETED`  | Reload finished and synchronized                       | `GameController`                  | All                                  |
+| `MISSION_COMPLETED` / `MISSION_FAILED` | Mission success or failure                    | `MissionManager`                  | `GameController`, UI                 |
 | `STATION_DOCKED` / `STATION_REFUELED` | Docking and refueling at a station             | `GameController`                  | UI/Audio                             |
 | `system:canvasResized`       | Canvas resize                                          | `RenderingController`             | Camera/Controllers                   |
 | `particles:explosionCompleted`| Explosion animation finished                           | `ParticleController`              | `GameController`                     |
@@ -270,6 +297,8 @@ Since the project doesn't use ES6 modules:
 4. **Thruster power values**: `thruster.power` is absolute value (not percentage). Use `power/maxPower` for ratios.
 5. **Event subscription cleanup**: Controllers should clean up subscriptions on teardown to prevent memory leaks.
 6. **TensorFlow.js tensors**: Always wrap in `tf.tidy()` and manually `dispose()` to prevent memory leaks.
+7. **TensorFlow.js backend**: The training interface includes a fallback mechanism to switch to CPU backend if WebGL fails (prevents SIGILL errors on some systems).
+8. **Landing detection**: Landing triggers mission completion checks. The `CollisionHandler` recalculates relative position upon landing to ensure correct attachment to the celestial body surface.
 
 ## File Structure
 
@@ -289,6 +318,8 @@ Since the project doesn't use ES6 modules:
 ├── main.js            # Initialization logic
 ├── training-interface.html  # AI training web interface
 ├── train.js           # AI training console scripts
+├── favicon.ico        # Browser favicon
+├── favicon.png        # High-res favicon
 ├── CLAUDE.md          # This file - architecture documentation for AI
 └── README.md          # User documentation and controls
 ```

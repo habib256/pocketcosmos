@@ -14,7 +14,9 @@ class TrainingVisualizer {
         this.isActive = false;
         this.rocketTrajectory = [];
         this.allTrajectories = []; // Conserver toutes les trajectoires des épisodes
-        this.maxTrajectoryPoints = 1000; // Limiter pour les performances
+        this.maxTrajectoryPoints = 5000; // Points max par trajectoire
+        this.trajectoryStepCounter = 0; // Compteur de steps pour l'échantillonnage
+        this.trajectorySampleRate = 1; // Enregistrer 1 point tous les N steps (ajusté dynamiquement)
         this.maxTrajectoriesCount = 100; // Nombre max de trajectoires à conserver
         this.cameraInitialized = false; // Flag pour savoir si la caméra a déjà été initialisée
         
@@ -102,7 +104,9 @@ class TrainingVisualizer {
         
         // Commencer une nouvelle trajectoire
         this.rocketTrajectory = [];
-        
+        this.trajectoryStepCounter = 0;
+        this.trajectorySampleRate = 1;
+
         // Mettre à jour les corps célestes si fournis
         if (data && data.celestialBodies && data.celestialBodies.length > 0) {
             this.celestialBodies = data.celestialBodies;
@@ -178,17 +182,22 @@ class TrainingVisualizer {
         if (data.rocket) {
             this.rocketData = data.rocket;
             
-            // Ajouter le point à la trajectoire
+            // Ajouter le point à la trajectoire (échantillonné)
             if (this.rocketData.position) {
-                this.rocketTrajectory.push({
-                    x: this.rocketData.position.x,
-                    y: this.rocketData.position.y,
-                    timestamp: Date.now()
-                });
-                
-                // Limiter la taille de la trajectoire
-                if (this.rocketTrajectory.length > this.maxTrajectoryPoints) {
-                    this.rocketTrajectory.shift();
+                this.trajectoryStepCounter++;
+                if (this.trajectoryStepCounter >= this.trajectorySampleRate) {
+                    this.trajectoryStepCounter = 0;
+                    this.rocketTrajectory.push({
+                        x: this.rocketData.position.x,
+                        y: this.rocketData.position.y
+                    });
+
+                    // Si on dépasse la limite, doubler le taux d'échantillonnage
+                    // et réduire les points existants de moitié (garder 1 sur 2)
+                    if (this.rocketTrajectory.length > this.maxTrajectoryPoints) {
+                        this.trajectorySampleRate *= 2;
+                        this.rocketTrajectory = this.rocketTrajectory.filter((_, i) => i % 2 === 0);
+                    }
                 }
             }
         }
@@ -314,9 +323,22 @@ class TrainingVisualizer {
      * Réinitialiser la vue à la position par défaut
      */
     resetView() {
-        // CORRECTION: Réinitialiser le contrôle manuel du zoom lors de la réinitialisation
         this.camera.manualZoomControl = false;
-        this.initializeCamera();
+        this.camera.followRocket = false;
+
+        // Centrer entre A et B si disponibles
+        if (this.startPoint && this.targetPoint &&
+            isFinite(this.startPoint.x) && isFinite(this.targetPoint.x)) {
+            this.camera.x = (this.startPoint.x + this.targetPoint.x) / 2;
+            this.camera.y = (this.startPoint.y + this.targetPoint.y) / 2;
+            const z = this.calculateNavigateZoom();
+            this.camera.zoom = z;
+            this.camera.targetZoom = z;
+        } else {
+            this.initializeCamera();
+            this.camera.followRocket = false;
+        }
+
         if (this.isActive) {
             this.render();
         }
@@ -346,105 +368,86 @@ class TrainingVisualizer {
     }
     
     /**
-     * Initialiser la caméra pour une vue absolue (pas centrée sur la Terre)
+     * Calcule le zoom idéal pour voir les deux points de navigation avec marge
+     */
+    calculateNavigateZoom() {
+        if (!this.startPoint || !this.targetPoint) return 0.00711;
+        const canvasW = this.canvas.width || 800;
+        const canvasH = this.canvas.height || 600;
+        const dx = Math.abs(this.targetPoint.x - this.startPoint.x);
+        const dy = Math.abs(this.targetPoint.y - this.startPoint.y);
+        const worldSpan = Math.max(dx, dy, 1) * 1.5; // 50% de marge
+        const zoom = Math.min(canvasW, canvasH) / worldSpan;
+        return Math.max(this.camera.minZoom || 0.0001, Math.min(this.camera.maxZoom || 10, zoom));
+    }
+
+    /**
+     * Initialiser la caméra pour une vue absolue
      * @param {boolean} preserveZoom - Si true, préserve le zoom actuel au lieu de le réinitialiser
      */
     initializeCamera(preserveZoom = false) {
-        // CORRECTION: Si on suit la fusée, centrer directement sur elle au lieu du point de départ
-        // Protection contre NaN et valeurs invalides
         const canvasSize = Math.min(this.canvas.width || 400, this.canvas.height || 400);
-        
-        // CORRECTION: Si on suit la fusée et qu'elle a une position, l'utiliser directement
+        const hasNavPoints = this.startPoint && this.targetPoint &&
+            isFinite(this.startPoint.x) && isFinite(this.startPoint.y) &&
+            isFinite(this.targetPoint.x) && isFinite(this.targetPoint.y);
+
         if (this.camera.followRocket && this.rocketData && this.rocketData.position &&
-            typeof this.rocketData.position.x === 'number' && typeof this.rocketData.position.y === 'number' &&
             isFinite(this.rocketData.position.x) && isFinite(this.rocketData.position.y)) {
-            // Centrer directement sur la fusée
             this.camera.x = this.rocketData.position.x;
             this.camera.y = this.rocketData.position.y;
-
             if (!preserveZoom) {
-                // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-                // Si on a des points de navigation, utiliser le zoom pour navigate
-                const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-                this.camera.zoom = defaultZoom;
-                this.camera.targetZoom = defaultZoom;
+                const z = hasNavPoints ? this.calculateNavigateZoom() : 0.00711;
+                this.camera.zoom = z;
+                this.camera.targetZoom = z;
             }
-        } else if (this.startPoint && this.targetPoint &&
-            typeof this.startPoint.x === 'number' && typeof this.startPoint.y === 'number' &&
-            typeof this.targetPoint.x === 'number' && typeof this.targetPoint.y === 'number' &&
-            isFinite(this.startPoint.x) && isFinite(this.startPoint.y) &&
-            isFinite(this.targetPoint.x) && isFinite(this.targetPoint.y)) {
-            // Pour l'objectif 'navigate' sans position de fusée, centrer la vue pour voir les deux points
-            const centerX = (this.startPoint.x + this.targetPoint.x) / 2;
-            const centerY = (this.startPoint.y + this.targetPoint.y) / 2;
-
-            this.camera.x = isFinite(centerX) ? centerX : 0;
-            this.camera.y = isFinite(centerY) ? centerY : 0;
-
+        } else if (hasNavPoints) {
+            // Vue absolue centrée entre A et B
+            this.camera.x = (this.startPoint.x + this.targetPoint.x) / 2;
+            this.camera.y = (this.startPoint.y + this.targetPoint.y) / 2;
             if (!preserveZoom) {
-                // CORRECTION: Zoom par défaut pour le mode navigate (2.7e-3)
-                this.camera.zoom = 0.0027;
-                this.camera.targetZoom = 0.0027;
+                const z = this.calculateNavigateZoom();
+                this.camera.zoom = z;
+                this.camera.targetZoom = z;
             }
         } else if (this.celestialBodies.length === 0) {
-            // Vue absolue centrée sur l'origine (pas de planètes, pas de points de navigation)
             this.camera.x = 0;
             this.camera.y = 0;
             if (!preserveZoom) {
-                // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-                const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-                this.camera.zoom = defaultZoom;
-                this.camera.targetZoom = defaultZoom;
+                this.camera.zoom = 0.00711;
+                this.camera.targetZoom = 0.00711;
             }
         } else {
-            // Il y a des corps célestes mais pas de points de navigation
-            // Centrer sur le premier corps céleste ou l'origine
             const firstBody = this.celestialBodies[0];
-            if (firstBody && firstBody.position && 
-                typeof firstBody.position.x === 'number' && typeof firstBody.position.y === 'number' &&
+            if (firstBody && firstBody.position &&
                 isFinite(firstBody.position.x) && isFinite(firstBody.position.y)) {
                 this.camera.x = firstBody.position.x;
                 this.camera.y = firstBody.position.y;
-                
                 if (!preserveZoom) {
                     const bodyRadius = firstBody.radius || 6371000;
                     const viewRadius = bodyRadius * 8;
                     if (canvasSize > 0 && viewRadius > 0) {
                         this.camera.zoom = (canvasSize * 0.6) / (viewRadius * 2);
                         this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
-                        if (!isFinite(this.camera.zoom)) {
-                            // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-                            const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-                            this.camera.zoom = defaultZoom;
-                        }
-                    } else {
-                        // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-                        const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-                        this.camera.zoom = defaultZoom;
                     }
+                    if (!isFinite(this.camera.zoom)) this.camera.zoom = 0.00711;
                     this.camera.targetZoom = this.camera.zoom;
                 }
             } else {
                 this.camera.x = 0;
                 this.camera.y = 0;
                 if (!preserveZoom) {
-                    // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-                    const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-                    this.camera.zoom = defaultZoom;
-                    this.camera.targetZoom = defaultZoom;
+                    this.camera.zoom = 0.00711;
+                    this.camera.targetZoom = 0.00711;
                 }
             }
         }
-        
-        // CORRECTION: Protection finale contre NaN
+
+        // Protection finale contre NaN
         if (!isFinite(this.camera.x)) this.camera.x = 0;
         if (!isFinite(this.camera.y)) this.camera.y = 0;
-        // CORRECTION: Zoom par défaut selon le mode (navigate: 2.7e-3, autre: 7.11e-3)
-        const defaultZoom = (this.startPoint && this.targetPoint) ? 0.0027 : 0.00711;
-        if (!isFinite(this.camera.zoom)) this.camera.zoom = defaultZoom;
-        if (!isFinite(this.camera.targetZoom)) this.camera.targetZoom = defaultZoom;
-        
-        // CORRECTION: Suivre la fusée par défaut
+        if (!isFinite(this.camera.zoom)) this.camera.zoom = 0.00711;
+        if (!isFinite(this.camera.targetZoom)) this.camera.targetZoom = this.camera.zoom;
+
         this.camera.followRocket = true;
         this.cameraInitialized = true;
     }
@@ -551,72 +554,138 @@ class TrainingVisualizer {
     
     /**
      * Dessiner les points de navigation (A et B) pour l'objectif 'navigate'
+     * Note : le contexte est en coordonnées monde (applyCamera a déjà scalé par zoom).
+     * Les tailles doivent donc être en unités monde.
      */
     renderNavigationPoints() {
-        // Dessiner le point A (départ) si disponible
-        if (this.startPoint) {
+        // Calculer la taille proportionnellement à la distance A-B (~2% de la distance)
+        let abDistance = 5000; // fallback
+        if (this.startPoint && this.targetPoint) {
+            const ddx = this.targetPoint.x - this.startPoint.x;
+            const ddy = this.targetPoint.y - this.startPoint.y;
+            abDistance = Math.sqrt(ddx * ddx + ddy * ddy) || 5000;
+        }
+        const pointRadius = abDistance * 0.03;
+        const lw = abDistance * 0.004;
+        const fs = abDistance * 0.025;
+
+        // Ligne pointillée entre A et B
+        if (this.startPoint && this.targetPoint) {
             this.ctx.save();
-            this.ctx.fillStyle = '#00ff00'; // Vert pour le point de départ
-            this.ctx.strokeStyle = '#00ff00';
-            this.ctx.lineWidth = Math.max(2, 3 / this.camera.zoom);
-            
-            const pointSize = Math.max(15, 20000 * this.camera.zoom);
-            
-            // Cercle extérieur
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            this.ctx.lineWidth = lw * 0.5;
+            this.ctx.setLineDash([lw * 12, lw * 12]);
             this.ctx.beginPath();
-            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointSize, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            // Cercle intérieur
-            this.ctx.fillStyle = '#0a0a0a';
-            this.ctx.beginPath();
-            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointSize * 0.6, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            // Contour
+            this.ctx.moveTo(this.startPoint.x, this.startPoint.y);
+            this.ctx.lineTo(this.targetPoint.x, this.targetPoint.y);
             this.ctx.stroke();
-            
-            // Label "Point A"
-            this.ctx.fillStyle = '#00ff00';
-            const fontSize = Math.max(12, Math.min(20, 18 / this.camera.zoom));
-            this.ctx.font = `bold ${fontSize}px Arial`;
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText('Point A', this.startPoint.x, this.startPoint.y - pointSize - fontSize - 5);
-            
+            this.ctx.setLineDash([]);
             this.ctx.restore();
         }
-        
-        // Dessiner le point B (destination) si disponible
+
+        // Point A (départ)
+        if (this.startPoint) {
+            this.ctx.save();
+
+            // Halo lumineux
+            const gA = this.ctx.createRadialGradient(
+                this.startPoint.x, this.startPoint.y, pointRadius * 0.5,
+                this.startPoint.x, this.startPoint.y, pointRadius * 3
+            );
+            gA.addColorStop(0, 'rgba(0, 255, 100, 0.25)');
+            gA.addColorStop(1, 'rgba(0, 255, 100, 0)');
+            this.ctx.fillStyle = gA;
+            this.ctx.beginPath();
+            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointRadius * 3, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // Anneau extérieur
+            this.ctx.strokeStyle = '#00ff64';
+            this.ctx.lineWidth = lw;
+            this.ctx.beginPath();
+            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointRadius, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Disque intérieur
+            this.ctx.fillStyle = '#00ff64';
+            this.ctx.beginPath();
+            this.ctx.arc(this.startPoint.x, this.startPoint.y, pointRadius * 0.35, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // Croix au centre
+            this.ctx.strokeStyle = '#00ff64';
+            this.ctx.lineWidth = lw * 0.7;
+            const crossA = pointRadius * 0.7;
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.startPoint.x - crossA, this.startPoint.y);
+            this.ctx.lineTo(this.startPoint.x + crossA, this.startPoint.y);
+            this.ctx.moveTo(this.startPoint.x, this.startPoint.y - crossA);
+            this.ctx.lineTo(this.startPoint.x, this.startPoint.y + crossA);
+            this.ctx.stroke();
+
+            // Label
+            this.ctx.fillStyle = '#00ff64';
+            this.ctx.font = `bold ${fs}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.fillText('A - DEPART', this.startPoint.x, this.startPoint.y - pointRadius * 1.5);
+
+            this.ctx.restore();
+        }
+
+        // Point B (destination)
         if (this.targetPoint) {
             this.ctx.save();
-            this.ctx.fillStyle = '#ff6b6b'; // Rouge pour le point d'arrivée
-            this.ctx.strokeStyle = '#ff6b6b';
-            this.ctx.lineWidth = Math.max(2, 3 / this.camera.zoom);
-            
-            const pointSize = Math.max(15, 20000 * this.camera.zoom);
-            
-            // Cercle extérieur avec animation pulsante
-            const pulse = Math.sin(Date.now() / 500) * 0.2 + 1; // Pulsation entre 0.8 et 1.2
+
+            const pulse = Math.sin(Date.now() / 400) * 0.15 + 1;
+
+            // Halo lumineux pulsant
+            const gB = this.ctx.createRadialGradient(
+                this.targetPoint.x, this.targetPoint.y, pointRadius * 0.5,
+                this.targetPoint.x, this.targetPoint.y, pointRadius * 4 * pulse
+            );
+            gB.addColorStop(0, 'rgba(255, 60, 60, 0.3)');
+            gB.addColorStop(0.5, 'rgba(255, 60, 60, 0.1)');
+            gB.addColorStop(1, 'rgba(255, 60, 60, 0)');
+            this.ctx.fillStyle = gB;
             this.ctx.beginPath();
-            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointSize * pulse, 0, Math.PI * 2);
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointRadius * 4 * pulse, 0, Math.PI * 2);
             this.ctx.fill();
-            
-            // Cercle intérieur
-            this.ctx.fillStyle = '#0a0a0a';
+
+            // Double anneau (cible)
+            this.ctx.strokeStyle = '#ff4444';
+            this.ctx.lineWidth = lw;
             this.ctx.beginPath();
-            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointSize * 0.6, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            // Contour
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointRadius * pulse, 0, Math.PI * 2);
             this.ctx.stroke();
-            
-            // Label "Point B"
-            this.ctx.fillStyle = '#ff6b6b';
-            const fontSize = Math.max(12, Math.min(20, 18 / this.camera.zoom));
-            this.ctx.font = `bold ${fontSize}px Arial`;
+            this.ctx.beginPath();
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointRadius * 0.6 * pulse, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Disque intérieur
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.beginPath();
+            this.ctx.arc(this.targetPoint.x, this.targetPoint.y, pointRadius * 0.25 * pulse, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // Croix de visée
+            this.ctx.strokeStyle = '#ff4444';
+            this.ctx.lineWidth = lw * 0.7;
+            const crossB = pointRadius * 1.3 * pulse;
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.targetPoint.x - crossB, this.targetPoint.y);
+            this.ctx.lineTo(this.targetPoint.x + crossB, this.targetPoint.y);
+            this.ctx.moveTo(this.targetPoint.x, this.targetPoint.y - crossB);
+            this.ctx.lineTo(this.targetPoint.x, this.targetPoint.y + crossB);
+            this.ctx.stroke();
+
+            // Label
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.font = `bold ${fs}px Arial`;
             this.ctx.textAlign = 'center';
-            this.ctx.fillText('Point B', this.targetPoint.x, this.targetPoint.y - pointSize * pulse - fontSize - 5);
-            
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.fillText('B - ARRIVEE', this.targetPoint.x, this.targetPoint.y - pointRadius * 1.8 * pulse);
+
             this.ctx.restore();
         }
     }

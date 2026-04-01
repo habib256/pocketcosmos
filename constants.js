@@ -415,31 +415,36 @@ const AI_TRAINING = {
     // Poids ajustés selon les priorités : Haute > Moyenne > Basse
     NAVIGATE_REWARDS: {
         // PRIORITÉ HAUTE - Guidance immédiate et orientation correcte
-        DISTANCE_DELTA: 15.0,        // Delta Distance Reward (priorité haute) - Récompense par mètre rapproché (normalisée)
+        DISTANCE_DELTA: 100.0,       // Delta Distance Reward (priorité haute) - Poids augmenté car normalisé par distance initiale (~141km)
         HEADING_ALIGNMENT: 5.0,      // Heading Alignment Reward (priorité haute) - Alignement directionnel vers la cible
-        
+
         // PRIORITÉ MOYENNE - Efficacité et motivation
         VELOCITY_OPTIMAL: 2.0,       // Velocity Control Reward (priorité moyenne) - Vitesse optimale
-        ZONE: 3.0,                   // Progressive Zone Rewards (priorité moyenne) - Récompenses progressives par zones
-        
+        ZONE: 5.0,                   // Progressive Zone Rewards (priorité moyenne) - Récompenses progressives par zones
+
         // PRIORITÉ BASSE - Optimisation théorique
-        POTENTIAL: 0.5,              // Potential-Based Reward (priorité basse) - Potential-based reward shaping
-        
-        // Paramètres de vitesse
-        VELOCITY_TARGET: 30.0,       // Vitesse cible optimale (m/s)
-        VELOCITY_SIGMA: 15.0,        // Écart-type pour gaussienne de vitesse
-        VELOCITY_MIN: 5.0,           // Vitesse minimale acceptable
-        VELOCITY_MAX: 100.0,         // Vitesse maximale acceptable
-        
+        POTENTIAL: 1.0,              // Potential-Based Reward (priorité basse) - Potential-based reward shaping
+
+        // Paramètres de vitesse (distance A-B ~127k unités, budget ~20k steps)
+        VELOCITY_TARGET: 500.0,      // Vitesse cible optimale (unités/s)
+        VELOCITY_SIGMA: 200.0,       // Écart-type pour gaussienne de vitesse
+        VELOCITY_MIN: 50.0,          // Vitesse minimale acceptable
+        VELOCITY_MAX: 2000.0,        // Vitesse maximale acceptable
+
         // Zones progressives (ratio de distance initiale)
-        ZONE_REWARDS: [5, 10, 20, 50], // Récompenses par zone (croissantes)
+        ZONE_REWARDS: [10, 25, 50, 100], // Récompenses par zone (croissantes, augmentées)
         ZONE_THRESHOLDS: [0.8, 0.5, 0.2, 0.05], // Seuils (80%, 50%, 20%, 5% de distance restante)
-        
+
+        // Stabilisation au point B
+        BRAKE_ZONE_RATIO: 0.2,      // En dessous de 20% de distance, réduire la vitesse cible
+        STABILIZE_ZONE_RATIO: 0.1,  // En dessous de 10%, forte récompense pour vitesse quasi nulle
+        STABILIZE_SPEED_REF: 100,   // Vitesse de référence pour le calcul de stabilisation
+
         // Récompenses de terminaison
-        SUCCESS_REWARD: 1000,        // Récompense finale pour succès
+        SUCCESS_REWARD: 1000,        // Récompense finale pour succès (proche ET stabilisé)
         TIMEOUT_PENALTY: -50,        // Pénalité si timeout
         STEP_PENALTY: -0.001,        // Pénalité par step (réduite pour navigation)
-        
+
         // Potential-based reward shaping
         POTENTIAL_GAMMA: 0.99,       // Facteur de discount pour potential
     },
