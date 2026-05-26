@@ -98,6 +98,9 @@ class PhysicsController {
         this.rocketModel = rocketModel;
         this.universeModel = universeModel;
 
+        // Re-lire G : un preset chargé via UNIVERSE_LOAD_REQUESTED peut avoir muté PHYSICS.G
+        this.gravitationalConstant = this.PHYSICS.G;
+
         // CORRECTION: Nettoyage explicite des anciens corps physiques avant reconstruction
         // Cela évite les fuites mémoire lors du rechargement d'univers
         const previousBodyCount = this.engine.world.bodies ? this.engine.world.bodies.length : 0;

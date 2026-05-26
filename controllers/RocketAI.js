@@ -42,6 +42,7 @@ class RocketAI {
             batchSize: 32,            // Taille du batch d'entraînement
             replayBufferSize: 10000,  // Taille du buffer de replay
             updateFrequency: 4,       // CORRECTION CRITIQUE : 4 pas au lieu de 32 pour plus d'entraînements
+            targetUpdateFrequency: 500, // Synchronisation du target network (DQN) : nettement plus rare que l'entraînement pour stabiliser la cible.
             saveFrequency: 5000       // Fréquence de sauvegarde
         };
         
@@ -304,8 +305,8 @@ class RocketAI {
                 this.train().catch(() => {});
             }
             
-            // Mettre à jour le modèle cible périodiquement
-            if (this.totalSteps % this.config.updateFrequency === 0) {
+            // Mettre à jour le modèle cible périodiquement (cadence indépendante de l'entraînement pour la stabilité DQN)
+            if (this.totalSteps % this.config.targetUpdateFrequency === 0) {
                 this.updateTargetModel();
             }
             

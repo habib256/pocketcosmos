@@ -232,7 +232,7 @@ class InputController {
      * S'assure que l'initialisation n'a lieu qu'une seule fois grâce au drapeau `_keyboardEventsInitialized`.
      */
     initKeyboardEvents() {
-        if (this._keyboardEventsInitialized) { 
+        if (this._keyboardEventsInitialized) {
             console.log(`[InputController] ⚠️ initKeyboardEvents déjà appelé, ignoré`);
             return;
         }
@@ -240,9 +240,30 @@ class InputController {
         this._addTrackedEventListener(window, 'keydown', this._boundKeyDown);
         this._addTrackedEventListener(window, 'keyup', this._boundKeyUp);
         this._addTrackedEventListener(window, 'wheel', this._boundWheel, { passive: false }); // passive: false pour preventDefault sur le zoom
-        
+        // Si le focus est perdu (alt-tab, clic hors fenêtre…), les keyup ne nous parviennent pas :
+        // on relâche explicitement toutes les actions continues pour éviter les propulseurs bloqués en ON.
+        this._addTrackedEventListener(window, 'blur', () => this._releaseAllActiveActions());
+
         this._keyboardEventsInitialized = true;
         console.log(`[InputController] ✅ Listeners clavier attachés`);
+    }
+
+    _releaseAllActiveActions() {
+        if (!this.activeKeyActions || this.activeKeyActions.size === 0) return;
+        const stopEventByAction = {
+            thrustForward: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+            boost: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+            thrustBackward: EVENTS.ROCKET.THRUST_BACKWARD_STOP,
+            rotateLeft: EVENTS.ROCKET.ROTATE_LEFT_STOP,
+            rotateRight: EVENTS.ROCKET.ROTATE_RIGHT_STOP,
+        };
+        for (const actionKey of this.activeKeyActions) {
+            const dashIdx = actionKey.indexOf('-');
+            const actionName = dashIdx >= 0 ? actionKey.slice(0, dashIdx) : actionKey;
+            const stopEvent = stopEventByAction[actionName];
+            if (stopEvent) this.eventBus.emit(stopEvent);
+        }
+        this.activeKeyActions.clear();
     }
     
     /**

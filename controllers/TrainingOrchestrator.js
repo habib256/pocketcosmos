@@ -810,25 +810,12 @@ class TrainingOrchestrator {
      * Détermine si un épisode est réussi
      */
     isEpisodeSuccessful(reward, steps) {
-        // CORRECTION: Pour l'objectif 'navigate', vérifier si le point cible est atteint
+        // Pour l'objectif 'navigate', déléguer à l'environnement pour garantir
+        // une définition unique du succès (distance ET vitesse de stabilisation).
         if (this.trainingState.currentObjective === 'navigate') {
-            if (this.trainingEnv) {
-                const targetPoint = this.trainingEnv.config?.missionConfig?.targetPoint;
-                if (targetPoint) {
-                    const rocketModel = this.trainingEnv.rocketModel;
-                    if (rocketModel) {
-                        const dx = rocketModel.position.x - targetPoint.x;
-                        const dy = rocketModel.position.y - targetPoint.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        
-                        // Succès si très proche du point cible (dans un rayon de 5000 mètres)
-                        if (distance < 5000) {
-                            return true;
-                        }
-                    }
-                }
+            if (this.trainingEnv && typeof this.trainingEnv.checkNavigateSuccess === 'function') {
+                return this.trainingEnv.checkNavigateSuccess();
             }
-            // Pour 'navigate', si le point n'est pas atteint, ce n'est pas un succès
             return false;
         }
         

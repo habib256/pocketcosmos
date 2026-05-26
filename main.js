@@ -315,6 +315,10 @@ function showInstructions() {
     // Action lors du clic sur le bouton : supprimer le panneau et jouer le son.
     const startBtn = instructions.querySelector('#startButton');
     startBtn.onclick = () => {
+        // Verrou anti double-clic : un second clic avant le retrait du panneau
+        // émettrait deux UNIVERSE_LOAD_REQUESTED concurrents.
+        startBtn.onclick = null;
+        startBtn.disabled = true;
         // Émettre le chargement du monde choisi AVANT de retirer l'overlay
         try {
             const select = instructions.querySelector('#worldSelect');

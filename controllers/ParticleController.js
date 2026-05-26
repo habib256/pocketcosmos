@@ -207,14 +207,15 @@ class ParticleController {
      * Met à jour la position, la durée de vie et l'état de chaque particule dans un tableau donné.
      * Supprime les particules mortes du tableau.
      * @param {ParticleModel[]} particles - Un tableau de particules à mettre à jour.
-     * @param {number} deltaTime - Le temps écoulé (actuellement non utilisé par ParticleModel.update).
+     * @param {number} deltaTime - Le temps écoulé en secondes, propagé à `particle.update` pour rester
+     *                              indépendant du taux de rafraîchissement.
      * @private
      */
     updateParticles(particles, deltaTime) {
         for (let i = particles.length - 1; i >= 0; i--) {
             const particle = particles[i];
             // La méthode update de ParticleModel retourne true si la particule est toujours active, false sinon.
-            const isAlive = particle.update(); 
+            const isAlive = particle.update(deltaTime);
             
             if (!isAlive) {
                 particles.splice(i, 1); // Supprimer la particule du tableau.
@@ -449,13 +450,15 @@ class ParticleController {
                 lifetime: lifetime * 60, // Converti en frames.
                 screenSpace: true,
                 isActive: true, // Propriété pour compatibilité avec la logique de suppression.
-                /** Met à jour la particule de célébration. */
-                update() {
-                    this.x += this.vx;
-                    this.y += this.vy;
-                    this.vx *= 0.98; // Applique une légère friction pour ralentir les particules.
-                    this.vy *= 0.98;
-                    this.age++;
+                /** Met à jour la particule de célébration (indépendant de la fréquence d'images). */
+                update(deltaTime) {
+                    const frames = (typeof deltaTime === 'number' && deltaTime > 0) ? deltaTime * 60 : 1;
+                    const decay = Math.pow(0.98, frames);
+                    this.x += this.vx * frames;
+                    this.y += this.vy * frames;
+                    this.vx *= decay;
+                    this.vy *= decay;
+                    this.age += frames;
                     this.alpha = 1 - this.age / this.lifetime; // Fondu en opacité.
                     if (this.alpha < 0) this.alpha = 0;
                     return this.age < this.lifetime; // Reste active tant que la durée de vie n'est pas écoulée.
@@ -509,6 +512,10 @@ class ParticleController {
         if (this.particleSystemModel) {
             this.particleSystemModel.reset(); // Cette méthode devrait vider les tableaux de particules.
         }
+        // Si on reset au milieu d'une explosion (ex: reload monde depuis l'écran de crash),
+        // ces compteurs doivent revenir à zéro pour que la prochaine explosion ne soit pas tronquée.
+        this.activeExplosionParticlesCount = 0;
+        this.explosionInProgress = false;
         this.isSystemPaused = false;
         // console.log("ParticleController: Système de particules réinitialisé."); // Peut être utile pour le débogage.
     }
