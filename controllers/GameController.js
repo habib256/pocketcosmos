@@ -607,6 +607,8 @@ class GameController {
                 this.rocketModel.setAngle(spawn.angle);
                 this.rocketModel.isLanded = true;
                 this.rocketModel.landedOn = host.name;
+                // Sans relativePosition, la fusée ne suit pas le corps quand il orbite.
+                this.rocketModel.updateRelativePosition(host);
                 startLocation = host.name;
             }
         } else if (spawn && spawn.position) {
@@ -624,9 +626,10 @@ class GameController {
                 const rocketStartY = host.position.y + Math.sin(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
                 this.rocketModel.setPosition(rocketStartX, rocketStartY);
                 this.rocketModel.setVelocity(host.velocity.x, host.velocity.y);
-                this.rocketModel.setAngle(angleVersSoleil); 
+                this.rocketModel.setAngle(angleVersSoleil);
                 this.rocketModel.isLanded = true;
                 this.rocketModel.landedOn = host.name;
+                this.rocketModel.updateRelativePosition(host);
                 startLocation = host.name;
             } else {
                 console.error("Impossible de trouver le corps d'accueil pour repositionner la fusée.");
@@ -1007,6 +1010,11 @@ class GameController {
      * @param {{source: 'preset'|'random', url?: string, seed?: number}} opts
      */
     async handleUniverseLoadRequested(opts) {
+        if (this._universeLoadInFlight) {
+            console.warn('[GameController] UNIVERSE_LOAD_REQUESTED ignoré : un chargement est déjà en cours.');
+            return;
+        }
+        this._universeLoadInFlight = true;
         try {
             if (!opts || !opts.source) {
                 console.warn('[GameController] UNIVERSE_LOAD_REQUESTED sans options valides.');
@@ -1035,6 +1043,8 @@ class GameController {
             this.resetWorld(data);
         } catch (e) {
             console.error('[GameController] handleUniverseLoadRequested erreur:', e);
+        } finally {
+            this._universeLoadInFlight = false;
         }
     }
 

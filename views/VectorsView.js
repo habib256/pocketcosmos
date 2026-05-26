@@ -87,9 +87,10 @@ class VectorsView {
                 }
                 this.gravityFieldGrid[ix][iy] = { ax, ay, wx, wy, potential };
 
-                // Suivi min/max potentiel pour la normalisation/coloration des lignes équipotentielles
-                if (potential < minPotential) minPotential = potential;
-                // Ignorer les potentiels infinis qui peuvent survenir au centre exact d'un corps (si r2 ~ 0)
+                // Suivi min/max potentiel pour la normalisation/coloration des lignes équipotentielles.
+                // Ignorer les potentiels infinis qui peuvent survenir au centre exact d'un corps (r ~ 0)
+                // — sans ce garde-fou côté min, log10(-minPotential) divergerait en aval.
+                if (potential < minPotential && isFinite(potential)) minPotential = potential;
                 if (potential > maxPotential && isFinite(potential)) maxPotential = potential;
             }
         }
@@ -419,8 +420,8 @@ class VectorsView {
         for (let ix = 0; ix < gridX; ix++) {
             for (let iy = 0; iy < gridY; iy++) {
                 const p = this.gravityFieldGrid[ix][iy].potential;
-                if (p < minPotential) minPotential = p;
-                // Ignorer Infinity potentiel au centre exact des corps
+                // Ignorer Infinity potentiel au centre exact des corps (côté min comme côté max)
+                if (p < minPotential && isFinite(p)) minPotential = p;
                 if (p > maxPotential && isFinite(p)) maxPotential = p;
             }
         }

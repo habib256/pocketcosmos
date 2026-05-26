@@ -17,23 +17,23 @@ class ParticleModel {
         this.alpha = 1.0;
     }
     
-    update() {
-        // Mise à jour de la position
-        this.x += this.vx;
-        this.y += this.vy;
-        
-        // Mise à jour de la physique
-        this.vx *= 0.98; // Friction de l'air
-        this.vy *= 0.98;
-        
-        // Vieillissement
-        this.age++;
+    update(deltaTime) {
+        // Avancement en "trames équivalentes 60 Hz" : pas de drift visuel selon le taux de rafraîchissement.
+        // vx/vy sont des pixels-par-trame-60Hz et lifetime est exprimé en trames (cf. ParticleController).
+        const frames = (typeof deltaTime === 'number' && deltaTime > 0) ? deltaTime * 60 : 1;
+        const decay = Math.pow(0.98, frames);
+
+        this.x += this.vx * frames;
+        this.y += this.vy * frames;
+
+        this.vx *= decay;
+        this.vy *= decay;
+
+        this.age += frames;
         this.alpha = 1.0 - (this.age / this.lifetime);
-        
-        // Réduction de la taille
-        this.size *= 0.98;
-        
-        // Renvoie true si la particule est encore en vie
+
+        this.size *= decay;
+
         return this.age < this.lifetime;
     }
     

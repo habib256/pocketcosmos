@@ -40,8 +40,10 @@ class StationView {
             }
             ctx.drawImage(this.stationImage, -drawW / 2, -drawH / 2, drawW, drawH);
         } else {
-            // Repli: dessiner l'ancien losange (carré tourné)
-            if (!angleRad) ctx.rotate(Math.PI / 4);
+            // Repli: dessiner l'ancien losange (carré tourné).
+            // On ne veut rajouter la rotation 45° que si aucun angle n'a été fourni :
+            // `!angleRad` ferait un faux positif pour angleRad === 0.
+            if (typeof angleRad !== 'number') ctx.rotate(Math.PI / 4);
             ctx.fillStyle = color || (typeof STATIONS !== 'undefined' ? STATIONS.COLOR : '#00FFCC');
             const half = size / 2;
             ctx.beginPath();
