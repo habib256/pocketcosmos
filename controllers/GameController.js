@@ -520,6 +520,7 @@ class GameController {
             case GameStates.PLAYING:
             case GameStates.CRASH_ANIMATION: // L'update doit aussi tourner pendant l'animation du crash pour les particules
                 this.update(deltaTime);
+                this.emitUpdatedStates();
                 break;
             case GameStates.GAME_OVER:
                 // Pendant l'écran rouge crashé (GAME_OVER), on continue de lire les entrées du gamepad

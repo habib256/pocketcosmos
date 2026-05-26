@@ -220,7 +220,7 @@ class CameraController {
      * @param {number} data.y - La coordonnée Y du pointeur au début du glissement.
      */
     handleCameraStartDrag(data) {
-        if (this.gameController.isPaused) return;
+        if (this.isSystemPaused) return;
         
         this.isDragging = true;
         this.dragStartX = data.x;
@@ -245,7 +245,7 @@ class CameraController {
      * @param {number} data.y - La coordonnée Y actuelle du pointeur.
      */
     handleCameraDrag(data) {
-        if (!this.isDragging || this.gameController.isPaused) return;
+        if (!this.isDragging || this.isSystemPaused) return;
 
         if (this.cameraModel) {
             // Si un drag est détecté ET que la caméra est toujours en mode 'rocket' 
