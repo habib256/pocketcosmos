@@ -56,8 +56,16 @@ class CelestialBodyView {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
 
-        // Effet spécial pour le Soleil : dégradé radial animé du orange au jaune
-        if (body.name === 'Soleil') {
+        // Détection générique de l'étoile centrale (multi-mondes) : c'est soit le corps
+        // identifié comme étoile par UniverseView (sunBodyModel), soit un corps portant un
+        // nom d'étoile connu, soit un corps sans parent (parentBody === null).
+        const STAR_NAMES = ['Soleil', 'Sun', 'Kerbol', 'Star', 'Sol'];
+        const isStar = (sunBodyModel && body === sunBodyModel) ||
+                       STAR_NAMES.includes(body.name) ||
+                       body.parentBody === null;
+
+        // Effet spécial pour l'étoile centrale : dégradé radial animé du orange au jaune
+        if (isStar) {
             // Utiliser le temps pour animer la couleur
             const now = Date.now() / 1000;
             // Oscille entre 0 et 1
@@ -278,25 +286,4 @@ class CelestialBodyView {
         ctx.textBaseline = 'middle';
         ctx.fillText(body.name, screenPos.x, screenPos.y);
     }
-    
-    /**
-     * Fonction utilitaire pour calculer une version légèrement plus claire d'une couleur hexadécimale.
-     * Utilisée pour le contour des corps célestes.
-     * @param {string} hexColor - La couleur au format hexadécimal (ex: '#FF0000').
-     * @returns {string} La couleur éclaircie au format hexadécimal.
-     */
-    getLighterColor(hexColor) {
-        // Convertir la couleur hex en RGB
-        let r = parseInt(hexColor.substr(1, 2), 16);
-        let g = parseInt(hexColor.substr(3, 2), 16);
-        let b = parseInt(hexColor.substr(5, 2), 16);
-        
-        // Éclaircir la couleur
-        r = Math.min(255, r + 40);
-        g = Math.min(255, g + 40);
-        b = Math.min(255, b + 40);
-        
-        // Reconvertir en hex
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    }
-} 
+}

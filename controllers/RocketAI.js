@@ -1,6 +1,11 @@
 // TensorFlow.js est chargé globalement via le script dans index.html
 
 class RocketAI {
+    // CORRECTION (bug #4) : dimension unique du vecteur d'état, partagée par le builder
+    // (buildStateVector), la construction du modèle (inputShape) et le replay buffer.
+    // Toute modification de cette valeur reste cohérente partout via cette constante.
+    static get STATE_SIZE() { return 10; }
+
     constructor(eventBus) {
         // Référence à l'EventBus pour communiquer avec les autres composants
         this.eventBus = eventBus;
@@ -140,11 +145,11 @@ class RocketAI {
     createModel() {
         const model = tf.sequential();
         
-        // Couche d'entrée: 10 paramètres de l'état - AUGMENTÉ de 64 à 128 neurones
+        // Couche d'entrée: STATE_SIZE paramètres de l'état - AUGMENTÉ de 64 à 128 neurones
         model.add(tf.layers.dense({
             units: 128,
             activation: 'relu',
-            inputShape: [10]
+            inputShape: [RocketAI.STATE_SIZE]
         }));
         
         // Normalisation par couches pour stabiliser l'apprentissage
@@ -221,6 +226,20 @@ class RocketAI {
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
         trackSub(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
+
+        // CORRECTION (bug #5) : après un changement de monde, le UniverseModel (et le
+        // RocketModel) sont recréés. Sans réabonnement, this.universeModel reste obsolète.
+        // Le payload de UNIVERSE.STATE_UPDATED est { universeModel, rocketModel }.
+        if (window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
+            trackSub(this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, (data) => {
+                if (data && data.universeModel) {
+                    this.universeModel = data.universeModel;
+                }
+                if (data && data.rocketModel) {
+                    this.rocketModel = data.rocketModel;
+                }
+            }));
+        }
     }
     
     // Activer/désactiver l'agent
@@ -330,89 +349,106 @@ class RocketAI {
         this.totalSteps++;
     }
     
-    // Construire le vecteur d'état à partir des données de la fusée
-    buildState() {
-        if (!this.rocketData || !this.celestialBodyData) {
-            return Array(10).fill(0);
-        }
-        
-        // Vérifier que les propriétés nécessaires existent
-        const requiredRocketProps = ['x', 'y', 'vx', 'vy', 'angle', 'angularVelocity'];
-        const requiredBodyProps = ['x', 'y'];
-        
-        for (const prop of requiredRocketProps) {
-            if (typeof this.rocketData[prop] !== 'number' || !isFinite(this.rocketData[prop])) {
-                return Array(10).fill(0);
-            }
-        }
-        
-        for (const prop of requiredBodyProps) {
-            if (typeof this.celestialBodyData[prop] !== 'number' || !isFinite(this.celestialBodyData[prop])) {
-                return Array(10).fill(0);
-            }
-        }
-        
-        // Calculer la distance au corps céleste
-        const dx = this.rocketData.x - this.celestialBodyData.x;
-        const dy = this.rocketData.y - this.celestialBodyData.y;
+    // CORRECTION (bug #4 - état incohérent training/inférence) :
+    // SOURCE DE VÉRITÉ UNIQUE pour la construction du vecteur d'état (10 dimensions).
+    // Cette fonction statique est appelée par :
+    //   - RocketAI.buildState() (inférence en jeu)
+    //   - TrainingOrchestrator.buildAIState() (apprentissage / évaluation)
+    //   - train.js (diagnostics)
+    // Le vecteur est CONSCIENT DE LA CIBLE (target) : pour 'navigate' on passe le point B,
+    // sinon on passe la position du corps céleste de référence. Les dimensions et les
+    // échelles sont IDENTIQUES quel que soit l'appelant, garantissant la cohérence
+    // entre entraînement et inférence (10 dims = inputShape du DQN).
+    //
+    // @param {object} p - { x, y, vx, vy, angle, angularVelocity, targetX, targetY }
+    // @return {number[]} Vecteur d'état de dimension RocketAI.STATE_SIZE (10)
+    static buildStateVector(p) {
+        const STATE_SIZE = RocketAI.STATE_SIZE;
+        if (!p) return Array(STATE_SIZE).fill(0);
+
+        // Échelles de normalisation (cohérentes pour tous les appelants)
+        const POSITION_SCALE = 150000;     // ~150k unités (couvre la diagonale A-B ~127k sans saturer)
+        const VELOCITY_SCALE = 1000;       // 1000 unités/s
+        const ANGULAR_VEL_SCALE = 10;      // ±10 rad/s
+        const DISTANCE_SCALE = 150000;     // même échelle que POSITION_SCALE (distance non saturée)
+
+        // Sécurisation des entrées
+        const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : 0;
+        const x = num(p.x);
+        const y = num(p.y);
+        const vx = Math.max(-2000, Math.min(2000, num(p.vx)));
+        const vy = Math.max(-2000, Math.min(2000, num(p.vy)));
+        const angle = num(p.angle);
+        const angularVelocity = Math.max(-50, Math.min(50, num(p.angularVelocity)));
+        const targetX = num(p.targetX);
+        const targetY = num(p.targetY);
+
+        // Vecteur vers la cible
+        const dx = targetX - x;
+        const dy = targetY - y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Vérifier que la distance est valide et non nulle
-        if (!isFinite(distance) || distance === 0) {
-            return Array(10).fill(0);
-        }
-        
-        // Calculer l'angle entre la fusée et le corps céleste
-        const angleToBody = Math.atan2(dy, dx);
-        
-        // Calculer la différence d'angle par rapport à l'angle tangent à l'orbite
-        const tangentAngle = angleToBody + Math.PI / 2;
-        let angleDiff = (tangentAngle - this.rocketData.angle) % (2 * Math.PI);
-        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-        
-        // Calculer la vitesse radiale et tangentielle
-        const radialVelocity = (this.rocketData.vx * dx / distance) + (this.rocketData.vy * dy / distance);
-        const tangentialVelocity = (this.rocketData.vx * -dy / distance) + (this.rocketData.vy * dx / distance);
-        
-        // Construire le vecteur d'état (10 dimensions) avec normalisation sécurisée
-        // CORRECTION CRITIQUE : Normalisation physiquement cohérente pour éviter gradients explosifs
-        const POSITION_SCALE = 100000;     // 100 km max
-        const VELOCITY_SCALE = 1000;       // 1000 m/s max (3.6 km/h)
-        const ANGLE_SCALE = Math.PI;       // ±π radians
-        const ANGULAR_VEL_SCALE = 10;      // ±10 rad/s max
-        const DISTANCE_SCALE = 100000;     // 100 km max
-        
-        // CORRECTION : Sécurisation des valeurs d'entrée AVANT normalisation
-        const safeDistance = Math.max(100, Math.min(distance, 1000000)); // Entre 100m et 1000km
-        const safeDx = Math.max(-500000, Math.min(500000, dx)); // ±500km max
-        const safeDy = Math.max(-500000, Math.min(500000, dy)); // ±500km max
-        const safeVx = Math.max(-2000, Math.min(2000, this.rocketData.vx)); // ±2000 m/s max
-        const safeVy = Math.max(-2000, Math.min(2000, this.rocketData.vy)); // ±2000 m/s max
-        const safeAngle = ((this.rocketData.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); // [0, 2π]
-        const safeAngularVel = Math.max(-50, Math.min(50, this.rocketData.angularVelocity)); // ±50 rad/s max
-        
+
+        // Direction vers la cible (normalisée) - sûre si distance nulle
+        const dirX = distance > 0 ? dx / distance : 0;
+        const dirY = distance > 0 ? dy / distance : 0;
+
+        // Cap de la fusée (heading) et alignement avec la direction vers la cible
+        const headX = Math.cos(angle);
+        const headY = Math.sin(angle);
+        const headingAlignment = (distance > 0) ? (headX * dirX + headY * dirY) : 0; // [-1, 1]
+
+        // Vitesse radiale vers la cible (positif = rapprochement)
+        const radialVelocity = vx * dirX + vy * dirY;
+
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
         const state = [
-            safeDx / POSITION_SCALE,                              // Position relative X [-5, +5]
-            safeDy / POSITION_SCALE,                              // Position relative Y [-5, +5]
-            safeVx / VELOCITY_SCALE,                              // Vitesse X [-2, +2]
-            safeVy / VELOCITY_SCALE,                              // Vitesse Y [-2, +2]
-            (safeAngle - Math.PI) / ANGLE_SCALE,                  // Angle normalisé [-1, +1]
-            safeAngularVel / ANGULAR_VEL_SCALE,                   // Vitesse angulaire [-5, +5]
-            Math.min(10, safeDistance / DISTANCE_SCALE),          // Distance [0, 10]
-            Math.max(-1, Math.min(1, angleDiff / ANGLE_SCALE)),   // Angle vers cible [-1, +1]
-            Math.max(-2, Math.min(2, radialVelocity / VELOCITY_SCALE)),     // Vitesse radiale [-2, +2]
-            Math.max(-2, Math.min(2, tangentialVelocity / VELOCITY_SCALE))  // Vitesse tangentielle [-2, +2]
+            clamp(dx / POSITION_SCALE, -10, 10),                 // 0: dx vers cible
+            clamp(dy / POSITION_SCALE, -10, 10),                 // 1: dy vers cible
+            clamp(vx / VELOCITY_SCALE, -2, 2),                   // 2: vitesse X
+            clamp(vy / VELOCITY_SCALE, -2, 2),                   // 3: vitesse Y
+            Math.sin(angle),                                      // 4: orientation (sin) [-1, 1]
+            Math.cos(angle),                                      // 5: orientation (cos) [-1, 1]
+            clamp(angularVelocity / ANGULAR_VEL_SCALE, -5, 5),   // 6: vitesse angulaire
+            clamp(distance / DISTANCE_SCALE, 0, 10),             // 7: distance à la cible (non saturée)
+            clamp(radialVelocity / VELOCITY_SCALE, -2, 2),       // 8: vitesse radiale vers cible
+            clamp(headingAlignment, -1, 1)                       // 9: alignement du cap vers la cible
         ];
-        
-        // Validation renforcée avec détection de valeurs aberrantes
+
+        // Validation finale (toute valeur aberrante => état neutre)
         for (let i = 0; i < state.length; i++) {
             if (!isFinite(state[i]) || Math.abs(state[i]) > 10) {
-                return Array(10).fill(0);
+                return Array(STATE_SIZE).fill(0);
             }
         }
-        
+
         return state;
+    }
+
+    // Construire le vecteur d'état à partir des données de la fusée (inférence en jeu)
+    // CORRECTION (bug #4) : délègue à la source de vérité unique RocketAI.buildStateVector.
+    buildState() {
+        if (!this.rocketData || !this.celestialBodyData) {
+            return Array(RocketAI.STATE_SIZE).fill(0);
+        }
+
+        // Cible : en navigation on viserait le point B ; en jeu (orbite/atterrissage),
+        // la cible de référence est le corps céleste courant.
+        const targetX = (typeof this.rocketData.targetX === 'number')
+            ? this.rocketData.targetX : this.celestialBodyData.x;
+        const targetY = (typeof this.rocketData.targetY === 'number')
+            ? this.rocketData.targetY : this.celestialBodyData.y;
+
+        return RocketAI.buildStateVector({
+            x: this.rocketData.x,
+            y: this.rocketData.y,
+            vx: this.rocketData.vx,
+            vy: this.rocketData.vy,
+            angle: this.rocketData.angle,
+            angularVelocity: this.rocketData.angularVelocity,
+            targetX,
+            targetY
+        });
     }
     
     // Choisir une action en fonction de l'état courant
@@ -431,7 +467,7 @@ class RocketAI {
             // Exploitation: meilleure action selon le modèle
             try {
                 return tf.tidy(() => {
-                    const stateTensor = tf.tensor2d([state], [1, 10]);
+                    const stateTensor = tf.tensor2d([state], [1, RocketAI.STATE_SIZE]);
                     const prediction = this.model.predict(stateTensor);
                     return prediction.argMax(1).dataSync()[0];
                 });
@@ -443,6 +479,16 @@ class RocketAI {
     
     // Calculer la récompense en fonction de l'état actuel
     calculateReward() {
+        // CORRECTION (bug #9) : cette fonction implémente une récompense ORBITE codée en dur.
+        // Elle n'est utilisée qu'en mode jeu (step()). Pour ne pas tromper l'agent lorsqu'un
+        // autre objectif est actif (ex: 'navigate'), on ne l'applique QUE si currentObjective
+        // est 'orbit'. Pour les autres objectifs, l'entraînement réel passe par
+        // HeadlessRocketEnvironment.calculateReward (récompense spécifique à l'objectif),
+        // donc ici on renvoie une récompense neutre.
+        if (this.currentObjective !== 'orbit') {
+            return 0;
+        }
+
         // Vérifier que les données nécessaires sont disponibles
         if (!this.rocketData || !this.celestialBodyData) {
             return -1;
@@ -546,7 +592,7 @@ class RocketAI {
                 state: this.lastState,
                 action: this.lastAction,
                 reward: -100,
-                nextState: Array(10).fill(0),  // État terminal
+                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
                 done: true
             });
             
@@ -578,7 +624,7 @@ class RocketAI {
                 state: this.lastState,
                 action: this.lastAction,
                 reward: 100,
-                nextState: Array(10).fill(0),  // État terminal
+                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
                 done: true
             });
             
@@ -639,16 +685,17 @@ class RocketAI {
             });
             
             // Extraire les états, actions, récompenses, etc. du batch
+            const STATE_SIZE = RocketAI.STATE_SIZE;
             const states = batch.map(exp => {
-                if (!Array.isArray(exp.state) || exp.state.length !== 10) {
-                    return Array(10).fill(0);
+                if (!Array.isArray(exp.state) || exp.state.length !== STATE_SIZE) {
+                    return Array(STATE_SIZE).fill(0);
                 }
                 return exp.state.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
             });
-            
+
             const nextStates = batch.map(exp => {
-                if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
-                    return Array(10).fill(0);
+                if (!Array.isArray(exp.nextState) || exp.nextState.length !== STATE_SIZE) {
+                    return Array(STATE_SIZE).fill(0);
                 }
                 return exp.nextState.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
             });
@@ -661,7 +708,7 @@ class RocketAI {
             const totalStateValues = states.reduce((sum, state) => sum + state.length, 0);
             const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
             
-            if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
+            if (totalStateValues !== this.config.batchSize * STATE_SIZE || totalNextStateValues !== this.config.batchSize * STATE_SIZE) {
                 return;
             }
             
@@ -675,7 +722,7 @@ class RocketAI {
             const localModel = this.model;
             const localTargetModel = this.targetModel;
             
-            qValues = tf.tidy(() => localModel.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
+            qValues = tf.tidy(() => localModel.predict(tf.tensor2d(states, [this.config.batchSize, STATE_SIZE])));
             
             // Vérifier après la première opération
             if (this.isDisposed) {
@@ -683,7 +730,7 @@ class RocketAI {
                 return;
             }
             
-            nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, 10])));
+            nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, STATE_SIZE])));
             
             // Extraire les valeurs dans JavaScript
             const qValuesData = qValues.arraySync();
@@ -715,7 +762,7 @@ class RocketAI {
             }
             
             // Créer les tenseurs d'entraînement
-            xs = tf.tensor2d(states, [this.config.batchSize, 10]);
+            xs = tf.tensor2d(states, [this.config.batchSize, STATE_SIZE]);
             ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
             
             // Entraîner le modèle avec la référence locale

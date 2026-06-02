@@ -221,13 +221,19 @@ async function testEvaluationMode() {
     try {
         const eventBus = new EventBus();
         const rocketAI = new RocketAI(eventBus);
-        
+
+        // CORRECTION (bug #8) : attendre que le modèle soit prêt AVANT de forcer epsilon=0.
+        // Sinon act() renvoie des actions aléatoires (!modelReady) et fausse le diagnostic.
+        if (typeof rocketAI.waitForReady === 'function') {
+            await rocketAI.waitForReady();
+        }
+
         // Sauvegarder epsilon actuel et le mettre à 0
         const originalEpsilon = rocketAI.config.epsilon;
         rocketAI.config.epsilon = 0.0;
-        
+
         console.log(`Epsilon forcé à 0 (was ${originalEpsilon.toFixed(3)})`);
-        
+
         // Créer un environnement de test
         const testEnv = new HeadlessRocketEnvironment({
             maxStepsPerEpisode: 1000,
@@ -249,20 +255,19 @@ async function testEvaluationMode() {
             let steps = 0;
             
             while (!done && steps < 1000) {
-                // Construire l'état pour l'IA
-                const aiState = [
-                    (state.rocketX || 0) / 10000,
-                    (state.rocketY || 0) / 10000,
-                    (state.rocketVX || 0) / 100,
-                    (state.rocketVY || 0) / 100,
-                    (state.rocketAngle || 0) / Math.PI,
-                    (state.rocketAngularVelocity || 0) / 1,
-                    Math.min(Math.sqrt((state.rocketX || 0)**2 + (state.rocketY || 0)**2) / 10000, 10),
-                    Math.atan2(state.rocketY || 0, state.rocketX || 0) / Math.PI,
-                    0, // Vitesse radiale (approximation)
-                    0  // Vitesse tangentielle (approximation)
-                ];
-                
+                // CORRECTION (bug #8 / #4) : utiliser le builder d'état UNIFIÉ pour que
+                // le diagnostic reflète exactement la normalisation vue à l'entraînement.
+                const aiState = RocketAI.buildStateVector({
+                    x: state.rocketX || 0,
+                    y: state.rocketY || 0,
+                    vx: state.rocketVX || 0,
+                    vy: state.rocketVY || 0,
+                    angle: state.rocketAngle || 0,
+                    angularVelocity: state.rocketAngularVelocity || 0,
+                    targetX: 0, // pas d'objectif navigate dans ce test : cible à l'origine
+                    targetY: 0
+                });
+
                 // Action de l'IA (exploitation pure)
                 const actionIndex = rocketAI.act(aiState);
                 
@@ -320,7 +325,13 @@ async function diagnosticComplet() {
     try {
         const eventBus = new EventBus();
         const rocketAI = new RocketAI(eventBus);
-        
+
+        // CORRECTION (bug #8) : attendre l'initialisation du modèle avant les tests qui
+        // appellent rocketAI.model.predict (sinon model peut être indéfini / non prêt).
+        if (typeof rocketAI.waitForReady === 'function') {
+            await rocketAI.waitForReady();
+        }
+
         // Test 1: Configuration epsilon
         console.log('\n1️⃣ TEST DE LA DÉCROISSANCE D\'EPSILON:');
         console.log(`   Epsilon initial: ${rocketAI.config.epsilon}`);

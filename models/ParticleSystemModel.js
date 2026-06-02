@@ -185,10 +185,7 @@ class ParticleSystemModel {
         }
         this.debrisParticles = [];
 
-        // Vider également les particules de texte et de célébration si elles existent
-        if (this.textParticles) {
-            this.textParticles = [];
-        }
+        // Vider également les particules de célébration si elles existent
         if (this.celebrationParticles) {
             this.celebrationParticles = [];
         }

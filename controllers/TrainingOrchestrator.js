@@ -34,7 +34,12 @@ class TrainingOrchestrator {
             logInterval: 50,
             
             // Objectifs d'entraînement
-            objectives: ['orbit', 'land', 'explore']
+            // CORRECTION (bug défaut objectif): la doc décrit 'navigate' comme objectif par
+            // défaut. L'ancien défaut ['orbit','land','explore'] écrasait
+            // trainingState.currentObjective='navigate' quand startTraining était appelé sans
+            // objectives explicites. L'UI passe ses propres objectives, donc ce défaut ne
+            // s'applique qu'en l'absence de configuration utilisateur.
+            objectives: ['navigate']
         };
         
         // Métriques d'entraînement
@@ -637,39 +642,34 @@ class TrainingOrchestrator {
     
     /**
      * Construit l'état au format attendu par RocketAI
+     * CORRECTION (bug #4) : délègue à la source de vérité unique RocketAI.buildStateVector
+     * pour garantir une normalisation et une dimension (10) IDENTIQUES entre entraînement,
+     * évaluation et inférence. L'état est CONSCIENT DE LA CIBLE B (pour 'navigate'), sinon
+     * la cible vaut (0,0) (corps de référence à l'origine pour les autres objectifs headless).
      */
     buildAIState(environmentState) {
+        const STATE_SIZE = (typeof RocketAI !== 'undefined' && RocketAI.STATE_SIZE) ? RocketAI.STATE_SIZE : 10;
+
         // Vérifier que environmentState existe
         if (!environmentState || typeof environmentState !== 'object') {
-            return Array(10).fill(0);
+            return Array(STATE_SIZE).fill(0);
         }
-        
-        // Adapter l'état de l'environnement au format RocketAI
-        // (position, vitesse, angle, etc. normalisés)
-        const rawState = [
-            (environmentState.rocketX || 0) / 100000,  // Position X normalisée
-            (environmentState.rocketY || 0) / 100000,  // Position Y normalisée
-            (environmentState.rocketVX || 0) / 100,    // Vitesse X normalisée
-            (environmentState.rocketVY || 0) / 100,    // Vitesse Y normalisée
-            (environmentState.rocketAngle || 0) / (2 * Math.PI), // Angle normalisé
-            (environmentState.rocketAngularVelocity || 0) / 10,  // Vitesse angulaire normalisée
-            (environmentState.rocketFuel || 0) / (ROCKET?.FUEL_MAX || 1000), // Carburant normalisé
-            (environmentState.rocketHealth || 100) / 100,       // Santé normalisée
-            // Distance au corps céleste le plus proche (approximative avec la position)
-            Math.min(Math.sqrt((environmentState.rocketX || 0)**2 + (environmentState.rocketY || 0)**2) / 10000, 1),
-            // Angle vers le corps céleste (approximatif)
-            Math.atan2(environmentState.rocketY || 0, environmentState.rocketX || 0) / (2 * Math.PI)
-        ];
-        
-        // Vérifier et nettoyer l'état pour s'assurer que tous les éléments sont des nombres finis
-        const cleanState = rawState.map((val) => {
-            if (typeof val !== 'number' || !isFinite(val)) {
-                return 0;
-            }
-            return Math.max(-10, Math.min(10, val));
+
+        // Récupérer la cible : point B pour 'navigate', sinon origine (0,0)
+        const targetPoint = this.config?.missionConfig?.targetPoint
+            || (this.trainingEnv && this.trainingEnv.config?.missionConfig?.targetPoint)
+            || { x: 0, y: 0 };
+
+        return RocketAI.buildStateVector({
+            x: environmentState.rocketX || 0,
+            y: environmentState.rocketY || 0,
+            vx: environmentState.rocketVX || 0,
+            vy: environmentState.rocketVY || 0,
+            angle: environmentState.rocketAngle || 0,
+            angularVelocity: environmentState.rocketAngularVelocity || 0,
+            targetX: targetPoint.x,
+            targetY: targetPoint.y
         });
-        
-        return cleanState;
     }
     
     /**
@@ -743,7 +743,8 @@ class TrainingOrchestrator {
                 }
                 
                 totalScore += episodeReward;
-                if (this.isEpisodeSuccessful(episodeReward, steps)) {
+                // CORRECTION (bug eval): évaluer le succès sur l'environnement d'évaluation
+                if (this.isEpisodeSuccessful(episodeReward, steps, this.evaluationEnv)) {
                     successCount++;
                 }
                 
@@ -808,24 +809,30 @@ class TrainingOrchestrator {
     
     /**
      * Détermine si un épisode est réussi
+     * @param {number} reward - Récompense cumulée de l'épisode
+     * @param {number} steps - Nombre de pas effectués
+     * @param {HeadlessRocketEnvironment} [env] - CORRECTION (bug eval): l'environnement réellement
+     *   utilisé pour l'épisode (trainingEnv en apprentissage, evaluationEnv en évaluation).
+     *   Le succès doit être évalué sur CET environnement, sinon le taux de succès d'évaluation
+     *   est calculé sur l'état du mauvais environnement.
      */
-    isEpisodeSuccessful(reward, steps) {
+    isEpisodeSuccessful(reward, steps, env = this.trainingEnv) {
         // Pour l'objectif 'navigate', déléguer à l'environnement pour garantir
         // une définition unique du succès (distance ET vitesse de stabilisation).
         if (this.trainingState.currentObjective === 'navigate') {
-            if (this.trainingEnv && typeof this.trainingEnv.checkNavigateSuccess === 'function') {
-                return this.trainingEnv.checkNavigateSuccess();
+            if (env && typeof env.checkNavigateSuccess === 'function') {
+                return env.checkNavigateSuccess();
             }
             return false;
         }
-        
+
         // CORRECTION: Pour l'objectif 'crash_moon', vérifier si la fusée s'est crashée sur la Lune
         if (this.trainingState.currentObjective === 'crash_moon') {
-            if (this.trainingEnv) {
-                const rocketModel = this.trainingEnv.rocketModel;
+            if (env) {
+                const rocketModel = env.rocketModel;
                 if (rocketModel && rocketModel.isDestroyed) {
                     // Vérifier si le crash a eu lieu sur la Lune
-                    const moon = this.trainingEnv.universeModel?.celestialBodies?.find(body => body.name === 'Lune');
+                    const moon = env.universeModel?.celestialBodies?.find(body => body.name === 'Lune');
                     if (moon) {
                         // Calculer la distance pour confirmer le crash sur la Lune
                         const dx = rocketModel.position.x - moon.position.x;

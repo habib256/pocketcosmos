@@ -185,11 +185,6 @@ class ParticleController {
         // Mettre à jour les particules de débris (ex: explosions).
         this.updateParticles(this.particleSystemModel.debrisParticles, deltaTime); // deltaTime n'est pas utilisé
 
-        // Mettre à jour les particules de texte (si utilisées).
-        if (this.particleSystemModel.textParticles && this.particleSystemModel.textParticles.length > 0) {
-            this.updateParticles(this.particleSystemModel.textParticles, deltaTime); // deltaTime n'est pas utilisé
-        }
-
         // Mettre à jour les particules de célébration (si utilisées).
         if (this.particleSystemModel.celebrationParticles && this.particleSystemModel.celebrationParticles.length > 0) {
             this.updateParticles(this.particleSystemModel.celebrationParticles, deltaTime); // deltaTime n'est pas utilisé
@@ -476,6 +471,83 @@ class ParticleController {
     }
 
     /**
+     * Ajoute une salve de particules festives en COORDONNÉES ÉCRAN autour d'un point écran.
+     * Contrairement à createExplosion(), ces particules vont dans celebrationParticles
+     * (rendues en screen-space) et NE touchent PAS debrisParticles ni le compteur
+     * activeExplosionParticlesCount. Cela évite :
+     *  - le mauvais positionnement (coordonnées écran interprétées en monde) ;
+     *  - la corruption du compteur d'explosion (couplage célébration <-> crash).
+     * @param {number} centerX - Centre X écran.
+     * @param {number} centerY - Centre Y écran.
+     * @param {number} count - Nombre de particules.
+     * @param {number} speed - Vitesse de base.
+     * @param {number} size - Taille de base.
+     * @param {number} lifetime - Durée de vie en secondes.
+     * @param {string} colorStart - Couleur de départ.
+     * @param {string} colorEnd - Couleur de fin (interpolée).
+     * @private
+     */
+    _addScreenSpaceCelebrationBurst(centerX, centerY, count, speed, size, lifetime, colorStart, colorEnd) {
+        if (!this.particleSystemModel.celebrationParticles) {
+            this.particleSystemModel.celebrationParticles = [];
+        }
+        const startRGB = ParticleController._hexToRgb(colorStart);
+        const endRGB = ParticleController._hexToRgb(colorEnd);
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const pSpeed = speed * (0.5 + Math.random() * 0.5);
+            const vx = Math.cos(angle) * pSpeed;
+            const vy = Math.sin(angle) * pSpeed;
+            const pSize = size * (0.5 + Math.random() * 0.5);
+            const pLifetime = lifetime * (0.7 + Math.random() * 0.3) * 60; // frames
+            const particle = {
+                x: centerX,
+                y: centerY,
+                vx,
+                vy,
+                size: pSize,
+                alpha: 1,
+                age: 0,
+                lifetime: pLifetime,
+                screenSpace: true,
+                isActive: true,
+                _startRGB: startRGB,
+                _endRGB: endRGB,
+                // Couleur interpolée + alpha, utilisée par le rendu screen-space (champ `color`).
+                color: `rgb(${startRGB.r}, ${startRGB.g}, ${startRGB.b})`,
+                update(deltaTime) {
+                    const frames = (typeof deltaTime === 'number' && deltaTime > 0) ? deltaTime * 60 : 1;
+                    const decay = Math.pow(0.98, frames);
+                    this.x += this.vx * frames;
+                    this.y += this.vy * frames;
+                    this.vx *= decay;
+                    this.vy *= decay;
+                    this.age += frames;
+                    this.alpha = Math.max(0, Math.min(1, 1 - this.age / this.lifetime));
+                    const progress = Math.min(1, this.age / this.lifetime);
+                    const r = Math.floor(this._startRGB.r + (this._endRGB.r - this._startRGB.r) * progress);
+                    const g = Math.floor(this._startRGB.g + (this._endRGB.g - this._startRGB.g) * progress);
+                    const b = Math.floor(this._startRGB.b + (this._endRGB.b - this._startRGB.b) * progress);
+                    this.color = `rgb(${r}, ${g}, ${b})`;
+                    return this.age < this.lifetime;
+                }
+            };
+            this.particleSystemModel.celebrationParticles.push(particle);
+        }
+    }
+
+    /** Convertit une couleur hexadécimale en RGB. @private */
+    static _hexToRgb(hex) {
+        const clean = String(hex).replace(/^#/, '');
+        const bigint = parseInt(clean, 16);
+        return {
+            r: (bigint >> 16) & 255,
+            g: (bigint >> 8) & 255,
+            b: bigint & 255
+        };
+    }
+
+    /**
      * Déclenche la célébration de mission (texte + explosion autour du texte), avec anti-spam.
      * @private
      */
@@ -489,11 +561,15 @@ class ParticleController {
         const w = (this._canvasSize && this._canvasSize.width) ? this._canvasSize.width : 0;
         const h = (this._canvasSize && this._canvasSize.height) ? this._canvasSize.height : 0;
         const center = this.createMissionSuccessCelebration(w, h);
-        const explosionX = center && typeof center.x === 'number' ? center.x : (this._cameraSnapshot ? this._cameraSnapshot.x : (this.rocketModel && this.rocketModel.position ? this.rocketModel.position.x : 0));
-        const explosionY = center && typeof center.y === 'number' ? center.y : (this._cameraSnapshot ? this._cameraSnapshot.y : (this.rocketModel && this.rocketModel.position ? this.rocketModel.position.y : 0));
-        this.createExplosion(
-            explosionX,
-            explosionY,
+        // Salve festive supplémentaire EN SCREEN-SPACE (pas createExplosion/debrisParticles) :
+        // - corrige le positionnement (coordonnées écran rendues en screen-space) ;
+        // - découple la célébration du compteur d'explosion (plus de corruption de
+        //   activeExplosionParticlesCount ni de EXPLOSION_COMPLETED retardé).
+        const burstX = center && typeof center.x === 'number' ? center.x : (w > 0 ? w / 2 : 0);
+        const burstY = center && typeof center.y === 'number' ? center.y : 190;
+        this._addScreenSpaceCelebrationBurst(
+            burstX,
+            burstY,
             150, // un peu plus dense pour un effet festif
             7,
             12,

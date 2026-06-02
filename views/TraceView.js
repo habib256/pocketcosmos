@@ -22,6 +22,24 @@ class TraceView {
          */
         this.maxPoints = 20000;
         /**
+         * @type {number}
+         * Index de tête du buffer circulaire. Une fois `maxPoints` atteint, les nouveaux
+         * points écrasent les plus anciens à cet index (O(1)) au lieu d'un `shift()` O(n).
+         */
+        this.head = 0;
+        /**
+         * @type {number}
+         * Seuil minimal de déplacement (au carré, en coordonnées monde) entre deux points
+         * consécutifs pour qu'un nouveau point soit ajouté. Évite d'accumuler des points
+         * quasi-identiques quand la fusée est immobile.
+         */
+        this.minStepSq = 4; // ~2 unités monde
+        /**
+         * @type {{x: number, y: number} | null}
+         * Dernier point réel ajouté (pour le filtrage par seuil de déplacement).
+         */
+        this.lastPoint = null;
+        /**
          * @type {boolean}
          * Indique si la trace doit être affichée (`true`) ou non (`false`).
          */
@@ -38,12 +56,27 @@ class TraceView {
     update(position) {
         if (!this.isVisible) return;
 
-        // Ajouter simplement le point de position absolue
-        this.traces.push({ ...position });
+        // Filtrage par seuil de déplacement : ignorer les points trop proches du dernier
+        // point réel pour ne pas accumuler de doublons quand la fusée bouge peu.
+        if (this.lastPoint) {
+            const dx = position.x - this.lastPoint.x;
+            const dy = position.y - this.lastPoint.y;
+            if (dx * dx + dy * dy < this.minStepSq) {
+                return;
+            }
+        }
 
-        // Limiter le nombre de points en retirant le plus ancien si nécessaire
-        if (this.traces.length > this.maxPoints) {
-            this.traces.shift(); // Retire le premier élément (le plus ancien)
+        const point = { x: position.x, y: position.y };
+        this.lastPoint = point;
+
+        // Buffer circulaire : tant que la limite n'est pas atteinte, on empile ;
+        // une fois pleine, on écrase la position la plus ancienne (head) en O(1)
+        // au lieu d'un shift() O(n) à chaque frame.
+        if (this.traces.length < this.maxPoints) {
+            this.traces.push(point);
+        } else {
+            this.traces[this.head] = point;
+            this.head = (this.head + 1) % this.maxPoints;
         }
     }
 
@@ -63,9 +96,13 @@ class TraceView {
 
         let isNewPath = true; // Indicateur pour savoir si on doit commencer un nouveau segment de tracé
 
-        // Itérer sur tous les points stockés
-        for (let i = 0; i < this.traces.length; i++) {
-            const point = this.traces[i];
+        // Itérer sur tous les points stockés dans l'ordre chronologique.
+        // Avec le buffer circulaire (une fois plein), le plus ancien point se trouve à `head`,
+        // donc on parcourt depuis `head` en bouclant modulo la longueur.
+        const n = this.traces.length;
+        const offset = (n >= this.maxPoints) ? this.head : 0;
+        for (let k = 0; k < n; k++) {
+            const point = this.traces[(offset + k) % n];
 
             // Si le point est null, cela marque une discontinuité.
             if (point === null) {
@@ -133,10 +170,20 @@ class TraceView {
         if (all) {
             // Effacement complet de toutes les traces
             this.traces = [];
+            this.head = 0;
+            this.lastPoint = null;
         } else {
             // Ajouter un point null pour créer une discontinuité dans la trace
             // Cela permet de séparer visuellement différentes phases ou trajectoires.
-            this.traces.push(null);
+            // Respecter le buffer circulaire et réinitialiser lastPoint pour que le
+            // prochain point ne soit pas filtré par rapport à l'autre côté de la coupure.
+            if (this.traces.length < this.maxPoints) {
+                this.traces.push(null);
+            } else {
+                this.traces[this.head] = null;
+                this.head = (this.head + 1) % this.maxPoints;
+            }
+            this.lastPoint = null;
         }
     }
 } 

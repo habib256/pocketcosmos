@@ -48,27 +48,6 @@ class ParticleView {
         // Toujours affichées, même si la fusée est détruite.
         this.render(ctx, particleSystemModel.debrisParticles);
 
-        // --- Rendu des Particules Texte (ex: "Mission Réussie") en screen-space ---
-        if (particleSystemModel.textParticles && particleSystemModel.textParticles.length > 0) {
-            // Reset transform pour le screen-space
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            // Note : Ce rendu est spécifique et n'utilise pas la méthode `render` générale.
-            for (const p of particleSystemModel.textParticles) {
-                ctx.save(); // Isoler les styles de texte
-                ctx.globalAlpha = p.alpha; // Appliquer la transparence de la particule
-                ctx.font = `${p.size || 32}px Impact, Arial, sans-serif`; // Définir la police et la taille
-                ctx.fillStyle = p.color || '#FFD700'; // Couleur de remplissage
-                ctx.strokeStyle = '#222'; // Couleur du contour
-                ctx.lineWidth = 2; // Épaisseur du contour
-                ctx.textAlign = 'center'; // Centrer le texte horizontalement
-                ctx.textBaseline = 'middle'; // Centrer le texte verticalement
-                // Dessiner le contour et le remplissage pour une meilleure lisibilité
-                ctx.strokeText(p.char, p.x, p.y);
-                ctx.fillText(p.char, p.x, p.y);
-                ctx.restore(); // Restaurer les styles précédents
-            }
-        }
-
         // --- Rendu des Particules de Célébration ---
         if (particleSystemModel.celebrationParticles && particleSystemModel.celebrationParticles.length > 0) {
             // Séparer world-space et screen-space

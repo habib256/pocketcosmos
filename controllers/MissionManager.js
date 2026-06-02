@@ -39,6 +39,14 @@ class MissionManager {
          */
         this.missions = [];
 
+        /**
+         * Sauvegarde des données de missions du monde courant (telles que reçues par loadFromData).
+         * Permet à resetMissions() de recharger les missions du preset chargé plutôt que des
+         * valeurs codées en dur.
+         * @type {Array<object>|null}
+         */
+        this._lastLoadedMissions = null;
+
         this.subscribeToEvents();
     }
 
@@ -163,6 +171,12 @@ class MissionManager {
             console.warn("[MissionManager] loadFromData appelé sans tableau de missions valide.");
             return;
         }
+        // Conserver une copie profonde des données source pour permettre un resetMissions() fidèle au monde courant.
+        try {
+            this._lastLoadedMissions = JSON.parse(JSON.stringify(missionsData));
+        } catch (e) {
+            this._lastLoadedMissions = missionsData.slice();
+        }
         this.missions = [];
         for (const m of missionsData) {
             if (!m || typeof m.from !== 'string' || typeof m.to !== 'string' || !Array.isArray(m.requiredCargo) || typeof m.reward !== 'number') {
@@ -212,12 +226,16 @@ class MissionManager {
      * Vide les missions existantes et en crée de nouvelles (par exemple, pour démarrer une nouvelle partie).
      */
     resetMissions() {
-        this.missions = []; 
-        // Exemples de missions initiales :
-        this.createMission("Terre", "Lune", [{ type: "Fuel", quantity: 10 }], 100); 
-        this.createMission("Lune", "Terre", [{ type: "Wrench", quantity: 10 }], 150);
-        this.createMission("Terre", "Mars", [{ type: "Fuel", quantity: 5 }, { type: "Wrench", quantity: 5 }], 300);
-        this.createMission("Mars", "Terre", [{ type: "🧑‍🚀", quantity: 10 }], 500); 
+        // Recharger les missions du monde courant (preset chargé via loadFromData) plutôt que
+        // d'injecter des missions codées en dur sans rapport avec le monde actif.
+        if (Array.isArray(this._lastLoadedMissions)) {
+            this.loadFromData(this._lastLoadedMissions);
+            return;
+        }
+
+        // Aucun preset n'a encore été chargé : repartir d'une liste vide.
+        // (Les missions sont fournies par les fichiers de monde dans assets/worlds/*.json.)
+        this.missions = [];
     }
 
     /**
@@ -235,8 +253,23 @@ class MissionManager {
         if (mission) {
             mission.status = "failed";
             console.log(`❌ Mission échouée : ${mission.from} → ${mission.to} (ID: ${mission.id}). Raison probable : fusée détruite ou problème en route.`);
-            // TODO: Remettre la cargaison à zéro si la mission échoue (nécessite une référence claire ou un événement pour RocketCargo).
-            
+
+            // Restituer/réinitialiser le cargo lié à la mission échouée.
+            // L'API RocketCargo expose removeCargo(type, quantity) ; on retire les items requis
+            // de cette mission si une référence au cargo (ou au rocketModel) est fournie dans l'événement.
+            // Correction minimale et sûre : on ne touche au cargo que si une référence valide est disponible.
+            const rocketCargo = (data.rocketCargo)
+                || (data.rocketModel && data.rocketModel.cargo)
+                || null;
+            if (rocketCargo && typeof rocketCargo.removeCargo === 'function' && Array.isArray(mission.requiredCargo)) {
+                mission.requiredCargo.forEach(item => {
+                    if (item && item.type && typeof item.quantity === 'number') {
+                        // removeCargo est sûr : il ne retire rien si la quantité demandée dépasse le stock.
+                        rocketCargo.removeCargo(item.type, item.quantity);
+                    }
+                });
+            }
+
             // Optionnel: Publier un événement pour notifier d'autres systèmes (UI, etc.) que la mission a spécifiquement échoué ici.
             // Note : L'événement EVENTS.MISSION.FAILED est déjà émis par la source de l'échec (ex: CollisionHandler),
             // cette ré-émission pourrait être redondante ou servir à une logique spécifique post-échec ici.
@@ -294,25 +327,22 @@ class MissionManager {
      * @param {UniverseModel} universeModel - Le modèle de l'univers
      */
     update(deltaTime, rocketModel, universeModel) {
-        // Pour l'instant, cette méthode peut être vide ou contenir une logique minimale
-        // Elle pourra être étendue plus tard pour:
-        // - Vérifier automatiquement la complétion des missions
-        // - Gérer les timeouts de missions
-        // - Mettre à jour les objectifs dynamiques
-        
+        // IMPORTANT : cette méthode NE doit PAS auto-compléter les missions.
+        //
+        // La complétion (qui consomme le cargo via checkMissionCompletion ET passe le statut
+        // à "completed") est gérée par un chemin UNIQUE : GameController.handleRocketLanded(),
+        // déclenché par l'événement ROCKET.LANDED. C'est lui qui émet ensuite
+        // EVENTS.UI.CREDITS_UPDATED (récompense) et EVENTS.MISSION.COMPLETED (célébration + son).
+        //
+        // Si update() appelait checkMissionCompletion() ici (à chaque frame), il consommerait
+        // le cargo et passerait le statut à "completed" AVANT GameController. Ce dernier filtrant
+        // status === "pending", la récompense/célébration/son seraient alors définitivement perdus
+        // (double chemin de complétion). On laisse donc GameController gérer la complétion.
+        //
+        // Cette méthode reste un point d'extension pour des timeouts ou objectifs dynamiques
+        // qui ne touchent pas au statut de complétion.
         if (!rocketModel || !universeModel) {
             return;
-        }
-
-        // Exemple de logique future: vérifier automatiquement la complétion des missions
-        // si la fusée est atterrie quelque part
-        if (rocketModel.isLanded && rocketModel.landedOn && rocketModel.cargo) {
-            // Vérifier la complétion des missions pour la localisation actuelle
-            const completedMissions = this.checkMissionCompletion(rocketModel.cargo, rocketModel.landedOn);
-            if (completedMissions.length > 0) {
-                // Les missions ont été automatiquement marquées comme complétées dans checkMissionCompletion
-                console.log(`[MissionManager] ${completedMissions.length} mission(s) complétée(s) sur ${rocketModel.landedOn}`);
-            }
         }
     }
 

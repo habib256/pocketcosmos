@@ -189,7 +189,8 @@ class TrainingVisualizer {
                     this.trajectoryStepCounter = 0;
                     this.rocketTrajectory.push({
                         x: this.rocketData.position.x,
-                        y: this.rocketData.position.y
+                        y: this.rocketData.position.y,
+                        timestamp: Date.now() // CORRECTION (bug #7) : nécessaire au calcul d'alpha (fade)
                     });
 
                     // Si on dépasse la limite, doubler le taux d'échantillonnage
@@ -769,9 +770,13 @@ class TrainingVisualizer {
                 const prevPoint = this.rocketTrajectory[i - 1];
                 
                 // Calculer l'opacité basée sur l'âge du point
-                const age = (Date.now() - point.timestamp) / 30000; // 30 secondes de fade
-                const alpha = Math.max(0.3, 1 - age);
-                
+                // CORRECTION (bug #7) : point.timestamp est désormais défini ; on clampe
+                // dans [0.3, 1] et on se protège d'un timestamp manquant (NaN -> 1).
+                const ts = (typeof point.timestamp === 'number' && isFinite(point.timestamp))
+                    ? point.timestamp : Date.now();
+                const age = (Date.now() - ts) / 30000; // 30 secondes de fade
+                const alpha = Math.max(0.3, Math.min(1, 1 - age));
+
                 this.ctx.globalAlpha = alpha;
                 
                 if (i === 1) {

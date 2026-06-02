@@ -48,10 +48,10 @@ class UniverseView {
      * @returns {{x: number, y: number}} Les coordonnées correspondantes sur l'écran.
      */
     worldToScreen(worldX, worldY, camera) {
-        return {
-            x: (worldX - camera.x) * camera.zoom + camera.offsetX,
-            y: (worldY - camera.y) * camera.zoom + camera.offsetY
-        };
+        // Déléguer à la caméra (source unique de vérité) pour éviter toute
+        // désynchronisation entre stations, planètes et étoiles.
+        // camera.worldToScreen accepte (x, y) ou un objet {x, y}.
+        return camera.worldToScreen(worldX, worldY);
     }
 
     /**
@@ -111,19 +111,6 @@ class UniverseView {
 
 
     /**
-     * Applique les transformations (translation, échelle) au contexte de rendu 2D
-     * en fonction de l'état actuel de la caméra. Doit être appelée avant de dessiner
-     * les éléments du monde pour qu'ils apparaissent au bon endroit et à la bonne taille.
-     * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
-     * @param {CameraModel} camera - L'objet caméra (x, y, zoom, offsetX, offsetY).
-     */
-    applyCameraTransform(ctx, camera) {
-        ctx.translate(camera.offsetX, camera.offsetY);
-        ctx.scale(camera.zoom, camera.zoom);
-        ctx.translate(-camera.x, -camera.y);
-    }
-
-    /**
      * Dessine le fond uni de l'espace.
      * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
      * @param {CameraModel} camera - L'objet caméra pour obtenir les dimensions.
@@ -141,38 +128,37 @@ class UniverseView {
     }
 
     /**
-     * Calcule et met à jour la luminosité des étoiles pour simuler un effet de scintillement.
-     * Modifie directement la propriété `brightness` des objets étoiles dans le tableau.
-     * @param {Array<Object>} stars - Le tableau contenant les objets étoiles (avec x, y).
+     * Calcule la luminosité scintillante d'une étoile pour un instant donné, SANS
+     * muter le modèle (les vues sont en lecture seule). Le résultat est purement local.
+     * @param {Object} star - L'objet étoile (avec x, y).
      * @param {number} time - Le temps actuel (par exemple, timestamp) pour animer le scintillement.
+     * @returns {number} La luminosité scintillante, bornée dans [0, 1].
      */
-    applyStarTwinkle(stars, time) {
-        if (!stars) return;
-
+    computeStarTwinkle(star, time) {
         const twinkleFactor = RENDER.STAR_TWINKLE_FACTOR;
         // Vitesse de scintillement, potentiellement basée sur une constante ou dynamique
         const twinkleSpeed = RENDER.ZOOM_SPEED * 0.02; // Exemple: lié à ZOOM_SPEED
 
-        for (const star of stars) {
-            // Calcul simple basé sur sin() pour un effet périodique
-            const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
-            // Applique le scintillement à la luminosité de base
-            star.brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * twinkleFactor + RENDER.STAR_BRIGHTNESS_RANGE;
-            // S'assure que la luminosité reste dans une plage valide (ex: 0 à 1)
-            star.brightness = Math.max(0, Math.min(1, star.brightness));
-        }
+        // Calcul simple basé sur sin() pour un effet périodique
+        const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
+        // Applique le scintillement à la luminosité de base
+        const brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * twinkleFactor + RENDER.STAR_BRIGHTNESS_RANGE;
+        // S'assure que la luminosité reste dans une plage valide (ex: 0 à 1)
+        return Math.max(0, Math.min(1, brightness));
     }
 
 
     /**
      * Dessine les étoiles sur le canvas.
      * Les étoiles ont une taille fixe indépendante du zoom.
-     * Leur luminosité peut varier (voir `applyStarTwinkle`).
+     * Leur luminosité scintillante est calculée localement (voir `computeStarTwinkle`)
+     * sans muter le modèle.
      * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
      * @param {CameraModel} camera - L'objet caméra.
-     * @param {Array<Object>} stars - Tableau d'objets étoile ({x, y, brightness}).
+     * @param {Array<Object>} stars - Tableau d'objets étoile ({x, y}).
+     * @param {number} time - Le temps actuel pour l'animation du scintillement.
      */
-    renderStars(ctx, camera, stars) {
+    renderStars(ctx, camera, stars, time) {
         if (!stars || stars.length === 0) return;
 
         ctx.save();
@@ -189,8 +175,9 @@ class UniverseView {
                 // Taille fixe pour les étoiles (ex: 1 pixel)
                 const size = 1;
 
-                // Utilise la luminosité calculée (ou une valeur par défaut)
-                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness || RENDER.STAR_BRIGHTNESS_BASE})`;
+                // Luminosité scintillante calculée localement (lecture seule sur le modèle)
+                const brightness = this.computeStarTwinkle(star, time);
+                ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
                 ctx.beginPath();
                 // Dessine un petit cercle ou carré
                 // ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
@@ -270,10 +257,10 @@ class UniverseView {
     /**
      * Méthode de rendu principale pour l'univers.
      * Orchestre le dessin du fond, des étoiles et des corps célestes.
-     * Applique également l'effet de scintillement aux étoiles.
-     * IMPORTANT : Cette méthode suppose que les transformations de caméra (`applyCameraTransform`)
-     * sont gérées à l'extérieur (par exemple, par le RenderingController) AVANT d'appeler cette méthode,
-     * SAUF pour les éléments qui doivent être dessinés en coordonnées écran fixes (fond, étoiles).
+     * Applique également l'effet de scintillement aux étoiles (calculé localement, sans muter le modèle).
+     * IMPORTANT : Cette méthode n'applique AUCUNE transformation de caméra au contexte.
+     * Tout est dessiné en coordonnées écran, la conversion monde -> écran étant effectuée
+     * explicitement via `worldToScreen` (qui délègue à la caméra).
      *
      * @param {CanvasRenderingContext2D} ctx - Le contexte de rendu 2D.
      * @param {CameraModel} camera - L'objet caméra.
@@ -282,14 +269,12 @@ class UniverseView {
      * @param {number} time - Le temps actuel pour l'animation du scintillement.
      */
     render(ctx, camera, stars, celestialBodies, time, asteroids = []) {
-       // 1. Dessiner le fond (ignore la transformation caméra actuelle)
+       // 1. Dessiner le fond (en coordonnées écran)
        this.renderBackground(ctx, camera);
 
-       // 2. Appliquer le scintillement aux données des étoiles (avant le dessin)
-       this.applyStarTwinkle(stars, time);
-
-       // 3. Dessiner les étoiles (ignore la transformation caméra actuelle, utilise worldToScreen)
-       this.renderStars(ctx, camera, stars);
+       // 2. Dessiner les étoiles (en coordonnées écran via worldToScreen).
+       //    Le scintillement est calculé localement par étoile, sans muter le modèle.
+       this.renderStars(ctx, camera, stars, time);
 
        // 4. Dessiner les corps célestes directement (les vues utilisent worldToScreen)
        this.renderCelestialBodies(ctx, camera, celestialBodies);
@@ -323,7 +308,7 @@ class UniverseView {
             ctx.arc(Math.floor(screen.x), Math.floor(screen.y), size, 0, Math.PI * 2);
             ctx.fill();
         }
+        // Le restore rétablit déjà globalAlpha (et tout l'état) sauvegardé au save().
         ctx.restore();
-        ctx.globalAlpha = 1;
     }
-} 
+}

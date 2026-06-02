@@ -330,26 +330,30 @@ class HeadlessRocketEnvironment {
 
         // 3. Obtenir les résultats pour ce pas
         const observation = this.getObservation();
-        const reward = this.calculateReward();
+        let reward = this.calculateReward();
 
         // CORRECTION: Incrémenter le compteur de délai de grâce au démarrage
         this._startupGracePeriod++;
 
+        this.currentStep++;
+
         const done = this.isDone();
-        
+
+        // CORRECTION (bug timeout): intégrer la pénalité de timeout DANS la récompense
+        // retournée par step() (et pas seulement dans totalRewardInEpisode), sinon elle
+        // n'est jamais apprise par l'agent. On l'ajoute au dernier step (done=true par
+        // atteinte du budget de steps, sans succès) pour l'objectif 'navigate'.
+        if (done && this.config.missionConfig?.objective === 'navigate' &&
+            this.currentStep >= this.maxStepsPerEpisode &&
+            !this.checkNavigateSuccess()) {
+            const timeoutPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
+                ? AI_TRAINING.NAVIGATE_REWARDS.TIMEOUT_PENALTY
+                : -50;
+            reward += timeoutPenalty;
+        }
+
         // Ajouter la récompense au total
         this.totalRewardInEpisode += reward;
-        this.currentStep++;
-        
-        // CORRECTION: Ajouter pénalité de timeout pour l'objectif 'navigate' (après l'incrément)
-        if (done && this.config.missionConfig?.objective === 'navigate' && 
-            this.currentStep >= this.maxStepsPerEpisode && 
-            !this.checkNavigateSuccess()) {
-            const timeoutPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
-                ? AI_TRAINING.NAVIGATE_REWARDS.TIMEOUT_PENALTY 
-                : -50;
-            this.totalRewardInEpisode += timeoutPenalty;
-        }
 
         // Émettre les données pour la visualisation (si activée)
         this.emitVisualizationData();
@@ -620,8 +624,11 @@ class HeadlessRocketEnvironment {
         
         switch (objective) {
             case 'navigate':
-                // CORRECTION: Récompense pour approche du point cible (navigation sera récompensée dans le switch principal)
-                reward += this.calculateNavigateReward();
+                // CORRECTION (bug double-appel): calculateNavigateReward() est appelé
+                // EXCLUSIVEMENT dans le switch principal de calculateReward(). Le rappeler
+                // ici ferait avancer 2x par step les composantes à état
+                // (_previousDistanceToTarget, _previousPotential, _zonesReached) et casserait
+                // le potential-based shaping. On ne fait donc rien pour 'navigate' ici.
                 break;
             case 'orbit':
                 reward += this.calculateOrbitReward();
@@ -630,8 +637,9 @@ class HeadlessRocketEnvironment {
                 reward += this.calculateLandingReward();
                 break;
             case 'crash_moon':
-                // CORRECTION: Récompense pour approche de la Lune (crash sera récompensé dans le switch principal)
-                reward += this.calculateCrashMoonReward();
+                // CORRECTION (bug double-appel): l'approche de la Lune est déjà récompensée
+                // inline dans le switch principal de calculateReward(). On évite de la compter
+                // deux fois (même si calculateCrashMoonReward est sans état).
                 break;
             case 'explore':
                 reward += this.calculateExplorationReward();

@@ -233,8 +233,24 @@ class RenderingController {
             for (const st of universeModel.stations) {
                 const host = universeModel.celestialBodies.find(b => b.name === st.hostName);
                 if (!host) continue;
-                // Positionner la station juste SOUS la surface: rayon - inset (fallback sur +offset si ancien champ)
-                const r = host.radius - (STATIONS && STATIONS.SURFACE_INSET !== undefined ? STATIONS.SURFACE_INSET : -(STATIONS ? STATIONS.SURFACE_OFFSET : 4));
+                // Positionner la station juste SOUS la surface: rayon - inset (fallback sur +offset si ancien champ).
+                // Calcul durci via variables intermédiaires + fallback numérique final garanti
+                // pour éviter tout NaN si STATIONS existe sans SURFACE_INSET ni SURFACE_OFFSET.
+                const DEFAULT_INSET = 4;
+                let surfaceInset;
+                if (STATIONS && STATIONS.SURFACE_INSET !== undefined) {
+                    surfaceInset = STATIONS.SURFACE_INSET;
+                } else if (STATIONS && STATIONS.SURFACE_OFFSET !== undefined) {
+                    // Ancien champ : un offset positif éloigne la station de la surface,
+                    // ce qui équivaut à un inset négatif.
+                    surfaceInset = -STATIONS.SURFACE_OFFSET;
+                } else {
+                    surfaceInset = DEFAULT_INSET;
+                }
+                if (typeof surfaceInset !== 'number' || isNaN(surfaceInset)) {
+                    surfaceInset = DEFAULT_INSET;
+                }
+                const r = host.radius - surfaceInset;
                 const worldX = host.position.x + Math.cos(st.angle) * r;
                 const worldY = host.position.y + Math.sin(st.angle) * r;
                 const screen = this.universeView.worldToScreen(worldX, worldY, camera);

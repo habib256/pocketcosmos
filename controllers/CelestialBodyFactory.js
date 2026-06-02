@@ -357,6 +357,21 @@ class CelestialBodyFactory {
 
         // Première passe: créer les corps sans parent assigné
         for (const cfg of configs) {
+            // Validation masse/rayon : un corps avec mass<=0 ou radius<=0 est dégénéré
+            // (gravité nulle, rendu invalide). On l'ignore avec un avertissement plutôt
+            // que de casser la simulation.
+            if (!(typeof cfg.mass === 'number' && cfg.mass > 0) ||
+                !(typeof cfg.radius === 'number' && cfg.radius > 0)) {
+                console.warn(`[CelestialBodyFactory] Corps céleste ignoré (masse ou rayon invalide): name="${cfg.name}", mass=${cfg.mass}, radius=${cfg.radius}`);
+                continue;
+            }
+
+            // hasAtmosphere : piloté par cfg.atmosphere.exists si fourni, sinon défaut du modèle (nom).
+            const options = {};
+            if (cfg.atmosphere && typeof cfg.atmosphere.exists === 'boolean') {
+                options.hasAtmosphere = cfg.atmosphere.exists;
+            }
+
             const body = new CelestialBodyModel(
                 cfg.name,
                 cfg.mass,
@@ -366,7 +381,8 @@ class CelestialBodyFactory {
                 null,
                 cfg.orbitDistance || 0,
                 typeof cfg.initialOrbitAngle === 'number' ? cfg.initialOrbitAngle : 0,
-                cfg.orbitSpeed || 0
+                cfg.orbitSpeed || 0,
+                options
             );
             // Propriétés additionnelles optionnelles
             if (cfg.hasRings) {
@@ -387,17 +403,36 @@ class CelestialBodyFactory {
                 }
             }
             created.push(body);
+            // Conserver le lien config<->body pour les passes suivantes, car des corps
+            // peuvent avoir été ignorés (les index de `configs` et `created` ne sont plus alignés).
+            body._sourceConfig = cfg;
             nameToBody[cfg.name] = body;
         }
 
-        // Deuxième passe: lier les parents et faire une updateOrbit initiale si parent
-        for (let i = 0; i < configs.length; i++) {
-            const cfg = configs[i];
-            const body = created[i];
+        // Deuxième passe: lier les parents (par name) pour tous les corps valides.
+        for (const body of created) {
+            const cfg = body._sourceConfig;
             if (cfg.parentName && nameToBody[cfg.parentName]) {
                 body.parentBody = nameToBody[cfg.parentName];
-                body.updateOrbit(0);
             }
+        }
+
+        // Troisième passe: initialiser les positions/vélocités via updateOrbit(0).
+        // On itère deux fois pour résoudre l'ordre parents-avant-enfants : si une lune
+        // référence un parent défini plus loin (lui-même en orbite), un seul passage
+        // utiliserait une position parente non encore initialisée. Le second passage
+        // recalcule l'enfant à partir de la position parente désormais correcte.
+        for (let pass = 0; pass < 2; pass++) {
+            for (const body of created) {
+                if (body.parentBody) {
+                    body.updateOrbit(0);
+                }
+            }
+        }
+
+        // Nettoyage du champ temporaire.
+        for (const body of created) {
+            delete body._sourceConfig;
         }
         return created;
     }

@@ -34,8 +34,20 @@ class AudioManager {
         if (!entry) return;
         const { audio } = entry;
         try {
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
+            if (entry.loop) {
+                // Son en boucle : utiliser l'instance unique (gérée par startLoop/stop).
+                // Forcer loop pour rester cohérent avec entry.loop, même si play() est appelé.
+                audio.loop = true;
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
+            } else {
+                // Son one-shot : jouer un clone pour permettre la superposition d'effets
+                // rapprochés (sinon currentTime=0 couperait la lecture précédente).
+                const clone = audio.cloneNode();
+                clone.loop = false; // garantir qu'un one-shot ne boucle jamais
+                clone.volume = entry.volume;
+                clone.play().catch(() => {});
+            }
         } catch (e) {
             // ignorer
         }
@@ -48,7 +60,7 @@ class AudioManager {
         if (!entry) return;
         const { audio } = entry;
         try {
-            if (!audio.loop) audio.loop = true;
+            audio.loop = true;
             audio.play().catch(() => {});
         } catch (e) {}
     }
@@ -62,6 +74,31 @@ class AudioManager {
             audio.pause();
             audio.currentTime = 0;
         } catch (e) {}
+    }
+
+    /** Arrête toutes les boucles sonores en cours sur les instances uniques mises en cache. */
+    stopAllLoops() {
+        for (const [, entry] of this.cache) {
+            if (entry && entry.loop && entry.audio) {
+                try {
+                    entry.audio.pause();
+                    entry.audio.currentTime = 0;
+                } catch (e) {}
+            }
+        }
+    }
+
+    /**
+     * Active/désactive globalement le son.
+     * En cas de désactivation, stoppe les boucles actuellement en cours (sinon elles
+     * continueraient indéfiniment puisqu'elles tournent sur des instances Audio persistantes).
+     * @param {boolean} enabled
+     */
+    setEnabled(enabled) {
+        this.enabled = !!enabled;
+        if (!this.enabled) {
+            this.stopAllLoops();
+        }
     }
 }
 

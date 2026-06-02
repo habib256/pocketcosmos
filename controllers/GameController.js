@@ -84,10 +84,13 @@ class GameController {
         this.totalCreditsEarned = 10;
 
         // Initialiser la caméra - FAIT CI-DESSUS
-        
-        // Timer pour réinitialisation auto après crash
-        this.crashResetTimer = null;
-        
+
+        // Identifiant de la requête d'animation (boucle de jeu). null => aucune boucle en cours.
+        this._rafId = null;
+
+        // Transition d'état différée (exécutée après l'émission du STATE_CHANGED courant). null => aucune.
+        this._pendingStateTransition = null;
+
         // Ajout : Flag pour indiquer si une mission vient d'être réussie
         this.missionJustSucceededFlag = false;
 
@@ -107,7 +110,8 @@ class GameController {
             GameStates.LEVEL_SETUP
         ];
         
-        document.addEventListener('visibilitychange', () => {
+        // Conserver une référence à la closure pour pouvoir la retirer dans cleanup() (évite une fuite mémoire).
+        this._onVisibilityChange = () => {
             if (document.hidden) {
                 // Mettre en pause uniquement si l'état actuel est dans la liste des états pausables
                 if (autoPausableStates.includes(this.currentState)) {
@@ -121,7 +125,8 @@ class GameController {
                 // this.changeState(GameStates.PLAYING);
                 // }
             }
-        });
+        };
+        document.addEventListener('visibilitychange', this._onVisibilityChange);
 
         this._lastRocketDestroyed = false;
     }
@@ -310,12 +315,11 @@ class GameController {
             missionJustSucceeded: this.missionJustSucceededFlag
         };
         
-        console.log("Émission de :", EVENTS.SIMULATION.UPDATED, "avec données (extrait) :", { rocketX: simulationState.rocket.position.x, cameraX: simulationState.camera.x });
         this.eventBus.emit(EVENTS.SIMULATION.UPDATED, simulationState);
-        
-        if (this.missionJustSucceededFlag) {
-            this.missionJustSucceededFlag = false;
-        }
+
+        // NOTE: missionJustSucceededFlag n'est PAS réinitialisé ici. Plusieurs consommateurs le lisent
+        // au cours d'une même frame (SIMULATION.UPDATED via emitUpdatedStates ET render()). Le reset est
+        // effectué une seule fois, en fin de frame, dans render() (dernier consommateur appelé).
     }
     
     /**
@@ -487,6 +491,13 @@ class GameController {
         // la gameloop elle-même vérifiera this.currentState.
 
         console.log(`[GameController.start] Démarrage du GameController. État actuel: ${this.currentState}`);
+
+        // Garde contre les boucles concurrentes : si une boucle tourne déjà, ne pas en relancer une seconde.
+        if (this._rafId !== null && this._rafId !== undefined) {
+            console.warn('[GameController.start] La boucle de jeu est déjà en cours, démarrage ignoré.');
+            return;
+        }
+
         this.lastTimestamp = performance.now();
         this.gameLoop(this.lastTimestamp); // Lancer la boucle de jeu inconditionnellement au début.
                                           // La boucle elle-même décidera quoi faire en fonction de l'état.
@@ -497,7 +508,18 @@ class GameController {
         // Si on est LOADING, l'UI de chargement devrait déjà être visible.
         // Ne pas forcer MAIN_MENU: l'initialisation et le passage à PLAYING sont pilotés par le chargement JSON (resetWorld)
     }
-    
+
+    /**
+     * Arrête la boucle de jeu si elle est en cours.
+     * Idempotent : peut être appelé plusieurs fois sans effet secondaire.
+     */
+    stop() {
+        if (this._rafId !== null && this._rafId !== undefined) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+    }
+
     /**
      * La boucle principale du jeu. Appelée à chaque frame via requestAnimationFrame.
      * Calcule le deltaTime, met à jour l'état du jeu (si non en pause),
@@ -545,11 +567,8 @@ class GameController {
 
         // Rappeler gameLoop pour la prochaine frame d'animation
         // La boucle tourne toujours, mais les actions (update, render) peuvent être conditionnelles à l'état.
-        // if (this.isRunning) { // this.isRunning n'existe plus
-        requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
-        // } else {
-            // console.log('[GameController.gameLoop] this.isRunning est false, arrêt de la boucle.'); // SUPPRESSION DE LOG
-        // }
+        // On stocke l'identifiant RAF pour pouvoir annuler la boucle (stop()/cleanup()) et éviter les boucles concurrentes.
+        this._rafId = requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
     }
     
     /**
@@ -574,20 +593,13 @@ class GameController {
      */
     resetRocket() {
         let startLocation = null;
-        
-        if (this.crashResetTimer) {
-            clearTimeout(this.crashResetTimer);
-            this.crashResetTimer = null;
-        }
-        
+
         if (!this.rocketModel) {
-            // Ceci ne devrait plus arriver car GameSetupController initialise les modèles
-            console.error("GameController.resetRocket: rocketModel n'est pas initialisé avant reset.");
-            const gameSetupController = new GameSetupController(this.eventBus, this.missionManager, {});
-            const components = gameSetupController.initializeGameComponents(this.cameraModel);
-            this.rocketModel = components.rocketModel;
-            this.universeModel = components.universeModel; // S'assurer que universeModel est aussi prêt
-            if (!this.rocketModel) return; // Si toujours pas de rocketModel, abandonner
+            // Ceci ne devrait plus arriver : GameSetupController initialise les modèles avant tout reset.
+            // L'ancien chemin de fallback appelait initializeGameComponents() avec une mauvaise signature
+            // (TypeError garanti) ; on le supprime et on abandonne proprement.
+            console.error("GameController.resetRocket: rocketModel n'est pas initialisé avant reset. Abandon du reset.");
+            return;
         }
         
         this.rocketModel.reset();
@@ -782,6 +794,15 @@ class GameController {
     cleanup() {
         // La désinscription des événements gérés par controllerContainer.track()
         // est gérée globalement par window.controllerContainer.destroy().
+
+        // Arrêter la boucle de jeu pour ne pas laisser de requestAnimationFrame orphelin.
+        this.stop();
+
+        // Retirer le listener visibilitychange ajouté dans le constructeur (évite une fuite mémoire).
+        if (this._onVisibilityChange) {
+            document.removeEventListener('visibilitychange', this._onVisibilityChange);
+            this._onVisibilityChange = null;
+        }
 
         // Appeler cleanup sur les contrôleurs internes qui pourraient en avoir besoin.
         if (this.physicsController && typeof this.physicsController.cleanup === 'function') {
@@ -1124,6 +1145,15 @@ class GameController {
 
         console.log("Émission de :", EVENTS.GAME.STATE_CHANGED, "avec données :", { newState: this.currentState, oldState: oldState });
         this.eventBus.emit(EVENTS.GAME.STATE_CHANGED, { newState: this.currentState, oldState: oldState });
+
+        // Transition imbriquée différée : certains états (ex: LEVEL_SETUP) demandent une transition
+        // automatique vers un état suivant. On l'exécute APRÈS l'émission du STATE_CHANGED courant,
+        // afin que les événements soient émis dans l'ordre chronologique correct (et non inversé).
+        if (this._pendingStateTransition) {
+            const nextState = this._pendingStateTransition;
+            this._pendingStateTransition = null;
+            this.changeState(nextState);
+        }
     }
 
     /**
@@ -1190,7 +1220,9 @@ class GameController {
                 // Le positionnement et la (re)construction sont gérés par le chargement JSON (resetWorld)
                 // Transiter simplement vers PLAYING si nécessaire
                 console.log("[GameController] État LEVEL_SETUP: Préparation du niveau via données JSON...");
-                this.changeState(GameStates.PLAYING);
+                // Différer la transition vers PLAYING : elle sera exécutée par changeState() APRÈS
+                // l'émission du STATE_CHANGED de LEVEL_SETUP (ordre des événements correct).
+                this._pendingStateTransition = GameStates.PLAYING;
                 break;
             case GameStates.PLAYING:
                 // Démarrer/reprendre la simulation physique, activer les contrôles

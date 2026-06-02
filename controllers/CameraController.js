@@ -197,8 +197,10 @@ class CameraController {
         if (this.isSystemPaused) return;
 
         if (this.cameraModel && this.gameController.rocketModel) {
-            // Vérifier si la caméra suit actuellement la fusée
-            if (this.cameraModel.target === this.gameController.rocketModel && this.cameraModel.mode === 'rocket') {
+            // Vérifier si la caméra suit actuellement la fusée.
+            // Comparer par mode plutôt que par identité d'objet : la référence rocketModel
+            // peut diverger après un reload d'univers (fresh references).
+            if (this.cameraModel.mode === 'rocket') {
                 // Si oui, la détacher et passer en mode libre
                 this.cameraModel.setTarget(null, 'free');
             } else {
@@ -251,7 +253,7 @@ class CameraController {
             // Si un drag est détecté ET que la caméra est toujours en mode 'rocket' 
             // (signifiant qu'un mousedown a eu lieu mais n'a pas immédiatement changé le mode),
             // alors on vérifie si le mouvement est significatif avant de passer en mode 'free'.
-            if (this.cameraModel.mode === 'rocket' && this.cameraModel.target === this.gameController.rocketModel) {
+            if (this.cameraModel.mode === 'rocket') {
                 const dragThreshold = 2; // Seuil en pixels pour considérer un drag comme intentionnel
                 const movedX = Math.abs(data.x - this.dragStartX);
                 const movedY = Math.abs(data.y - this.dragStartY);
