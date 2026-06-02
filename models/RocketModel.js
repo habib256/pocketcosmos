@@ -238,6 +238,16 @@ class RocketModel {
     startLiftoffGracePeriod(durationMs = 500) {
         this._liftoffGracePeriodEnd = Date.now() + durationMs;
     }
+
+    /**
+     * Indique si la période de grâce de décollage est active (lecture seule, sans effet de bord).
+     * Pendant cette période, la fusée ne doit JAMAIS être considérée comme posée (évite le
+     * re-collage immédiat sur un corps en mouvement où la vitesse relative reste faible).
+     * @returns {boolean}
+     */
+    isInLiftoffGracePeriod() {
+        return this._liftoffGracePeriodEnd !== null && Date.now() < this._liftoffGracePeriodEnd;
+    }
     
     /**
      * Vérifie si on peut mettre isLanded à true (pas de délai de grâce actif).

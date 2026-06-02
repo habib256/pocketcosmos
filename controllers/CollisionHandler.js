@@ -277,6 +277,16 @@ class CollisionHandler {
             return false;
         }
 
+        // Pendant la période de grâce de décollage, ne JAMAIS considérer la fusée comme posée.
+        // Sur un corps EN MOUVEMENT, la fusée qui décolle suit presque l'orbite du corps, donc sa
+        // vitesse RELATIVE reste faible : sans cette garde, isRocketLanded re-détecterait un
+        // atterrissage, isLanded serait ré-armé, et la stabilisation ré-ancrerait la fusée sur la
+        // surface mobile ("collée à la planète"). La grâce étant rafraîchie tant que le propulseur
+        // pousse, cette protection couvre tout le décollage + 500 ms après l'arrêt de la poussée.
+        if (typeof rocketModel.isInLiftoffGracePeriod === 'function' && rocketModel.isInLiftoffGracePeriod()) {
+            return false;
+        }
+
         // Si le modèle indique déjà un atterrissage sur ce corps, on considère que c'est toujours le cas.
         // Cela évite des calculs redondants ou des changements d'état rapides.
         if (rocketModel.isLanded && rocketModel.landedOn === otherBody.label) {

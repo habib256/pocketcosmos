@@ -221,6 +221,40 @@ class PhysicsController {
 
         // 7. Vérification périodique de l'état d'atterrissage
         this.synchronizationManager.checkRocketLandedStatusPeriodically(this.rocketModel, this.universeModel);
+
+        // --- DIAGNOSTIC DÉCOLLAGE (activable : window.DEBUG_LIFTOFF = true dans la console) ---
+        // Trace, ~6x/seconde, l'état de la fusée par rapport à son corps hôte/le plus proche, pour
+        // diagnostiquer un décollage qui échoue (fusée "collée"). N'a aucun effet si le flag est faux.
+        if (typeof window !== 'undefined' && window.DEBUG_LIFTOFF && this.rocketBody && this.rocketModel) {
+            this._dbgLiftoffFrame = (this._dbgLiftoffFrame || 0) + 1;
+            if (this._dbgLiftoffFrame % 10 === 0) {
+                const rm = this.rocketModel;
+                const rb = this.rocketBody;
+                // Corps de référence : celui sur lequel on est posé, sinon le plus proche.
+                let ref = this.celestialBodies.find(cb => cb.model && (cb.model.name === rm.landedOn || cb.model.name === rm.attachedTo));
+                if (!ref && this.celestialBodies.length) {
+                    ref = this.celestialBodies.reduce((best, cb) => {
+                        if (!cb.model || !cb.model.position) return best;
+                        const d = Math.hypot(rb.position.x - cb.model.position.x, rb.position.y - cb.model.position.y);
+                        return (!best || d < best._d) ? Object.assign({ _d: d }, cb) : best;
+                    }, null);
+                }
+                const main = rm.thrusters && rm.thrusters.main ? rm.thrusters.main : null;
+                const pct = main && main.maxPower > 0 ? ((main.power / main.maxPower) * 100).toFixed(0) : '0';
+                let info = '';
+                if (ref && ref.model && ref.model.position) {
+                    const bx = ref.model.position.x, by = ref.model.position.y;
+                    const dist = Math.hypot(rb.position.x - bx, rb.position.y - by);
+                    const bodyR = ref.model.radius || 0;
+                    const distSurf = (dist - bodyR).toFixed(1);
+                    const relvx = (rb.velocity.x - (ref.model.velocity ? ref.model.velocity.x * this.lastDeltaTime : 0)).toFixed(2);
+                    const relvy = (rb.velocity.y - (ref.model.velocity ? ref.model.velocity.y * this.lastDeltaTime : 0)).toFixed(2);
+                    info = `body=${ref.model.name} distSurf=${distSurf} relV=(${relvx},${relvy})`;
+                }
+                console.log(`[LIFTOFF-DBG] isLanded=${rm.isLanded} landedOn=${rm.landedOn} thrust=${pct}% grace=${rm.isInLiftoffGracePeriod && rm.isInLiftoffGracePeriod()} ` +
+                            `bodyVel(${rb.velocity.x.toFixed(2)},${rb.velocity.y.toFixed(2)}) handledManually=${isHandledManually} ${info}`);
+            }
+        }
     }
 
     // Calculer la force gravitationnelle totale pour la visualisation (debug)
