@@ -145,8 +145,17 @@ class GameSetupController {
 
         // Appliquer les paramètres physiques spécifiques au monde avant de créer UniverseModel
         try {
+            // Capturer une seule fois la valeur par défaut de PHYSICS.G (issue de constants.js)
+            // afin de pouvoir la restaurer quand un preset ne définit pas physics.G.
+            if (GameSetupController._defaultPhysicsG === undefined && typeof PHYSICS !== 'undefined' && typeof PHYSICS.G === 'number') {
+                GameSetupController._defaultPhysicsG = PHYSICS.G;
+            }
             if (data.physics && typeof data.physics.G === 'number') {
                 PHYSICS.G = data.physics.G;
+            } else if (typeof GameSetupController._defaultPhysicsG === 'number') {
+                // Aucun G dans le preset : restaurer la valeur par défaut (évite la persistance
+                // du G d'un monde précédent).
+                PHYSICS.G = GameSetupController._defaultPhysicsG;
             }
         } catch (e) {
             console.warn('[GameSetupController.buildWorldFromData] Impossible d\'appliquer physics.G depuis data:', e);

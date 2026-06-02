@@ -631,7 +631,12 @@ class HeadlessRocketEnvironment {
                 // le potential-based shaping. On ne fait donc rien pour 'navigate' ici.
                 break;
             case 'orbit':
-                reward += this.calculateOrbitReward();
+                // CORRECTION (bug double-comptage): la récompense d'orbite (shaping zone/vitesse
+                // ET bonus de succès ORBIT_SUCCESS unique via _missionAlreadyRewardedThisEpisode)
+                // est calculée EXCLUSIVEMENT inline dans le switch principal de calculateReward().
+                // Rappeler calculateOrbitReward() ici comptabiliserait une 2e récompense de
+                // shaping (formule différente) à chaque step. On neutralise donc 'orbit' ici,
+                // de façon cohérente avec navigate/crash_moon (source unique par objectif).
                 break;
             case 'land':
                 reward += this.calculateLandingReward();
@@ -642,7 +647,11 @@ class HeadlessRocketEnvironment {
                 // deux fois (même si calculateCrashMoonReward est sans état).
                 break;
             case 'explore':
-                reward += this.calculateExplorationReward();
+                // CORRECTION (bug double-comptage): l'exploration (shaping mouvement/visite ET
+                // bonus de succès unique) est récompensée EXCLUSIVEMENT inline dans le switch
+                // principal de calculateReward(). Rappeler calculateExplorationReward() ici
+                // ajouterait une 2e récompense de shaping par step. On neutralise donc 'explore'
+                // ici, de façon cohérente avec navigate/crash_moon (source unique par objectif).
                 break;
         }
         

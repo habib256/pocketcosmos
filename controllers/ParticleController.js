@@ -93,14 +93,9 @@ class ParticleController {
                 );
             }
 
-            // Fallback: déclencher aussi à la mise à jour des crédits (récompense mission)
-            if (window.EVENTS && window.EVENTS.UI && window.EVENTS.UI.CREDITS_UPDATED) {
-                window.controllerContainer.track(
-                    this.eventBus.subscribe(window.EVENTS.UI.CREDITS_UPDATED, () => {
-                        this._triggerMissionCelebration();
-                    })
-                );
-            }
+            // NOTE: la célébration est volontairement abonnée UNIQUEMENT à MISSION.COMPLETED.
+            // Coupler une célébration festive à UI.CREDITS_UPDATED était un piège : tout futur
+            // gain de crédits (hors mission) déclencherait une fausse célébration.
 
             // Suivre les dimensions du canvas pour positionner correctement les effets de célébration
             if (window.EVENTS && window.EVENTS.SYSTEM && window.EVENTS.SYSTEM.CANVAS_RESIZED) {

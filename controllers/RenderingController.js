@@ -250,7 +250,9 @@ class RenderingController {
                 if (typeof surfaceInset !== 'number' || isNaN(surfaceInset)) {
                     surfaceInset = DEFAULT_INSET;
                 }
-                const r = host.radius - surfaceInset;
+                // Borne à 0 : un inset supérieur au rayon (corps-hôte très petit) donnerait un
+                // rayon négatif, plaçant l'icône à l'opposé du centre.
+                const r = Math.max(0, host.radius - surfaceInset);
                 const worldX = host.position.x + Math.cos(st.angle) * r;
                 const worldY = host.position.y + Math.sin(st.angle) * r;
                 const screen = this.universeView.worldToScreen(worldX, worldY, camera);
@@ -360,7 +362,6 @@ class RenderingController {
             this.vectorsView.render(ctx, finalRocketStateForView, camera, {
                 showTotalThrustVector: true,
                 showVelocityVector: true,
-                showAccelerationVector: true,
                 showLunarAttractionVector: true,
                 showEarthAttractionVector: true,
                 showMissionStartVector: true,

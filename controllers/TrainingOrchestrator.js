@@ -505,17 +505,18 @@ class TrainingOrchestrator {
                 break;
             }
             
-            // L'agent choisit une action
-            const action = this.getActionFromState(state);
-            
+            // L'agent choisit une action (sur l'environnement d'entraînement)
+            const action = this.getActionFromState(state, this.trainingEnv);
+
             // Exécuter l'action dans l'environnement
             const result = this.trainingEnv.step(action);
-            
+
             // Stocker l'expérience pour l'apprentissage
             if (this.rocketAI.isTraining) {
                 // Convertir les états au format attendu par RocketAI
-                const aiState = this.buildAIState(state);
-                const nextAIState = this.buildAIState(result.observation);
+                // CORRECTION (bug #2) : cible B résolue sur l'env d'entraînement.
+                const aiState = this.buildAIState(state, this.trainingEnv);
+                const nextAIState = this.buildAIState(result.observation, this.trainingEnv);
                 
                 this.rocketAI.replayBuffer.push({
                     state: aiState,
@@ -623,9 +624,10 @@ class TrainingOrchestrator {
     /**
      * Convertit l'observation en action via l'agent IA
      */
-    getActionFromState(state) {
+    getActionFromState(state, env = this.trainingEnv) {
         // Construire l'état pour l'agent IA (format attendu par RocketAI)
-        const aiState = this.buildAIState(state);
+        // CORRECTION (bug #2) : propager l'environnement courant pour résoudre la cible B.
+        const aiState = this.buildAIState(state, env);
         
         // Vérifier que l'agent est disponible et non dispose
         if (!this.rocketAI || this.rocketAI.isDisposed) {
@@ -646,8 +648,13 @@ class TrainingOrchestrator {
      * pour garantir une normalisation et une dimension (10) IDENTIQUES entre entraînement,
      * évaluation et inférence. L'état est CONSCIENT DE LA CIBLE B (pour 'navigate'), sinon
      * la cible vaut (0,0) (corps de référence à l'origine pour les autres objectifs headless).
+     * CORRECTION (bug #2) : la cible B est lue sur l'ENVIRONNEMENT COURANT passé en argument
+     * (trainingEnv en apprentissage, evaluationEnv en évaluation), et non plus toujours sur
+     * this.trainingEnv. this.config ne contient jamais missionConfig, c'est l'env qui le porte.
+     * @param {object} environmentState - L'observation brute renvoyée par l'environnement
+     * @param {HeadlessRocketEnvironment} [env] - L'environnement courant (défaut: trainingEnv)
      */
-    buildAIState(environmentState) {
+    buildAIState(environmentState, env = this.trainingEnv) {
         const STATE_SIZE = (typeof RocketAI !== 'undefined' && RocketAI.STATE_SIZE) ? RocketAI.STATE_SIZE : 10;
 
         // Vérifier que environmentState existe
@@ -656,8 +663,8 @@ class TrainingOrchestrator {
         }
 
         // Récupérer la cible : point B pour 'navigate', sinon origine (0,0)
-        const targetPoint = this.config?.missionConfig?.targetPoint
-            || (this.trainingEnv && this.trainingEnv.config?.missionConfig?.targetPoint)
+        // Source unique : la config de l'environnement courant.
+        const targetPoint = (env && env.config?.missionConfig?.targetPoint)
             || { x: 0, y: 0 };
 
         return RocketAI.buildStateVector({
@@ -728,7 +735,8 @@ class TrainingOrchestrator {
                 let steps = 0;
                 
                 while (!done && steps < this.config.maxStepsPerEpisode) {
-                    const action = this.getActionFromState(state);
+                    // CORRECTION (bug #2) : cible B résolue sur l'env d'évaluation.
+                    const action = this.getActionFromState(state, this.evaluationEnv);
                     const result = this.evaluationEnv.step(action);
                     
                     state = result.observation;

@@ -212,6 +212,10 @@ class UniverseModel {
     reset(config = {}) {
         this.celestialBodies = [];
         this.stars = [];
+        this.asteroids = [];
+        this.stations = [];
+        this.narratives = {};
+        this.spawnInfo = null;
         this.elapsedTime = 0;
         this.initializeStars();
         // Logique future potentielle :
