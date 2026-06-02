@@ -215,7 +215,14 @@ class SynchronizationManager {
                     // --- STABILISATION ACTIVE (Pas de tentative de décollage) ---
                     // Détecter si le corps est mobile (orbite)
                     const isMobile = landedOnModel.parentBody !== null;
-                    const parentVelocity = isMobile ? landedOnModel.velocity : { x: 0, y: 0 }; // Obtenir la vélocité du corps parent (ou zéro si statique)
+                    // model.velocity est en unités/seconde ; Matter.js (rocketBody.velocity) et la
+                    // vélocité de la fusée en vol sont en déplacement PAR PAS. On convertit (× dt)
+                    // pour que la fusée posée partage exactement le mouvement par pas de la planète
+                    // (et que handleLiftoff, qui applique la même conversion, soit cohérent au décollage).
+                    const dt = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+                    const parentVelocity = isMobile
+                        ? { x: (landedOnModel.velocity.x || 0) * dt, y: (landedOnModel.velocity.y || 0) * dt }
+                        : { x: 0, y: 0 };
 
                     // 1. Forcer les vitesses (Physique)
                     // Faire suivre la vélocité du corps parent pour les corps mobiles
@@ -288,7 +295,11 @@ class SynchronizationManager {
 
             // Vérifier si le corps est mobile (orbite) - Correction du test ici
             const isAttachedToMobile = attachedToModel && attachedToModel.parentBody !== null;
-            const parentVelocity = isAttachedToMobile ? attachedToModel.velocity : { x: 0, y: 0 };
+            // model.velocity (u/s) → déplacement par pas pour Matter.js (cf. CAS 1).
+            const dtAttached = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+            const parentVelocity = isAttachedToMobile
+                ? { x: (attachedToModel.velocity.x || 0) * dtAttached, y: (attachedToModel.velocity.y || 0) * dtAttached }
+                : { x: 0, y: 0 };
 
             if (isAttachedToMobile) {
                 // Calculer la position relative si pas encore fait

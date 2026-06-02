@@ -172,11 +172,16 @@ class ThrusterPhysics {
                 cb => cb.model && cb.model.name === landedOnBodyName
             );
             if (celestialBodyInfo && celestialBodyInfo.model && celestialBodyInfo.model.velocity) {
+                // model.velocity est en unités/seconde (vélocité orbitale du corps). La vélocité
+                // d'un corps Matter.js (rocketBody) est un déplacement PAR PAS de simulation. On
+                // convertit donc (× deltaTime), sinon la fusée hériterait d'une vitesse ~60× trop
+                // grande et le décollage ne serait pas relatif à la planète.
+                const dt = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
                 inheritedVelocity = {
-                    x: celestialBodyInfo.model.velocity.x || 0,
-                    y: celestialBodyInfo.model.velocity.y || 0
+                    x: (celestialBodyInfo.model.velocity.x || 0) * dt,
+                    y: (celestialBodyInfo.model.velocity.y || 0) * dt
                 };
-                console.log(`[LIFTOFF] Vélocité héritée de ${landedOnBodyName}: (${inheritedVelocity.x.toFixed(2)}, ${inheritedVelocity.y.toFixed(2)})`);
+                console.log(`[LIFTOFF] Vélocité héritée de ${landedOnBodyName} (par pas): (${inheritedVelocity.x.toFixed(3)}, ${inheritedVelocity.y.toFixed(3)})`);
             }
         }
 

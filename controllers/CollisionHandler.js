@@ -248,12 +248,22 @@ class CollisionHandler {
      */
     getCelestialBodyVelocity(otherBody) {
         if (otherBody && this.physicsController && Array.isArray(this.physicsController.celestialBodies)) {
-            const info = this.physicsController.celestialBodies.find(cb => cb.body === otherBody);
+            // Résolution par référence du corps physique, avec repli par nom/label : la
+            // vérification périodique (SynchronizationManager) passe un objet corps SYNTHÉTIQUE
+            // qui n'est jamais === cb.body ; sans le repli par label, la vélocité retomberait à 0
+            // et la détection redeviendrait absolue au lieu de relative.
+            let info = this.physicsController.celestialBodies.find(cb => cb.body === otherBody);
+            if (!info && otherBody.label) {
+                info = this.physicsController.celestialBodies.find(cb => cb.model && cb.model.name === otherBody.label);
+            }
             if (info && info.model && info.model.velocity) {
-                return { x: info.model.velocity.x || 0, y: info.model.velocity.y || 0 };
+                // model.velocity est en unités/seconde (vélocité orbitale). On la convertit en
+                // déplacement par pas de simulation pour la comparer à rocketBody.velocity (Matter.js).
+                const dt = (this.physicsController.lastDeltaTime) || (1 / 60);
+                return { x: (info.model.velocity.x || 0) * dt, y: (info.model.velocity.y || 0) * dt };
             }
         }
-        // Repli : vélocité du corps physique uniquement s'il est dynamique, sinon zéro.
+        // Repli : la vélocité d'un corps physique dynamique est déjà en unités Matter (par pas).
         if (otherBody && otherBody.velocity && !otherBody.isStatic) {
             return { x: otherBody.velocity.x || 0, y: otherBody.velocity.y || 0 };
         }
