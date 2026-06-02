@@ -181,7 +181,7 @@ class RocketController {
             this.rocketModel.setThrusterPower(thrusterId, power);
             
             if (this.particleSystemModel) {
-                const fuelOk = this.rocketModel.fuel > 0;
+                const fuelOk = this.rocketModel._infiniteFuel || this.rocketModel.fuel > 0;
                 this.particleSystemModel.setEmitterActive(thrusterId, fuelOk && power > 0.01, this.rocketModel);
             }
             this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);

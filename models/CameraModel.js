@@ -80,6 +80,13 @@ class CameraModel {
         // Log pour suivre l'état de la caméra à chaque update
         // console.log(`[CameraModel.update] Mode: ${this.mode}, Target:`, this.target ? this.target.name || this.target : null, `Position: {x: ${this.x}, y: ${this.y}}`);
         
+        // Si on est censé suivre la fusée mais que la cible a été perdue (ex: référence
+        // invalidée après un reload d'univers), repasser automatiquement en mode 'free'
+        // pour éviter une caméra figée (return silencieux).
+        if (this.mode === 'rocket' && !this.target) {
+            this.mode = 'free';
+        }
+
         if (!this.target && this.mode !== 'free') { // Si pas de cible et pas en mode libre, loguer un avertissement
             // console.warn("[CameraModel.update] Mode de suivi actif mais aucune cible définie.", { mode: this.mode, target: this.target });
             return;

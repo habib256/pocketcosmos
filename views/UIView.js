@@ -437,38 +437,6 @@ class UIView {
         ctx.restore();
     }
 
-    /** @private Affiche la distance à la lune si la fusée est proche. */
-    _renderMoonInfo(ctx, canvas, rocketModel, universeModel) {
-        if (!this.showMoonInfo || !universeModel.celestialBodies) return;
-
-        const moon = universeModel.celestialBodies.find(body => body.name === 'Lune');
-        if (!moon) return;
-
-        const dx = rocketModel.position.x - moon.position.x;
-        const dy = rocketModel.position.y - moon.position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const proximityThreshold = moon.radius * 10; // Seuil pour afficher l'info
-        const warningThreshold = moon.radius * 3;   // Seuil pour l'avertissement
-
-        ctx.save();
-        if (distance < proximityThreshold) {
-            ctx.font = `14px ${this.fontFamily}`;
-            ctx.fillStyle = this.colors.moon;
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            ctx.fillText(`Distance Lune: ${Math.floor(distance - moon.radius)} m (surface)`, canvas.width - 20, 20);
-
-            if (distance < warningThreshold) {
-                ctx.font = `bold 16px ${this.fontFamily}`; // Avertissement plus visible
-                ctx.fillStyle = this.colors.orange;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText('⚠️ Proximité Lunaire!', canvas.width / 2, 80); // Déplacé pour éviter superposition
-            }
-        }
-        ctx.restore();
-    }
-
     /** @private Affiche la boîte contenant les crédits, missions et cargo. */
     _renderMissionAndCargoBox(ctx, canvas, rocketModel, missions, totalCreditsEarned) {
         if (!missions && (!rocketModel || !rocketModel.cargo)) {
@@ -493,7 +461,7 @@ class UIView {
         this._drawSectionFrame(ctx, boxX, boxWidth, boxPadding,1, this.colors.frameBorder, 3, sectionStartY, creditsEndY);
 
         // --- Section Missions ---
-        const missionsRenderNeeded = missions && missions.length > 0 || (rocketModel && rocketModel.isDestroyed);
+        const missionsRenderNeeded = (missions && missions.length > 0) || (rocketModel && rocketModel.isDestroyed);
         if (missionsRenderNeeded) {
             sectionStartY = currentY;
             let missionsEndY = this._renderMissionsSection(ctx, boxX, boxPadding, currentY, lineHeight, missions, rocketModel);

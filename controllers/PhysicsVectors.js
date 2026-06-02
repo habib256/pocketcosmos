@@ -215,11 +215,11 @@ class PhysicsVectors {
                 switch (thrusterName) {
                     case 'main':
                         thrustAngle = rocketModel.angle + Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = rocketConstants.MAIN_THRUST * (thruster.power / thruster.maxPower) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
+                        thrustMagnitude = rocketConstants.MAIN_THRUST * (thruster.maxPower > 0 ? thruster.power / thruster.maxPower : 0) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
                         break;
                     case 'rear':
                         thrustAngle = rocketModel.angle - Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = rocketConstants.REAR_THRUST * (thruster.power / thruster.maxPower) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
+                        thrustMagnitude = rocketConstants.REAR_THRUST * (thruster.maxPower > 0 ? thruster.power / thruster.maxPower : 0) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
                         break;
                 }
 
@@ -272,17 +272,31 @@ class PhysicsVectors {
                     }
                 }
 
+                // 'power' est une valeur absolue (0 à maxPower), pas un pourcentage.
+                // On reproduit fidèlement la magnitude calculée par ThrusterPhysics.applyThrusterForce :
+                // (power / maxPower) borné dans [0,1] * THRUST_* * THRUSTER_EFFECTIVENESS.* * THRUST_MULTIPLIER
+                // (avec réduction par 2 pour les latéraux).
+                const powerRatio = thruster.maxPower > 0
+                    ? Math.max(0, Math.min(1, thruster.power / thruster.maxPower))
+                    : 0;
+                const effectiveness = rocketConstants.THRUSTER_EFFECTIVENESS || {};
                 let thrustForce;
                 switch (thrusterName) {
                     case 'main':
-                        thrustForce = rocketConstants.MAIN_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        thrustForce = rocketConstants.MAIN_THRUST * powerRatio
+                                      * (effectiveness.MAIN !== undefined ? effectiveness.MAIN : 1)
+                                      * physicsConstants.THRUST_MULTIPLIER;
                         break;
                     case 'rear':
-                        thrustForce = rocketConstants.REAR_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        thrustForce = rocketConstants.REAR_THRUST * powerRatio
+                                      * (effectiveness.REAR !== undefined ? effectiveness.REAR : 1)
+                                      * physicsConstants.THRUST_MULTIPLIER;
                         break;
                     case 'left':
                     case 'right':
-                        thrustForce = rocketConstants.LATERAL_THRUST * (thruster.power / 100) * physicsConstants.THRUST_MULTIPLIER;
+                        thrustForce = (rocketConstants.LATERAL_THRUST * powerRatio
+                                      * (effectiveness.LATERAL !== undefined ? effectiveness.LATERAL : 1)
+                                      * physicsConstants.THRUST_MULTIPLIER) / 2;
                         break;
                     default:
                         thrustForce = 0;

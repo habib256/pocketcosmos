@@ -264,8 +264,11 @@ class ThrusterPhysics {
             // (avec une marge pour éviter les micro-corrections inutiles)
             if (!leftActive && !rightActive && Math.abs(rocketBody.angularVelocity) > 0.001) { 
                 // Calculer une force de stabilisation proportionnelle et opposée à la vitesse angulaire
-                // Le facteur 'rotationStabilityFactor' contrôle l'intensité de la stabilisation
-                const stabilizationForce = -rocketBody.angularVelocity * this.rotationStabilityFactor;
+                // Le facteur 'rotationStabilityFactor' contrôle l'intensité de la stabilisation.
+                // On le borne dans [0,1] pour que la correction ne dépasse jamais la vitesse angulaire
+                // actuelle : sinon (factor > 1) le signe de la rotation s'inverserait et divergerait.
+                const effectiveFactor = Math.max(0, Math.min(1, this.rotationStabilityFactor));
+                const stabilizationForce = -rocketBody.angularVelocity * effectiveFactor;
                 // Appliquer directement un changement de vitesse angulaire (comme un léger couple inverse)
                 // Note: Matter.js n'a pas de 'applyTorque' direct, donc on modifie la vitesse angulaire
                 this.Body.setAngularVelocity(rocketBody, rocketBody.angularVelocity + stabilizationForce);

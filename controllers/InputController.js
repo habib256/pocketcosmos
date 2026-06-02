@@ -115,6 +115,13 @@ class InputController {
             buttons: []
         };
         /**
+         * Indique si le message "Aucun gamepad connecté" a déjà été loggué.
+         * Initialisé ici pour éviter un état indéfini avant toute connexion de gamepad.
+         * @type {boolean}
+         * @private
+         */
+        this.noGamepadLogged = false;
+        /**
          * Mappage sémantique des axes et boutons du joystick aux actions du jeu.
          * @type {{axes: Object<number, string>, buttons: Object<number, string>}}
          * @property {Object<number, string>} axes - Mappage des index d'axes aux noms d'actions.
@@ -205,6 +212,15 @@ class InputController {
         this.initMouseEvents(); // Renommé pour clarté
         this.initTouchEvents(); // Renommé pour clarté
         this.initGamepadEvents();
+
+        // Lors d'un reset de la fusée, RocketModel remet les propulseurs à 0 mais notre
+        // état d'entrée (activeKeyActions) conserve les touches maintenues : aucun nouveau
+        // START n'est alors émis et le propulseur reste "fantôme" à 0. On purge donc l'état
+        // d'entrée (et on émet les STOP correspondants) pour resynchroniser entrées et modèle.
+        if (this.eventBus && typeof this.eventBus.subscribe === 'function') {
+            this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this._releaseAllActiveActions());
+        }
+
         console.log(`[InputController] ✅ Événements initialisés, keyMap contient ${Object.keys(this.keyMap).length} touches`);
     }
     
@@ -258,8 +274,18 @@ class InputController {
             rotateRight: EVENTS.ROCKET.ROTATE_RIGHT_STOP,
         };
         for (const actionKey of this.activeKeyActions) {
+            // Les clés clavier utilisent '-' (action-code), les clés gamepad utilisent '_'
+            // (ex: 'thrustForward_gamepad_boost'). On extrait le nom d'action avant le
+            // premier séparateur rencontré, quel qu'il soit, pour relâcher les deux types.
             const dashIdx = actionKey.indexOf('-');
-            const actionName = dashIdx >= 0 ? actionKey.slice(0, dashIdx) : actionKey;
+            const underscoreIdx = actionKey.indexOf('_');
+            let sepIdx = -1;
+            if (dashIdx >= 0 && underscoreIdx >= 0) {
+                sepIdx = Math.min(dashIdx, underscoreIdx);
+            } else {
+                sepIdx = dashIdx >= 0 ? dashIdx : underscoreIdx;
+            }
+            const actionName = sepIdx >= 0 ? actionKey.slice(0, sepIdx) : actionKey;
             const stopEvent = stopEventByAction[actionName];
             if (stopEvent) this.eventBus.emit(stopEvent);
         }
@@ -395,7 +421,7 @@ class InputController {
         }
         this.gamepad = gamepad;
         this.gamepadState.axes = Array(this.gamepad.axes.length).fill(0);
-        this.gamepadState.buttons = Array(this.gamepad.buttons.length).fill({ pressed: false, value: 0 });
+        this.gamepadState.buttons = Array.from({ length: this.gamepad.buttons.length }, () => ({ pressed: false, value: 0 }));
         this.eventBus.emit(EVENTS.INPUT.GAMEPAD_CONNECTED, { id: this.gamepad.id });
         /**
          * Indique si le message "Aucun gamepad connecté" a déjà été loggué pour la session courante (ou depuis la dernière connexion).
@@ -417,7 +443,10 @@ class InputController {
             const index = this.gamepad.index;
             this.gamepad = null;
             this.gamepadState.axes.fill(0);
-            this.gamepadState.buttons.fill({ pressed: false, value: 0 });
+            this.gamepadState.buttons = Array.from({ length: this.gamepadState.buttons.length }, () => ({ pressed: false, value: 0 }));
+            // Vider les axes maintenus et arrêter toute rotation en cours pour éviter une rotation bloquée.
+            this.heldAxes = {};
+            this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
             this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: gamepadId });
             this.noGamepadLogged = false; // Réinitialiser lors de la déconnexion
         }

@@ -239,6 +239,10 @@ class RocketModel {
      * @returns {boolean} true si on peut mettre isLanded à true, false si le délai de grâce est actif
      */
     canSetLanded() {
+        // Invariant : une fusée détruite ne peut pas être considérée comme posée.
+        if (this.isDestroyed) {
+            return false;
+        }
         if (this._liftoffGracePeriodEnd === null) {
             return true; // Pas de délai actif
         }

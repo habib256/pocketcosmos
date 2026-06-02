@@ -15,8 +15,9 @@ class CelestialBodyModel {
      * @param {number} orbitDistance Distance orbitale moyenne par rapport au centre du parentBody.
      * @param {number} initialOrbitAngle Angle initial sur l'orbite en radians (0 = axe positif X).
      * @param {number} orbitSpeed Vitesse angulaire orbitale en radians par seconde.
+     * @param {{hasAtmosphere?: boolean}} [options] Options additionnelles. `hasAtmosphere` pilote l'existence de l'atmosphère. Si non fourni, valeur rétro-compatible basée sur le nom ('Terre').
      */
-    constructor(name, mass, radius, position, color, parentBody = null, orbitDistance = 0, initialOrbitAngle = 0, orbitSpeed = 0) {
+    constructor(name, mass, radius, position, color, parentBody = null, orbitDistance = 0, initialOrbitAngle = 0, orbitSpeed = 0, options = {}) {
         // Identité
         /** @type {string} */
         this.name = name;
@@ -44,11 +45,12 @@ class CelestialBodyModel {
         this.color = color || '#FFFFFF';
         /**
          * @type {{exists: boolean, height: number, color: string}}
-         * Propriétés de l'atmosphère pour le rendu. La logique d'existence
-         * est actuellement spécifique au nom, mais pourrait être généralisée.
+         * Propriétés de l'atmosphère pour le rendu. L'existence est pilotée par
+         * `options.hasAtmosphere`. Par défaut (paramètre non fourni), comportement
+         * rétro-compatible : seule la Terre possède une atmosphère.
          */
         this.atmosphere = {
-            exists: name === 'Terre',
+            exists: typeof options.hasAtmosphere === 'boolean' ? options.hasAtmosphere : (name === 'Terre'),
             height: radius * CELESTIAL_BODY.ATMOSPHERE_RATIO, // Hauteur de l'atmosphère
             color: 'rgba(25, 35, 80, 0.4)'  // Bleu très sombre semi-transparent
         };
@@ -91,8 +93,10 @@ class CelestialBodyModel {
 
         // Mettre à jour l'angle orbital basé sur la vitesse orbitale et le deltaTime.
         this.currentOrbitAngle += this.orbitSpeed * deltaTime;
-        // Garder l'angle dans [0, 2*PI] pour éviter des valeurs trop grandes (optionnel mais propre)
-        this.currentOrbitAngle %= (2 * Math.PI);
+        // Garder l'angle normalisé dans [0, 2*PI). Le modulo simple produirait un angle
+        // négatif pour les orbites rétrogrades (orbitSpeed < 0) ; cette forme garantit [0, 2*PI).
+        const TWO_PI = 2 * Math.PI;
+        this.currentOrbitAngle = ((this.currentOrbitAngle % TWO_PI) + TWO_PI) % TWO_PI;
 
         // Calculer la nouvelle position relative à la position actuelle du parent.
         const relativeX = Math.cos(this.currentOrbitAngle) * this.orbitDistance;

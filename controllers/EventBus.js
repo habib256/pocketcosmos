@@ -28,10 +28,11 @@ class EventBus {
         this.listeners = new Map();
         /**
          * @private
-         * @type {Map<string, Set<Function>>}
+         * @type {Map<string, {regex: RegExp, callbacks: Set<Function>}>}
          * Stocke les callbacks wildcard pour les patterns (ex: 'PHYSICS.*').
          * La clé est le pattern de l'événement (string).
-         * La valeur est un Set de fonctions callback associées à ce pattern.
+         * La valeur est un objet contenant la RegExp compilée une seule fois (au subscribe)
+         * et un Set de fonctions callback associées à ce pattern.
          */
         this.wildcardListeners = new Map();
     }
@@ -52,9 +53,13 @@ class EventBus {
     subscribe(eventType, callback) {
         if (eventType.includes('*')) {
             if (!this.wildcardListeners.has(eventType)) {
-                this.wildcardListeners.set(eventType, new Set());
+                // Compiler la RegExp une seule fois au moment du subscribe (pas à chaque emit).
+                // Échapper les caractères spéciaux du pattern, puis remplacer '*' par '.*'.
+                const escaped = eventType.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+                const regex = new RegExp(`^${escaped}$`);
+                this.wildcardListeners.set(eventType, { regex, callbacks: new Set() });
             }
-            this.wildcardListeners.get(eventType).add(callback);
+            this.wildcardListeners.get(eventType).callbacks.add(callback);
         } else {
             if (!this.listeners.has(eventType)) {
                 this.listeners.set(eventType, new Set());
@@ -108,9 +113,9 @@ class EventBus {
     unsubscribe(eventType, callback) {
         if (eventType.includes('*')) {
             if (this.wildcardListeners.has(eventType)) {
-                const set = this.wildcardListeners.get(eventType);
-                set.delete(callback);
-                if (set.size === 0) this.wildcardListeners.delete(eventType); // Nettoie la map si plus d'auditeurs pour ce pattern.
+                const entry = this.wildcardListeners.get(eventType);
+                entry.callbacks.delete(callback);
+                if (entry.callbacks.size === 0) this.wildcardListeners.delete(eventType); // Nettoie la map si plus d'auditeurs pour ce pattern.
             }
         } else if (this.listeners.has(eventType)) {
             const listenersForEvent = this.listeners.get(eventType);
@@ -163,30 +168,30 @@ class EventBus {
                 catch(err) { console.error(`Erreur EventBus [${eventType}]:`, err); }
             }
         }
-        // Écouteurs wildcard
-        for (const [pattern, cbs] of this.wildcardListeners) {
-            // transformer pattern en regex
-            // Échapper les caractères spéciaux du pattern pour les utiliser dans une RegExp.
-            // Remplacer '*' par '.*' pour la correspondance wildcard de type glob.
-            const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-            const regex = new RegExp(`^${escaped}$`); // Crée une RegExp pour tester si l'eventType correspond au pattern.
-            if (regex.test(eventType)) {
+        // Écouteurs wildcard : la RegExp a été compilée une fois au subscribe (pas de recompilation ici).
+        for (const [pattern, entry] of this.wildcardListeners) {
+            if (entry.regex.test(eventType)) {
                  // Itérer sur une copie du Set pour éviter les problèmes si un callback modifie la collection.
-                for (const cb of [...cbs]) {
+                for (const cb of [...entry.callbacks]) {
                     try { cb(data); notified = true; }
                     catch(err) { console.error(`Erreur EventBus [${pattern} -> ${eventType}]:`, err); }
                 }
             }
         }
-        // Warning si aucun listener (sauf pour les événements internes connus)
-        const silentEvents = [
-            'rocket:internalStateChanged',
-            'AI_TRAINING_PROGRESS',
-            'physics:debug:acceleration'
-        ];
-        
-        if (!notified && !silentEvents.includes(eventType)) {
-            console.warn(`EventBus: aucun auditeur pour l'événement "${eventType}"`);
+        // Warning si aucun listener (sauf pour les événements internes connus).
+        // Conditionné par un flag debug pour éviter le spam console en production.
+        const debug = (typeof globalThis !== 'undefined' && globalThis.DEBUG) ||
+                      (typeof window !== 'undefined' && window.DEBUG);
+        if (debug) {
+            const silentEvents = [
+                'rocket:internalStateChanged',
+                'AI_TRAINING_PROGRESS',
+                'physics:debug:acceleration'
+            ];
+
+            if (!notified && !silentEvents.includes(eventType)) {
+                console.warn(`EventBus: aucun auditeur pour l'événement "${eventType}"`);
+            }
         }
     }
     

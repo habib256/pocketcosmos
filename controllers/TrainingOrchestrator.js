@@ -34,7 +34,12 @@ class TrainingOrchestrator {
             logInterval: 50,
             
             // Objectifs d'entraînement
-            objectives: ['orbit', 'land', 'explore']
+            // CORRECTION (bug défaut objectif): la doc décrit 'navigate' comme objectif par
+            // défaut. L'ancien défaut ['orbit','land','explore'] écrasait
+            // trainingState.currentObjective='navigate' quand startTraining était appelé sans
+            // objectives explicites. L'UI passe ses propres objectives, donc ce défaut ne
+            // s'applique qu'en l'absence de configuration utilisateur.
+            objectives: ['navigate']
         };
         
         // Métriques d'entraînement
@@ -743,7 +748,8 @@ class TrainingOrchestrator {
                 }
                 
                 totalScore += episodeReward;
-                if (this.isEpisodeSuccessful(episodeReward, steps)) {
+                // CORRECTION (bug eval): évaluer le succès sur l'environnement d'évaluation
+                if (this.isEpisodeSuccessful(episodeReward, steps, this.evaluationEnv)) {
                     successCount++;
                 }
                 
@@ -808,24 +814,30 @@ class TrainingOrchestrator {
     
     /**
      * Détermine si un épisode est réussi
+     * @param {number} reward - Récompense cumulée de l'épisode
+     * @param {number} steps - Nombre de pas effectués
+     * @param {HeadlessRocketEnvironment} [env] - CORRECTION (bug eval): l'environnement réellement
+     *   utilisé pour l'épisode (trainingEnv en apprentissage, evaluationEnv en évaluation).
+     *   Le succès doit être évalué sur CET environnement, sinon le taux de succès d'évaluation
+     *   est calculé sur l'état du mauvais environnement.
      */
-    isEpisodeSuccessful(reward, steps) {
+    isEpisodeSuccessful(reward, steps, env = this.trainingEnv) {
         // Pour l'objectif 'navigate', déléguer à l'environnement pour garantir
         // une définition unique du succès (distance ET vitesse de stabilisation).
         if (this.trainingState.currentObjective === 'navigate') {
-            if (this.trainingEnv && typeof this.trainingEnv.checkNavigateSuccess === 'function') {
-                return this.trainingEnv.checkNavigateSuccess();
+            if (env && typeof env.checkNavigateSuccess === 'function') {
+                return env.checkNavigateSuccess();
             }
             return false;
         }
-        
+
         // CORRECTION: Pour l'objectif 'crash_moon', vérifier si la fusée s'est crashée sur la Lune
         if (this.trainingState.currentObjective === 'crash_moon') {
-            if (this.trainingEnv) {
-                const rocketModel = this.trainingEnv.rocketModel;
+            if (env) {
+                const rocketModel = env.rocketModel;
                 if (rocketModel && rocketModel.isDestroyed) {
                     // Vérifier si le crash a eu lieu sur la Lune
-                    const moon = this.trainingEnv.universeModel?.celestialBodies?.find(body => body.name === 'Lune');
+                    const moon = env.universeModel?.celestialBodies?.find(body => body.name === 'Lune');
                     if (moon) {
                         // Calculer la distance pour confirmer le crash sur la Lune
                         const dx = rocketModel.position.x - moon.position.x;

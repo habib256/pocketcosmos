@@ -278,25 +278,4 @@ class CelestialBodyView {
         ctx.textBaseline = 'middle';
         ctx.fillText(body.name, screenPos.x, screenPos.y);
     }
-    
-    /**
-     * Fonction utilitaire pour calculer une version légèrement plus claire d'une couleur hexadécimale.
-     * Utilisée pour le contour des corps célestes.
-     * @param {string} hexColor - La couleur au format hexadécimal (ex: '#FF0000').
-     * @returns {string} La couleur éclaircie au format hexadécimal.
-     */
-    getLighterColor(hexColor) {
-        // Convertir la couleur hex en RGB
-        let r = parseInt(hexColor.substr(1, 2), 16);
-        let g = parseInt(hexColor.substr(3, 2), 16);
-        let b = parseInt(hexColor.substr(5, 2), 16);
-        
-        // Éclaircir la couleur
-        r = Math.min(255, r + 40);
-        g = Math.min(255, g + 40);
-        b = Math.min(255, b + 40);
-        
-        // Reconvertir en hex
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    }
-} 
+}

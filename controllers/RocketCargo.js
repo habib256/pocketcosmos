@@ -43,6 +43,11 @@ class RocketCargo {
      * @returns {boolean} - True si l'ajout (partiel ou total) a réussi, false si impossible (déjà plein).
      */
     addCargo(type, quantity) {
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            console.warn(`[RocketCargo] Quantité invalide pour addCargo(${type}): ${quantity}.`);
+            return false;
+        }
+
         const currentLoad = this.getCurrentLoad();
         const availableSpace = this.maxCapacity - currentLoad;
 
@@ -81,6 +86,11 @@ class RocketCargo {
      * @returns {boolean} - True si le retrait a réussi, false sinon
      */
     removeCargo(type, quantity) {
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            console.warn(`[RocketCargo] Quantité invalide pour removeCargo(${type}): ${quantity}.`);
+            return false;
+        }
+
         const itemIndex = this.cargoItems.findIndex(item => item.type === type);
         if (itemIndex === -1) return false;
 
@@ -107,7 +117,8 @@ class RocketCargo {
      * @returns {Array<{type: string, quantity: number}>}
      */
     getCargoList() {
-        return [...this.cargoItems];
+        // Copie profonde des items pour éviter qu'un appelant ne mute item.quantity.
+        return this.cargoItems.map(i => ({ ...i }));
     }
 
     /**
