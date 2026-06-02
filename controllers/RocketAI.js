@@ -226,6 +226,20 @@ class RocketAI {
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
         trackSub(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
+
+        // CORRECTION (bug #5) : après un changement de monde, le UniverseModel (et le
+        // RocketModel) sont recréés. Sans réabonnement, this.universeModel reste obsolète.
+        // Le payload de UNIVERSE.STATE_UPDATED est { universeModel, rocketModel }.
+        if (window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
+            trackSub(this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, (data) => {
+                if (data && data.universeModel) {
+                    this.universeModel = data.universeModel;
+                }
+                if (data && data.rocketModel) {
+                    this.rocketModel = data.rocketModel;
+                }
+            }));
+        }
     }
     
     // Activer/désactiver l'agent
@@ -465,6 +479,16 @@ class RocketAI {
     
     // Calculer la récompense en fonction de l'état actuel
     calculateReward() {
+        // CORRECTION (bug #9) : cette fonction implémente une récompense ORBITE codée en dur.
+        // Elle n'est utilisée qu'en mode jeu (step()). Pour ne pas tromper l'agent lorsqu'un
+        // autre objectif est actif (ex: 'navigate'), on ne l'applique QUE si currentObjective
+        // est 'orbit'. Pour les autres objectifs, l'entraînement réel passe par
+        // HeadlessRocketEnvironment.calculateReward (récompense spécifique à l'objectif),
+        // donc ici on renvoie une récompense neutre.
+        if (this.currentObjective !== 'orbit') {
+            return 0;
+        }
+
         // Vérifier que les données nécessaires sont disponibles
         if (!this.rocketData || !this.celestialBodyData) {
             return -1;

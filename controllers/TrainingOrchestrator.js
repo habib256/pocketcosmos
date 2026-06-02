@@ -642,39 +642,34 @@ class TrainingOrchestrator {
     
     /**
      * Construit l'état au format attendu par RocketAI
+     * CORRECTION (bug #4) : délègue à la source de vérité unique RocketAI.buildStateVector
+     * pour garantir une normalisation et une dimension (10) IDENTIQUES entre entraînement,
+     * évaluation et inférence. L'état est CONSCIENT DE LA CIBLE B (pour 'navigate'), sinon
+     * la cible vaut (0,0) (corps de référence à l'origine pour les autres objectifs headless).
      */
     buildAIState(environmentState) {
+        const STATE_SIZE = (typeof RocketAI !== 'undefined' && RocketAI.STATE_SIZE) ? RocketAI.STATE_SIZE : 10;
+
         // Vérifier que environmentState existe
         if (!environmentState || typeof environmentState !== 'object') {
-            return Array(10).fill(0);
+            return Array(STATE_SIZE).fill(0);
         }
-        
-        // Adapter l'état de l'environnement au format RocketAI
-        // (position, vitesse, angle, etc. normalisés)
-        const rawState = [
-            (environmentState.rocketX || 0) / 100000,  // Position X normalisée
-            (environmentState.rocketY || 0) / 100000,  // Position Y normalisée
-            (environmentState.rocketVX || 0) / 100,    // Vitesse X normalisée
-            (environmentState.rocketVY || 0) / 100,    // Vitesse Y normalisée
-            (environmentState.rocketAngle || 0) / (2 * Math.PI), // Angle normalisé
-            (environmentState.rocketAngularVelocity || 0) / 10,  // Vitesse angulaire normalisée
-            (environmentState.rocketFuel || 0) / (ROCKET?.FUEL_MAX || 1000), // Carburant normalisé
-            (environmentState.rocketHealth || 100) / 100,       // Santé normalisée
-            // Distance au corps céleste le plus proche (approximative avec la position)
-            Math.min(Math.sqrt((environmentState.rocketX || 0)**2 + (environmentState.rocketY || 0)**2) / 10000, 1),
-            // Angle vers le corps céleste (approximatif)
-            Math.atan2(environmentState.rocketY || 0, environmentState.rocketX || 0) / (2 * Math.PI)
-        ];
-        
-        // Vérifier et nettoyer l'état pour s'assurer que tous les éléments sont des nombres finis
-        const cleanState = rawState.map((val) => {
-            if (typeof val !== 'number' || !isFinite(val)) {
-                return 0;
-            }
-            return Math.max(-10, Math.min(10, val));
+
+        // Récupérer la cible : point B pour 'navigate', sinon origine (0,0)
+        const targetPoint = this.config?.missionConfig?.targetPoint
+            || (this.trainingEnv && this.trainingEnv.config?.missionConfig?.targetPoint)
+            || { x: 0, y: 0 };
+
+        return RocketAI.buildStateVector({
+            x: environmentState.rocketX || 0,
+            y: environmentState.rocketY || 0,
+            vx: environmentState.rocketVX || 0,
+            vy: environmentState.rocketVY || 0,
+            angle: environmentState.rocketAngle || 0,
+            angularVelocity: environmentState.rocketAngularVelocity || 0,
+            targetX: targetPoint.x,
+            targetY: targetPoint.y
         });
-        
-        return cleanState;
     }
     
     /**
