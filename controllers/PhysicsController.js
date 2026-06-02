@@ -40,6 +40,10 @@ class PhysicsController {
 
         // Paramètres de simulation
         this.timeScale = 1.0;
+        // Dernier deltaTime (secondes) du tick courant. Sert à convertir les vélocités du
+        // modèle (exprimées en unités/seconde, ex. vélocité orbitale) vers le déplacement
+        // par pas de simulation utilisé par Matter.js (rocketBody.velocity).
+        this.lastDeltaTime = 1 / 60;
         this.gravitationalConstant = this.PHYSICS.G; // Correction : utiliser la même constante que la simulation
 
         // Contrôles assistés (l'état est géré ici, la logique dans ThrusterPhysics)
@@ -164,6 +168,9 @@ class PhysicsController {
         }
 
         this.clearCacheIfNeeded();
+
+        // Mémoriser le deltaTime courant pour les conversions vélocité modèle (u/s) → Matter (par pas).
+        this.lastDeltaTime = deltaTime;
 
         if (!this.rocketModel || !this.rocketBody || !this.universeModel) return;
 
