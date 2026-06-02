@@ -1,6 +1,11 @@
 // TensorFlow.js est chargé globalement via le script dans index.html
 
 class RocketAI {
+    // CORRECTION (bug #4) : dimension unique du vecteur d'état, partagée par le builder
+    // (buildStateVector), la construction du modèle (inputShape) et le replay buffer.
+    // Toute modification de cette valeur reste cohérente partout via cette constante.
+    static get STATE_SIZE() { return 10; }
+
     constructor(eventBus) {
         // Référence à l'EventBus pour communiquer avec les autres composants
         this.eventBus = eventBus;
@@ -140,11 +145,11 @@ class RocketAI {
     createModel() {
         const model = tf.sequential();
         
-        // Couche d'entrée: 10 paramètres de l'état - AUGMENTÉ de 64 à 128 neurones
+        // Couche d'entrée: STATE_SIZE paramètres de l'état - AUGMENTÉ de 64 à 128 neurones
         model.add(tf.layers.dense({
             units: 128,
             activation: 'relu',
-            inputShape: [10]
+            inputShape: [RocketAI.STATE_SIZE]
         }));
         
         // Normalisation par couches pour stabiliser l'apprentissage
@@ -448,7 +453,7 @@ class RocketAI {
             // Exploitation: meilleure action selon le modèle
             try {
                 return tf.tidy(() => {
-                    const stateTensor = tf.tensor2d([state], [1, 10]);
+                    const stateTensor = tf.tensor2d([state], [1, RocketAI.STATE_SIZE]);
                     const prediction = this.model.predict(stateTensor);
                     return prediction.argMax(1).dataSync()[0];
                 });
@@ -563,7 +568,7 @@ class RocketAI {
                 state: this.lastState,
                 action: this.lastAction,
                 reward: -100,
-                nextState: Array(10).fill(0),  // État terminal
+                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
                 done: true
             });
             
@@ -595,7 +600,7 @@ class RocketAI {
                 state: this.lastState,
                 action: this.lastAction,
                 reward: 100,
-                nextState: Array(10).fill(0),  // État terminal
+                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
                 done: true
             });
             
@@ -656,16 +661,17 @@ class RocketAI {
             });
             
             // Extraire les états, actions, récompenses, etc. du batch
+            const STATE_SIZE = RocketAI.STATE_SIZE;
             const states = batch.map(exp => {
-                if (!Array.isArray(exp.state) || exp.state.length !== 10) {
-                    return Array(10).fill(0);
+                if (!Array.isArray(exp.state) || exp.state.length !== STATE_SIZE) {
+                    return Array(STATE_SIZE).fill(0);
                 }
                 return exp.state.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
             });
-            
+
             const nextStates = batch.map(exp => {
-                if (!Array.isArray(exp.nextState) || exp.nextState.length !== 10) {
-                    return Array(10).fill(0);
+                if (!Array.isArray(exp.nextState) || exp.nextState.length !== STATE_SIZE) {
+                    return Array(STATE_SIZE).fill(0);
                 }
                 return exp.nextState.map(val => (typeof val !== 'number' || !isFinite(val)) ? 0 : val);
             });
@@ -678,7 +684,7 @@ class RocketAI {
             const totalStateValues = states.reduce((sum, state) => sum + state.length, 0);
             const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
             
-            if (totalStateValues !== this.config.batchSize * 10 || totalNextStateValues !== this.config.batchSize * 10) {
+            if (totalStateValues !== this.config.batchSize * STATE_SIZE || totalNextStateValues !== this.config.batchSize * STATE_SIZE) {
                 return;
             }
             
@@ -692,7 +698,7 @@ class RocketAI {
             const localModel = this.model;
             const localTargetModel = this.targetModel;
             
-            qValues = tf.tidy(() => localModel.predict(tf.tensor2d(states, [this.config.batchSize, 10])));
+            qValues = tf.tidy(() => localModel.predict(tf.tensor2d(states, [this.config.batchSize, STATE_SIZE])));
             
             // Vérifier après la première opération
             if (this.isDisposed) {
@@ -700,7 +706,7 @@ class RocketAI {
                 return;
             }
             
-            nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, 10])));
+            nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, STATE_SIZE])));
             
             // Extraire les valeurs dans JavaScript
             const qValuesData = qValues.arraySync();
@@ -732,7 +738,7 @@ class RocketAI {
             }
             
             // Créer les tenseurs d'entraînement
-            xs = tf.tensor2d(states, [this.config.batchSize, 10]);
+            xs = tf.tensor2d(states, [this.config.batchSize, STATE_SIZE]);
             ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
             
             // Entraîner le modèle avec la référence locale

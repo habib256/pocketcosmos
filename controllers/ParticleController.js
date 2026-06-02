@@ -185,11 +185,6 @@ class ParticleController {
         // Mettre à jour les particules de débris (ex: explosions).
         this.updateParticles(this.particleSystemModel.debrisParticles, deltaTime); // deltaTime n'est pas utilisé
 
-        // Mettre à jour les particules de texte (si utilisées).
-        if (this.particleSystemModel.textParticles && this.particleSystemModel.textParticles.length > 0) {
-            this.updateParticles(this.particleSystemModel.textParticles, deltaTime); // deltaTime n'est pas utilisé
-        }
-
         // Mettre à jour les particules de célébration (si utilisées).
         if (this.particleSystemModel.celebrationParticles && this.particleSystemModel.celebrationParticles.length > 0) {
             this.updateParticles(this.particleSystemModel.celebrationParticles, deltaTime); // deltaTime n'est pas utilisé

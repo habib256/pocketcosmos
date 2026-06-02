@@ -30,7 +30,9 @@ class ParticleModel {
         this.vy *= decay;
 
         this.age += frames;
-        this.alpha = 1.0 - (this.age / this.lifetime);
+        // Clamp dans [0,1] : si age > lifetime, 1 - age/lifetime deviendrait négatif
+        // (alpha invalide pour rgba()).
+        this.alpha = Math.max(0, Math.min(1, 1.0 - (this.age / this.lifetime)));
 
         this.size *= decay;
 
