@@ -265,31 +265,53 @@ class InputController {
     }
 
     _releaseAllActiveActions() {
-        if (!this.activeKeyActions || this.activeKeyActions.size === 0) return;
-        const stopEventByAction = {
-            thrustForward: EVENTS.ROCKET.THRUST_FORWARD_STOP,
-            boost: EVENTS.ROCKET.THRUST_FORWARD_STOP,
-            thrustBackward: EVENTS.ROCKET.THRUST_BACKWARD_STOP,
-            rotateLeft: EVENTS.ROCKET.ROTATE_LEFT_STOP,
-            rotateRight: EVENTS.ROCKET.ROTATE_RIGHT_STOP,
-        };
-        for (const actionKey of this.activeKeyActions) {
-            // Les clés clavier utilisent '-' (action-code), les clés gamepad utilisent '_'
-            // (ex: 'thrustForward_gamepad_boost'). On extrait le nom d'action avant le
-            // premier séparateur rencontré, quel qu'il soit, pour relâcher les deux types.
-            const dashIdx = actionKey.indexOf('-');
-            const underscoreIdx = actionKey.indexOf('_');
-            let sepIdx = -1;
-            if (dashIdx >= 0 && underscoreIdx >= 0) {
-                sepIdx = Math.min(dashIdx, underscoreIdx);
-            } else {
-                sepIdx = dashIdx >= 0 ? dashIdx : underscoreIdx;
+        if (this.activeKeyActions && this.activeKeyActions.size > 0) {
+            const stopEventByAction = {
+                thrustForward: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+                boost: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+                thrustBackward: EVENTS.ROCKET.THRUST_BACKWARD_STOP,
+                rotateLeft: EVENTS.ROCKET.ROTATE_LEFT_STOP,
+                rotateRight: EVENTS.ROCKET.ROTATE_RIGHT_STOP,
+            };
+            for (const actionKey of this.activeKeyActions) {
+                // Les clés clavier utilisent '-' (action-code), les clés gamepad utilisent '_'
+                // (ex: 'thrustForward_gamepad_boost'). On extrait le nom d'action avant le
+                // premier séparateur rencontré, quel qu'il soit, pour relâcher les deux types.
+                const dashIdx = actionKey.indexOf('-');
+                const underscoreIdx = actionKey.indexOf('_');
+                let sepIdx = -1;
+                if (dashIdx >= 0 && underscoreIdx >= 0) {
+                    sepIdx = Math.min(dashIdx, underscoreIdx);
+                } else {
+                    sepIdx = dashIdx >= 0 ? dashIdx : underscoreIdx;
+                }
+                const actionName = sepIdx >= 0 ? actionKey.slice(0, sepIdx) : actionKey;
+                const stopEvent = stopEventByAction[actionName];
+                if (stopEvent) this.eventBus.emit(stopEvent);
             }
-            const actionName = sepIdx >= 0 ? actionKey.slice(0, sepIdx) : actionKey;
-            const stopEvent = stopEventByAction[actionName];
-            if (stopEvent) this.eventBus.emit(stopEvent);
+            this.activeKeyActions.clear();
         }
-        this.activeKeyActions.clear();
+
+        // Régression gamepad : après avoir vidé activeKeyActions et émis les STOP, l'état
+        // mémorisé des boutons (gamepadState.buttons[i].pressed) reste à `true` pour un
+        // bouton physiquement maintenu. Au prochain update(), pressed === wasPressed → aucun
+        // front montant → START jamais ré-émis → propulseur bloqué OFF. On réinitialise donc
+        // l'état mémorisé : le prochain update() verra un front montant pour les boutons
+        // encore tenus et ré-émettra START. Le clavier n'est pas concerné (keyup le gère).
+        if (this.gamepadState && Array.isArray(this.gamepadState.buttons)) {
+            for (let i = 0; i < this.gamepadState.buttons.length; i++) {
+                if (this.gamepadState.buttons[i]) {
+                    this.gamepadState.buttons[i].pressed = false;
+                    this.gamepadState.buttons[i].value = 0;
+                }
+            }
+        }
+        // Idem pour les axes : on purge l'état mémorisé et on stoppe toute rotation en cours.
+        // Un axe encore maintenu sera de nouveau pris en compte au prochain update().
+        if (this.heldAxes && Object.keys(this.heldAxes).length > 0) {
+            this.heldAxes = {};
+            if (this.eventBus) this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
+        }
     }
     
     /**
@@ -393,7 +415,7 @@ class InputController {
         // Écouter les déconnexions futures
         const gpDisconnectHandler = (event) => {
             if (this.gamepad && this.gamepad.index === event.gamepad.index) {
-                this.disconnectGamepad(event.gamepad.id);
+                this.disconnectGamepad(event.gamepad);
             }
         };
         this._gamepadHandlers.disconnected = gpDisconnectHandler;
@@ -436,18 +458,22 @@ class InputController {
      * Gère la déconnexion d'une manette de jeu.
      * Réinitialise l'état de la manette dans le contrôleur.
      * Émet un événement `EVENTS.INPUT.GAMEPAD_DISCONNECTED`.
-     * @param {string} gamepadId - L'ID de la manette déconnectée, tel que fourni par l'API Gamepad.
+     * @param {Gamepad} gamepad - La manette déconnectée, telle que fournie par l'API Gamepad.
      */
-    disconnectGamepad(gamepadId) {
-        if (this.gamepad && this.gamepad.id === gamepadId) {
-            const index = this.gamepad.index;
+    disconnectGamepad(gamepad) {
+        // On compare par `index` (slot physique) pour rester cohérent avec le handler
+        // `gamepaddisconnected`. Comparer par `id` échouait quand une autre manette est
+        // branchée sur le même slot (même index, id différent) : `this.gamepad` n'était
+        // alors jamais libéré et `connectGamepad` rejetait le pad de remplacement.
+        if (this.gamepad && gamepad && this.gamepad.index === gamepad.index) {
+            const disconnectedId = this.gamepad.id;
             this.gamepad = null;
             this.gamepadState.axes.fill(0);
             this.gamepadState.buttons = Array.from({ length: this.gamepadState.buttons.length }, () => ({ pressed: false, value: 0 }));
             // Vider les axes maintenus et arrêter toute rotation en cours pour éviter une rotation bloquée.
             this.heldAxes = {};
             this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
-            this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: gamepadId });
+            this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: disconnectedId });
             this.noGamepadLogged = false; // Réinitialiser lors de la déconnexion
         }
     }

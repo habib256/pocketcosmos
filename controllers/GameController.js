@@ -637,7 +637,7 @@ class GameController {
                 const rocketStartX = host.position.x + Math.cos(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
                 const rocketStartY = host.position.y + Math.sin(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
                 this.rocketModel.setPosition(rocketStartX, rocketStartY);
-                this.rocketModel.setVelocity(host.velocity.x, host.velocity.y);
+                this.rocketModel.setVelocity(host.velocity?.x || 0, host.velocity?.y || 0);
                 this.rocketModel.setAngle(angleVersSoleil);
                 this.rocketModel.isLanded = true;
                 this.rocketModel.landedOn = host.name;
@@ -846,7 +846,7 @@ class GameController {
         } else {
             console.warn("[GameController] physicsController.adjustGlobalThrustMultiplier n'est pas disponible.");
             // Fallback à l'ancienne logique si la méthode n'existe pas (pourrait être retiré plus tard)
-            const currentMultiplier = PHYSICS.THRUST_MULTIPLIER;
+            const currentMultiplier = PHYSICS.THRUST_MULTIPLIER ?? 1;
             const newMultiplier = currentMultiplier * factor;
             const minMultiplier = 0.1;
             const maxMultiplier = 1000;
@@ -866,9 +866,19 @@ class GameController {
      */
     handleRocketStateUpdated(data) {
         if (data.isDestroyed && !this._lastRocketDestroyed) {
-            // Une action pourrait être déclenchée ici si la fusée est détruite,
-            // comme afficher un message ou démarrer un timer de réinitialisation.
-            // Pour l'instant, seul l'état _lastRocketDestroyed est mis à jour.
+            // Transition de destruction détectée (une seule fois, pas à chaque frame).
+            // Faire échouer toutes les missions encore en attente : la fusée (et son cargo)
+            // est détruite. On émet EVENTS.MISSION.FAILED par mission pending, ce que
+            // MissionManager.failMission attend ({ mission, rocketModel }).
+            if (this.missionManager && typeof this.missionManager.getActiveMissions === 'function') {
+                const pendingMissions = this.missionManager.getActiveMissions();
+                pendingMissions.forEach(mission => {
+                    this.eventBus.emit(EVENTS.MISSION.FAILED, {
+                        mission,
+                        rocketModel: this.rocketModel
+                    });
+                });
+            }
         }
         this._lastRocketDestroyed = !!data.isDestroyed;
     }
@@ -945,7 +955,8 @@ class GameController {
                     const match = stationsOnHost.find(s => {
                         // normaliser l'écart angulaire dans [-PI, PI]
                         let diff = outwardAngle - s.angle;
-                        diff = (diff + Math.PI) % (Math.PI * 2) - Math.PI;
+                        // Normalisation robuste dans [-PI, PI] (le % JS garde le signe du dividende)
+                        diff = ((diff % (2 * Math.PI)) + 2 * Math.PI + Math.PI) % (2 * Math.PI) - Math.PI;
                         // Convertir tolérance de distance en tolérance angulaire approximative
                         const radius = host.radius - (typeof STATIONS !== 'undefined' && STATIONS.SURFACE_INSET !== undefined ? STATIONS.SURFACE_INSET : -(typeof STATIONS !== 'undefined' ? STATIONS.SURFACE_OFFSET : 4));
                         const baseTol = (typeof STATIONS !== 'undefined' ? STATIONS.DOCKING_DISTANCE_TOLERANCE : 40);
@@ -1036,6 +1047,23 @@ class GameController {
             return;
         }
         this._universeLoadInFlight = true;
+        // Mémoriser l'état précédent pour pouvoir le restaurer sur tout chemin d'échec
+        // (évite de rester bloqué en PAUSED avec menu pause et aucun monde).
+        const previousState = this.currentState;
+        // Indique si on a effectivement basculé en PAUSED et donc qu'il faut restaurer.
+        let pausedForLoad = false;
+        // Restaure un état cohérent après un échec de chargement.
+        const restoreAfterFailure = () => {
+            // Si aucun monde n'a jamais été chargé (modèles absents), on ne peut pas reprendre :
+            // on reste dans l'état précédent (typiquement LOADING).
+            const canResume = !!(this.rocketModel && this.universeModel);
+            if (this.physicsController) this.physicsController.resumeSimulation();
+            if (canResume) {
+                this.changeState(GameStates.PLAYING);
+            } else {
+                this.changeState(previousState);
+            }
+        };
         try {
             if (!opts || !opts.source) {
                 console.warn('[GameController] UNIVERSE_LOAD_REQUESTED sans options valides.');
@@ -1045,6 +1073,7 @@ class GameController {
             // Mettre en pause la simulation pour un reload sûr
             if (this.physicsController) this.physicsController.pauseSimulation();
             this.changeState(GameStates.PAUSED);
+            pausedForLoad = true;
 
             let data = null;
             if (opts.source === 'random') {
@@ -1052,18 +1081,24 @@ class GameController {
                     data = window.ProceduralGenerator.generate(opts.seed);
                 } else {
                     console.warn('[GameController] Aucun ProceduralGenerator détecté. Abandon du chargement random.');
+                    restoreAfterFailure();
                     return;
                 }
             } else if (opts.source === 'preset' && typeof opts.url === 'string') {
                 data = await fetch(opts.url).then(r => r.json());
             } else {
                 console.warn('[GameController] Options de chargement preset/random invalides.', opts);
+                restoreAfterFailure();
                 return;
             }
 
             this.resetWorld(data);
         } catch (e) {
             console.error('[GameController] handleUniverseLoadRequested erreur:', e);
+            // En cas d'échec (ex: fetch/JSON), ne pas rester bloqué en PAUSED sans monde.
+            if (pausedForLoad) {
+                restoreAfterFailure();
+            }
         } finally {
             this._universeLoadInFlight = false;
         }

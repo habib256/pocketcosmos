@@ -151,6 +151,11 @@ class RocketModel {
         // Réinitialiser l'état (santé, carburant)
         this.fuel = ROCKET.FUEL_MAX;
         this.health = ROCKET.MAX_HEALTH;
+        // Réaffirmer l'état par défaut du carburant infini pour éviter qu'un mode
+        // activé précédemment (entraînement 'navigate') ne fuie vers le jeu normal.
+        // HeadlessRocketEnvironment.reset() re-positionne ce flag selon sa config
+        // juste après l'appel à reset(), donc l'entraînement n'est pas impacté.
+        this._infiniteFuel = false;
         this.isDestroyed = false;
         this.isLanded = false;
         this.landedOn = null;

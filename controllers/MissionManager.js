@@ -183,7 +183,10 @@ class MissionManager {
                 console.warn('[MissionManager] Mission invalide ignorée:', m);
                 continue;
             }
-            const sanitized = m.requiredCargo.filter(it => it && typeof it.type === 'string' && typeof it.quantity === 'number' && it.quantity > 0);
+            const sanitized = m.requiredCargo
+                .filter(it => it && typeof it.type === 'string' && typeof it.quantity === 'number' && it.quantity > 0)
+                // Cloner chaque item pour éviter les références partagées avec les données source.
+                .map(it => ({ type: it.type, quantity: it.quantity }));
             if (sanitized.length === 0) {
                 console.warn('[MissionManager] requiredCargo vide/invalid pour mission, ignorée:', m);
                 continue;

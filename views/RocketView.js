@@ -71,7 +71,10 @@ class RocketView {
             try {
                 // Calculer les dimensions de dessin pour assurer une taille minimale à l'écran
                 const minScreenSize = 10; // Taille minimale souhaitée en pixels à l'écran
-                const minDrawDim = minScreenSize / camera.zoom; // Taille minimale équivalente dans les coordonnées du monde
+                // Garde défensive : éviter une division par zéro (zoom normalement borné ≥ 0.0025,
+                // mais un zoom à 0 produirait Infinity puis un drawImage de dimensions infinies).
+                const safeZoom = camera.zoom > 0 ? camera.zoom : 1;
+                const minDrawDim = minScreenSize / safeZoom; // Taille minimale équivalente dans les coordonnées du monde
 
                 let drawWidth = this.baseWidth;
                 let drawHeight = this.baseHeight;

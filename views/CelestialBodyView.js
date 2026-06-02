@@ -56,13 +56,14 @@ class CelestialBodyView {
         const screenPos = camera.worldToScreen(body.position.x, body.position.y);
         const screenRadius = body.radius * camera.zoom;
 
-        // Détection générique de l'étoile centrale (multi-mondes) : c'est soit le corps
-        // identifié comme étoile par UniverseView (sunBodyModel), soit un corps portant un
-        // nom d'étoile connu, soit un corps sans parent (parentBody === null).
+        // Détection de l'étoile centrale (multi-mondes). Dès qu'UniverseView identifie une
+        // étoile centrale (sunBodyModel), un SEUL corps doit être rendu comme étoile : on
+        // teste l'identité stricte. Sans étoile fournie, on retombe sur l'heuristique par nom
+        // connu ou par absence de parent (corps racine).
         const STAR_NAMES = ['Soleil', 'Sun', 'Kerbol', 'Star', 'Sol'];
-        const isStar = (sunBodyModel && body === sunBodyModel) ||
-                       STAR_NAMES.includes(body.name) ||
-                       body.parentBody === null;
+        const isStar = sunBodyModel
+                       ? (body === sunBodyModel)
+                       : (STAR_NAMES.includes(body.name) || body.parentBody === null);
 
         // Effet spécial pour l'étoile centrale : dégradé radial animé du orange au jaune
         if (isStar) {

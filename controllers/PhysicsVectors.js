@@ -212,14 +212,18 @@ class PhysicsVectors {
                 let thrustAngle = 0;
                 let thrustMagnitude = 0;
 
+                const effectiveness = rocketConstants.THRUSTER_EFFECTIVENESS || {};
+                const thrustMultiplier = (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
+                const powerRatio = thruster.maxPower > 0 ? thruster.power / thruster.maxPower : 0;
+
                 switch (thrusterName) {
                     case 'main':
                         thrustAngle = rocketModel.angle + Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = rocketConstants.MAIN_THRUST * (thruster.maxPower > 0 ? thruster.power / thruster.maxPower : 0) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
+                        thrustMagnitude = rocketConstants.MAIN_THRUST * powerRatio * (effectiveness.MAIN ?? 1) * thrustMultiplier;
                         break;
                     case 'rear':
                         thrustAngle = rocketModel.angle - Math.PI / 2; // Angle original de GameController
-                        thrustMagnitude = rocketConstants.REAR_THRUST * (thruster.maxPower > 0 ? thruster.power / thruster.maxPower : 0) * (typeof PHYSICS !== 'undefined' ? PHYSICS.THRUST_MULTIPLIER : 1);
+                        thrustMagnitude = rocketConstants.REAR_THRUST * powerRatio * (effectiveness.REAR ?? 1) * thrustMultiplier;
                         break;
                 }
 
@@ -228,8 +232,10 @@ class PhysicsVectors {
                         x: thruster.position.x,
                         y: thruster.position.y
                     },
-                    x: -Math.cos(thrustAngle), // Direction originale de GameController
-                    y: -Math.sin(thrustAngle), // Direction originale de GameController
+                    vector: {
+                        x: -Math.cos(thrustAngle), // Direction originale de GameController
+                        y: -Math.sin(thrustAngle)  // Direction originale de GameController
+                    },
                     magnitude: thrustMagnitude
                 };
             }

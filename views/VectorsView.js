@@ -36,7 +36,19 @@ class VectorsView {
     computeGravityFieldGrid(ctx, camera, physicsController) {
         // Throttle/reuse: ne recalculer que si la caméra a sensiblement changé ou si intervalle écoulé
         const now = performance && performance.now ? performance.now() : Date.now();
-        const sig = `${camera.x.toFixed(1)}|${camera.y.toFixed(1)}|${camera.zoom.toFixed(3)}|${ctx.canvas.width}|${ctx.canvas.height}`;
+        // Hash léger des positions des corps : la signature caméra seule ne suffit pas, car les
+        // corps orbitent même quand la caméra est immobile — sinon les flèches/équipotentielles
+        // resteraient figées et décalées pendant la fenêtre de throttle. On somme x+y de chaque
+        // corps pour détecter tout mouvement significatif et invalider le cache en conséquence.
+        let bodiesHash = 0;
+        const sigBodies = physicsController ? physicsController.celestialBodies : null;
+        if (sigBodies) {
+            for (const bodyInfo of sigBodies) {
+                const m = bodyInfo.model;
+                if (m && m.position) bodiesHash += m.position.x + m.position.y;
+            }
+        }
+        const sig = `${camera.x.toFixed(1)}|${camera.y.toFixed(1)}|${camera.zoom.toFixed(3)}|${ctx.canvas.width}|${ctx.canvas.height}|${bodiesHash.toFixed(1)}`;
         const canReuse = this.gravityFieldGrid && this._lastCameraSignature === sig && (now - this._lastGridComputeTime) < this._gridComputeIntervalMs;
         if (canReuse) {
             return; // Réutiliser la grille existante

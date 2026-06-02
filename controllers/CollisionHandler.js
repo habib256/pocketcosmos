@@ -325,11 +325,18 @@ class CollisionHandler {
                 rocketModel.landedOn = otherBody.label;
                 rocketModel.attachedTo = otherBody.label;
                 rocketModel.relativePosition = null;
-                
+                // Invariant : une fusée en cours de crash ne doit jamais rester "posée".
+                // Sans cela, si la fusée était isLanded=true juste avant l'impact, elle deviendrait
+                // isLanded=true ET isDestroyed=true la même frame, et handleLandedOrAttachedRocket
+                // appliquerait simultanément le cas "posé" et le cas "débris" (setPosition/setAngle/
+                // setVelocity concurrents). On force explicitement isLanded=false ici, sans dépendre
+                // du seul effet de bord d'applyDamage.
+                rocketModel.isLanded = false;
+
                 // Appliquer des dégâts fatals SI la fusée n'est pas déjà détruite
                 let wasJustDestroyedByCrash = false;
                 if (!rocketModel.isDestroyed) {
-                    wasJustDestroyedByCrash = rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1); 
+                    wasJustDestroyedByCrash = rocketModel.applyDamage(this.ROCKET.MAX_HEALTH + 1);
                 }
                 
                 this.playCollisionSound(50);

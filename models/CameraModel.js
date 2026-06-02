@@ -126,9 +126,11 @@ class CameraModel {
         const targetX = this.target.position.x;
         const targetY = this.target.position.y;
         
-        // Interpolation linéaire pour un mouvement doux vers la cible.
-        const deltaX = (targetX - this.x) * this.smoothing * deltaTime;
-        const deltaY = (targetY - this.y) * this.smoothing * deltaTime;
+        // Interpolation exponentielle pour un mouvement doux vers la cible,
+        // indépendante du framerate. Le facteur reste dans [0, 1), évitant tout overshoot.
+        const factor = 1 - Math.exp(-this.smoothing * deltaTime);
+        const deltaX = (targetX - this.x) * factor;
+        const deltaY = (targetY - this.y) * factor;
 
         this.x += deltaX;
         this.y += deltaY;

@@ -14,22 +14,23 @@ class SynchronizationManager {
         this.Events = this.physicsController.Events;
 
         // Synchronisation réactive des corps mobiles avant chaque update
-        this.Events.on(this.engine, 'beforeUpdate', () => {
+        // Je stocke le handler dans une propriété pour pouvoir le désabonner proprement (évite la fuite d'écouteurs au reload).
+        this._beforeUpdateHandler = () => {
             this.syncMovingBodyPositions();
             // Ne pas forcer la synchronisation du rocketModel vers physique en vol (éviter d'écraser la stabilisation)
             const rocketModel = this.physicsController.rocketModel;
             if (!rocketModel) return;
-            
+
             // CORRECTION: Ne pas synchroniser si:
             // 1. La fusée n'est pas atterrie (en vol)
             // 2. Le délai de grâce est actif (décollage récent)
             // 3. Le propulseur principal est actif (tentative de décollage)
-            const isInGracePeriod = rocketModel._liftoffGracePeriodEnd !== null && 
+            const isInGracePeriod = rocketModel._liftoffGracePeriodEnd !== null &&
                                     Date.now() < rocketModel._liftoffGracePeriodEnd;
             const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
-            const isThrusterActive = main && main.maxPower > 0 && 
+            const isThrusterActive = main && main.maxPower > 0 &&
                                      (main.power / main.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT;
-            
+
             // Ne synchroniser que si la fusée est vraiment posée (pas en décollage)
             if ((rocketModel.isLanded || rocketModel.isDestroyed) && !isInGracePeriod && !isThrusterActive) {
                 // CORRECTION BUG CRASH: Mettre à jour la position du modèle AVANT de synchroniser avec la physique
@@ -40,12 +41,21 @@ class SynchronizationManager {
                 // Log de debug pour tracer les cas où on évite la synchronisation
                 // console.log(`[beforeUpdate] Évite sync: gracePeriod=${isInGracePeriod}, thrusterActive=${isThrusterActive}`);
             }
-        });
+        };
+        this.Events.on(this.engine, 'beforeUpdate', this._beforeUpdateHandler);
 
         // Synchronisation réactive Physics → Model après chaque update (écouter l'engine, pas le world)
-        this.Events.on(this.engine, 'afterUpdate', () => {
+        this._afterUpdateHandler = () => {
             this.syncModelWithPhysics(this.physicsController.rocketModel);
-        });
+        };
+        this.Events.on(this.engine, 'afterUpdate', this._afterUpdateHandler);
+
+        // Enregistrer le désabonnement des écouteurs Matter.js pour le nettoyage centralisé.
+        // Sans cela, au rechargement d'univers ces écouteurs s'accumuleraient (fuite mémoire).
+        if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+            window.controllerContainer.track(() => this.Events.off(this.engine, 'beforeUpdate', this._beforeUpdateHandler));
+            window.controllerContainer.track(() => this.Events.off(this.engine, 'afterUpdate', this._afterUpdateHandler));
+        }
 
         // CORRECTION: S'abonner à UNIVERSE_STATE_UPDATED pour réinitialiser les références après rechargement
         if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
@@ -59,6 +69,26 @@ class SynchronizationManager {
         }
 
         // Détection d'atterrissage gérée périodiquement via checkRocketLandedStatusPeriodically et CollisionHandler
+    }
+
+    /**
+     * Désabonne les écouteurs Matter.js (beforeUpdate/afterUpdate) pour éviter une fuite
+     * d'écouteurs cumulés (notamment au rechargement d'univers ou à un teardown).
+     * Idempotent : les références sont mises à null après retrait.
+     * Le nettoyage est aussi enregistré via controllerContainer.track() dans le constructeur ;
+     * cette méthode permet un nettoyage explicite cohérent avec les autres contrôleurs.
+     */
+    cleanup() {
+        if (this.Events && this.engine) {
+            if (this._beforeUpdateHandler) {
+                this.Events.off(this.engine, 'beforeUpdate', this._beforeUpdateHandler);
+                this._beforeUpdateHandler = null;
+            }
+            if (this._afterUpdateHandler) {
+                this.Events.off(this.engine, 'afterUpdate', this._afterUpdateHandler);
+                this._afterUpdateHandler = null;
+            }
+        }
     }
 
     // Synchronise le modèle logique avec les données du corps physique
