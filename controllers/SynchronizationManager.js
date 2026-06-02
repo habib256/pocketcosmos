@@ -198,6 +198,11 @@ class SynchronizationManager {
                         this.physicsController.thrusterPhysics.handleLiftoff(rocketModel, this.physicsController.rocketBody, savedLandedOn);
                     }
                 }
+                // Rafraîchir la période de grâce À CHAQUE frame où la poussée est active (pas seulement
+                // à la transition). Combiné à isRocketLanded qui renvoie false pendant la grâce, cela
+                // empêche toute re-détection d'atterrissage / ré-ancrage pendant tout le décollage et
+                // 500 ms après l'arrêt de la poussée — y compris sur un corps en mouvement (Âtrebois).
+                rocketModel.startLiftoffGracePeriod(500);
                 return; // Ne pas appliquer la stabilisation si on essaie de décoller
             }
         }
