@@ -191,24 +191,31 @@ class ThrusterPhysics {
         rocketModel.relativePosition = null;
         rocketModel.startLiftoffGracePeriod(500);
 
-        // L'angle "vers le haut" de la fusée est son angle - 90 degrés (PI/2 radians)
+        // L'axe "vers le haut" de la fusée (direction du nez / poussée principale) est `angle - PI/2`,
+        // exactement la direction de poussée du propulseur principal (cf. applyThrusterForce :
+        // thrustAngle = angle + MAIN.angle, avec MAIN.angle = -PI/2, force POSITIVE). Le coup de pouce
+        // de décollage doit donc être POSITIF dans cette direction (vers l'extérieur du corps).
+        // NB : un signe négatif ici poussait la fusée VERS le centre de la planète ; le bug était
+        // masqué par l'ancienne vélocité héritée (en mauvaises unités, ~60× trop grande) qui
+        // catapultait la fusée tangentiellement. Une fois la vélocité héritée corrigée, ce kick
+        // inversé plaquait la fusée au sol ("collée").
         const liftOffAngle = rocketBody.angle - Math.PI / 2;
-        
-        // Appliquer une impulsion modérée pour aider à vaincre l'inertie initiale
-        // La poussée continue des propulseurs fera le reste
+
+        // Appliquer une impulsion modérée (vers l'extérieur) pour aider à vaincre l'inertie initiale.
+        // La poussée continue des propulseurs fera le reste.
         const impulseForce = 50.0;
         const impulse = {
-            x: Math.cos(liftOffAngle) * -impulseForce,
-            y: Math.sin(liftOffAngle) * -impulseForce
+            x: Math.cos(liftOffAngle) * impulseForce,
+            y: Math.sin(liftOffAngle) * impulseForce
         };
         this.Body.applyForce(rocketBody, rocketBody.position, impulse);
 
-        // CORRECTION BUG INERTIE: Ajouter la vélocité héritée du corps céleste
-        // à la vitesse initiale de décollage pour conserver l'inertie
+        // CORRECTION BUG INERTIE: Ajouter la vélocité héritée du corps céleste (en déplacement par
+        // pas) à la vitesse initiale de décollage pour conserver l'inertie orbitale (décollage relatif).
         const initialVelMagnitude = 20.0;
         const liftoffVelocity = {
-            x: Math.cos(liftOffAngle) * -initialVelMagnitude + inheritedVelocity.x,
-            y: Math.sin(liftOffAngle) * -initialVelMagnitude + inheritedVelocity.y
+            x: Math.cos(liftOffAngle) * initialVelMagnitude + inheritedVelocity.x,
+            y: Math.sin(liftOffAngle) * initialVelMagnitude + inheritedVelocity.y
         };
         this.Body.setVelocity(rocketBody, liftoffVelocity);
         
