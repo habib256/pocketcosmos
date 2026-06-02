@@ -65,9 +65,12 @@ class CollisionHandler {
 
                     if (!otherBody) continue; // Vérification supplémentaire pour l'autre corps.
 
-                    // Calculer la vitesse d'impact relative entre la fusée et l'autre corps.
-                    const relVelX = rocketBody.velocity.x - (otherBody.isStatic ? 0 : otherBody.velocity.x);
-                    const relVelY = rocketBody.velocity.y - (otherBody.isStatic ? 0 : otherBody.velocity.y);
+                    // Calculer la vitesse d'impact RELATIVE entre la fusée et l'autre corps.
+                    // On lit la vélocité réelle du corps (orbitale) via le modèle : les corps
+                    // célestes étant `isStatic`, leur `body.velocity` ne reflète pas leur mouvement.
+                    const otherVel = this.getCelestialBodyVelocity(otherBody);
+                    const relVelX = rocketBody.velocity.x - otherVel.x;
+                    const relVelY = rocketBody.velocity.y - otherVel.y;
                     const impactVelocity = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
                     const COLLISION_THRESHOLD = 2.5; // m/s, seuil pour différencier un contact léger d'un impact notable.
 
@@ -235,6 +238,28 @@ class CollisionHandler {
      * @param {Matter.Body} otherBody - Le corps physique Matter.js avec lequel la collision est vérifiée.
      * @returns {boolean} True si la fusée est considérée comme atterrie, false sinon (y compris en cas de crash).
      */
+    /**
+     * Retourne la vélocité réelle d'un corps céleste.
+     * Les corps célestes sont `isStatic` dans Matter.js : leur `body.velocity` n'est donc pas
+     * fiable même lorsqu'ils orbitent. La source de vérité est la vélocité du modèle associé
+     * (mise à jour par `updateOrbit`). On résout le modèle par référence du corps physique.
+     * @param {Matter.Body} otherBody - Le corps physique entré en contact avec la fusée.
+     * @returns {{x: number, y: number}} La vélocité du corps (0,0 si centrale/inconnue).
+     */
+    getCelestialBodyVelocity(otherBody) {
+        if (otherBody && this.physicsController && Array.isArray(this.physicsController.celestialBodies)) {
+            const info = this.physicsController.celestialBodies.find(cb => cb.body === otherBody);
+            if (info && info.model && info.model.velocity) {
+                return { x: info.model.velocity.x || 0, y: info.model.velocity.y || 0 };
+            }
+        }
+        // Repli : vélocité du corps physique uniquement s'il est dynamique, sinon zéro.
+        if (otherBody && otherBody.velocity && !otherBody.isStatic) {
+            return { x: otherBody.velocity.x || 0, y: otherBody.velocity.y || 0 };
+        }
+        return { x: 0, y: 0 };
+    }
+
     isRocketLanded(rocketModel, otherBody) {
         const rocketBody = this.physicsController.rocketBody;
         // Vérifications initiales pour s'assurer que tous les objets nécessaires existent
@@ -273,8 +298,12 @@ class CollisionHandler {
         const isCloseToSurface = Math.abs(isNaN(distanceToSurface) ? Infinity : distanceToSurface) < proximityThreshold;
 
 
-        const velocity = rocketBody.velocity;
-        const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        // Vitesse RELATIVE au corps céleste : un atterrissage ou un crash se juge par rapport à
+        // la surface (qui peut être en orbite/mouvement), pas dans le référentiel absolu du monde.
+        const bodyVelocity = this.getCelestialBodyVelocity(otherBody);
+        const relSpeedX = rocketBody.velocity.x - bodyVelocity.x;
+        const relSpeedY = rocketBody.velocity.y - bodyVelocity.y;
+        const speed = Math.sqrt(relSpeedX * relSpeedX + relSpeedY * relSpeedY);
         const angularVelocity = Math.abs(rocketBody.angularVelocity);
 
         // Calcul de l'angle d'orientation de la fusée par rapport à la normale à la surface du corps céleste.
