@@ -14,7 +14,7 @@
       },
       {
         "name": "Sablière Rouge",
-        "mass": 100000000000,
+        "mass": 10000000000,
         "radius": 150,
         "color": "#FF8C00",
         "parentName": "Grand Feu",
@@ -24,7 +24,7 @@
       },
       {
         "name": "Sablière Noire",
-        "mass": 90000000000,
+        "mass": 9000000000,
         "radius": 140,
         "color": "#3B3B3B",
         "parentName": "Sablière Rouge",
@@ -34,7 +34,7 @@
       },
       {
         "name": "Âtrebois",
-        "mass": 200000000000,
+        "mass": 30000000000,
         "radius": 300,
         "color": "#228B22",
         "parentName": "Grand Feu",
@@ -44,7 +44,7 @@
       },
       {
         "name": "La Rocaille",
-        "mass": 10000000000,
+        "mass": 1500000000,
         "radius": 50,
         "color": "#CCCCCC",
         "parentName": "Âtrebois",
@@ -54,7 +54,7 @@
       },
       {
         "name": "Cravité",
-        "mass": 400000000000,
+        "mass": 30000000000,
         "radius": 280,
         "color": "#483D8B",
         "parentName": "Grand Feu",
@@ -64,7 +64,7 @@
       },
       {
         "name": "La Lanterne",
-        "mass": 5000000000,
+        "mass": 2000000000,
         "radius": 60,
         "color": "#FF4500",
         "parentName": "Cravité",
@@ -74,7 +74,7 @@
       },
       {
         "name": "Léviathe",
-        "mass": 900000000000,
+        "mass": 130000000000,
         "radius": 600,
         "color": "#20B2AA",
         "parentName": "Grand Feu",
@@ -84,7 +84,7 @@
       },
       {
         "name": "Sombronces",
-        "mass": 300000000000,
+        "mass": 25000000000,
         "radius": 250,
         "color": "#C0C0C0",
         "parentName": "Grand Feu",
@@ -114,7 +114,7 @@
       },
       {
         "name": "Lune quantique",
-        "mass": 10000000000,
+        "mass": 1500000000,
         "radius": 50,
         "color": "#AAAAAA",
         "parentName": "Grand Feu",
@@ -124,7 +124,7 @@
       },
       {
         "name": "L'Étranger",
-        "mass": 10000000000,
+        "mass": 4000000000,
         "radius": 100,
         "color": "#4B5320",
         "parentName": "Grand Feu",
@@ -134,7 +134,7 @@
       },
       {
         "name": "L'Œil de l'Univers",
-        "mass": 20000000000,
+        "mass": 4500000000,
         "radius": 100,
         "color": "#800080",
         "parentName": "Grand Feu",
