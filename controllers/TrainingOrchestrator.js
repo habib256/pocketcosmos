@@ -531,10 +531,21 @@ class TrainingOrchestrator {
             if (this.rocketAI && !this.rocketAI.isDisposed &&
                 this.rocketAI.replayBuffer.length >= this.config.batchSize &&
                 steps % this.rocketAI.config.updateFrequency === 0) {
+                // DIAGNOSTIC throttlé : prouver que ce site est atteint et que train est appelable.
+                // hasDiag=undefined => le RocketAI.js servi est une version en CACHE (sans nos logs).
+                const _nowT = Date.now();
+                if (!this._lastTrainCallDiag || _nowT - this._lastTrainCallDiag > 2000) {
+                    this._lastTrainCallDiag = _nowT;
+                    try { console.warn(`[Orchestrator] -> appel train() typeof=${typeof this.rocketAI.train} hasDiag=${typeof this.rocketAI._diagTrain} successfulTrainings=${this.rocketAI.concurrencyMetrics ? this.rocketAI.concurrencyMetrics.successfulTrainings : '?'}`); } catch (e) {}
+                }
                 try {
                     await this.rocketAI.train();
                 } catch (trainError) {
-                    // Ignorer silencieusement
+                    const _m = (trainError && trainError.message) ? trainError.message : String(trainError);
+                    if (!this._lastTrainErrDiag || _nowT - this._lastTrainErrDiag > 2000) {
+                        this._lastTrainErrDiag = _nowT;
+                        try { console.error('[Orchestrator] train() a levé une exception:', _m); } catch (e) {}
+                    }
                 }
             }
             
