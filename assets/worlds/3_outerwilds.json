@@ -34,7 +34,7 @@
       },
       {
         "name": "Âtrebois",
-        "mass": 200000000000,
+        "mass": 30000000000,
         "radius": 300,
         "color": "#228B22",
         "parentName": "Grand Feu",
