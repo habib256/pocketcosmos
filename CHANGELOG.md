@@ -38,13 +38,18 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   `rocketModel.x/.vx/.isCrashed` (inexistants → `undefined`/NaN). Corrigé en `position/velocity`/
   `isDestroyed`. N'affectait que la visualisation (l'état réseau était déjà correct).
 
-### IA / entraînement — diagnostic (apprentissage inactif) + calibration vitesse
-- **Diagnostic instrumenté.** Sur l'interface d'entraînement : `Entraînements Réussis = 0` malgré
-  ~1,5M appels et **perte plate à 0** → `RocketAI.train()` n'aboutit jamais à la mise à jour des poids
-  (la hausse de récompense est un artefact de la décroissance d'epsilon → action fixe → la fusée fonce
-  et s'éloigne au lieu de freiner à B). Le `catch` de `train()` **avalait silencieusement** l'erreur.
-  Ajout d'un log throttlé (`_diagTrain`) sur le garde d'entrée ET dans le `catch` (hors « dispose »)
-  pour révéler la cause exacte au prochain run.
+### IA / entraînement — RACINE corrigée (apprentissage enfin actif) + calibration vitesse
+- **🎯 BUG RACINE : `updateTargetModel()` détruisait les poids du modèle.** L'« optimisation
+  memory leak » faisait `this.model.getWeights().forEach(w => w.dispose())` — or `getWeights()`
+  renvoie les **tenseurs vivants des variables** (pas des copies). Résultat : dès `initModel`, le
+  noyau `dense_Dense1/kernel` était disposé, et **`model.fit()` levait `LayersVariable … is already
+  disposed` à CHAQUE appel** → `successfulTrainings` restait à 0, perte plate, aucun apprentissage.
+  L'epsilon initial à 1.0 (actions aléatoires) masquait le défaut : la fusée bougeait sans jamais
+  utiliser le réseau. **Correctif : `targetModel.setWeights(model.getWeights())` sans aucun dispose.**
+- **Diagnostic instrumenté** (qui a permis de remonter à la racine) : `train()` instrumenté sur
+  toutes ses sorties (`guard`/`buffer`/`inprogress`/`fit-start`/`ok` + 5 `return`), `catch`
+  dé-filtré, et traces côté `TrainingOrchestrator` (taille du buffer, `isTraining`, site d'appel).
+  `testUpdateFrequency()` rendu fiable (attend `waitForReady`, rapporte les updates réelles).
 - **Calibration vitesse par cohérence d'unités** (cibles documentées en u/s mais comparées à une
   vitesse en échelle Matter, ×16,67) :
   - État (`RocketAI.buildStateVector`) : `vx/vy` ramenés en **u/s** (÷ `MATTER_BASE_DELTA`) → fin de la
