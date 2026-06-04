@@ -542,7 +542,19 @@ class TrainingOrchestrator {
             totalReward += result.reward;
             done = result.done;
             steps++;
-            
+
+            // DIAGNOSTIC throttlé (<=1x/2s) : pourquoi train() peut ne jamais se déclencher.
+            // Montre si le buffer se remplit, si l'agent est en mode entraînement, et la valeur
+            // réelle de batchSize/updateFreq (un batchSize undefined rendrait la condition l.532
+            // toujours fausse -> train() jamais appelé -> aucun tag [RocketAI.train]).
+            const _nowDiag = Date.now();
+            if (!this._lastEpDiag || _nowDiag - this._lastEpDiag > 2000) {
+                this._lastEpDiag = _nowDiag;
+                try {
+                    console.warn(`[Orchestrator] ep=${this.metrics.episode} steps=${steps} buffer=${this.rocketAI.replayBuffer.length}/${this.config.batchSize} aiTraining=${this.rocketAI.isTraining} updateFreq=${this.rocketAI.config.updateFrequency}`);
+                } catch (e) {}
+            }
+
             // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive
             // Toutes les 50 steps pour un bon équilibre performance/réactivité
             if (steps % 50 === 0) {
