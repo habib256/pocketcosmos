@@ -48,9 +48,8 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 > vaisseaux à poussée supérieure viendront plus tard. La contrainte forte est donc : **le corps de
 > SPAWN de chaque monde DOIT être décollable** (sinon le joueur est bloqué dès le départ).
 
-- 🔴 **`4_Tatoo` : le corps de spawn (Tatooine) n'est PAS décollable** (poussée/gravité ≈ 0,85).
-  Le joueur spawn dessus et reste collé. *Action :* rendre Tatooine décollable (réduire sa masse) OU
-  déplacer le spawn — **décision de design en attente**.
+- ✅ **`4_Tatoo` : spawn Tatooine rendu décollable** (masse 3e11 → 1,4e11, ratio 0,85 → 1,82). Tous
+  les corps de spawn des 6 mondes sont désormais décollables.
 - ✅ **Audit réalisé** (script de rapport poussée/gravité par corps). Spawns décollables : Terre,
   Kerbin, Âtrebois, Forêt‑lune d'Endor, Acheron. Corps volontairement « lourds » (géantes gazeuses /
   étoiles binaires, non‑spawn — cibles de futurs vaisseaux) : Jupiter, Saturne, Uranus, Ohann,

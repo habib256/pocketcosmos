@@ -42,8 +42,8 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   gatés derrière `if (globalThis.DEBUG)`.
 - Constantes en dur centralisées dans `constants.js` : `MATTER_BASE_DELTA` (1000/60),
   `LANDING_PROXIMITY_THRESHOLD` (15), `CRASH_SINK_DEPTH` (40).
-- Audit d'équilibrage des 6 mondes : tous les spawns sont décollables **sauf Tatooine** (`4_Tatoo`,
-  poussée/gravité ≈ 0,85) — à arbitrer. Les corps à forte gravité non‑spawn sont laissés
+- Audit d'équilibrage des 6 mondes : **tous les corps de spawn sont décollables** (Tatooine corrigé :
+  masse 3e11 → 1,4e11, ratio 0,85 → 1,82). Les corps à forte gravité non‑spawn sont laissés
   volontairement inaccessibles au vaisseau actuel (cibles de futurs vaisseaux plus puissants).
 
 ### Connu / non corrigé (voir [TODO.md](TODO.md))

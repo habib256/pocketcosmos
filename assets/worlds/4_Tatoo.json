@@ -22,7 +22,7 @@
   
       {
         "name": "Tatooine",
-        "mass": 300000000000,
+        "mass": 140000000000,
         "radius": 650,
         "color": "#CFA163",
         "parentName": "Tatoo I",
