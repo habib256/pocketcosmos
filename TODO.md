@@ -8,33 +8,23 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
-## Incohérences d'unités (physique) — racine commune : delta en secondes vs Matter en ms
+## Incohérences d'unités (physique) — ✅ RÉSOLU (2026‑06‑04)
 
-> Contexte complet en [PHYSICS.md §1](PHYSICS.md). Le jeu passe `deltaTime` en **secondes** à
-> `Engine.update` alors que Matter suppose des **millisecondes** (`_baseDelta = 1000/60`). Donc
-> `body.velocity ≈ vitesse(u/s) × (1000/60)`. Le bon facteur de conversion `model.velocity (u/s) →
-> vitesse Matter` est **`× 1000/60`**, **pas** `× deltaTime`. Seul `handleLiftoff` est corrigé.
+> Racine : `deltaTime` en secondes vs Matter en ms ([PHYSICS.md §1](PHYSICS.md)). Le bon facteur de
+> conversion `model.velocity (u/s) → vitesse Matter` est `× 1000/60`, désormais **centralisé** dans
+> `constants.js` (`PHYSICS.MATTER_BASE_DELTA`) et appliqué partout. Toutes les conversions étaient en
+> `× deltaTime` (~1000× trop petit). Corrigé et **vérifié par harnais headless** (vrai Matter.js).
 
-- 🔴 **Détection atterrissage/crash de fait ABSOLUE sur corps mobiles.**
-  `CollisionHandler.getCelestialBodyVelocity` renvoie `model.velocity × dt` (~1000× trop petit) ; comparé
-  à `rocketBody.velocity` (échelle `× 1000/60`), la vélocité du corps est négligeable ⇒ la « vitesse
-  relative » est en réalité ~absolue. Atterrir/crasher sur une lune rapide est mal jugé.
-  *Action :* convertir en `× 1000/60` **et** revérifier les seuils (`LANDING_MAX_SPEED`,
-  `CRASH_SPEED_THRESHOLD`) — tester l'atterrissage sur corps mobile avant/après.
-- 🟠 **Stabilisation au sol en mauvaises unités.** `SynchronizationManager.handleLandedOrAttachedRocket`
-  (`parentVelocity = model.velocity × dt`). Masqué car la position est forcée quand on est posé, mais
-  incohérent. *Action :* aligner sur `× 1000/60`.
-- 🟠 **Vélocité de collision des corps célestes.** `PhysicsController.update` étape 1
-  (`setVelocity(body, model.velocity × lastDeltaTime)`). Le corps paraît ~immobile au solveur de
-  collision. *Action :* aligner sur `× 1000/60` (vérifier qu'aucune catapulte ne réapparaît).
-- 🟢 **Vélocité de spawn.** `GameSetupController` (spawn fusée) fait `setVelocity(host.velocity)`
-  (u/s, sans conversion). Masqué par la stabilisation. *Action :* convertir ou documenter pourquoi c'est sûr.
-- 🟢 **Centraliser la constante.** `MATTER_BASE_DELTA = 1000/60` est en dur dans `ThrusterPhysics`.
-  *Action :* l'exposer dans `constants.js` (`PHYSICS.MATTER_BASE_DELTA`) et la réutiliser partout.
+- ✅ Détection atterrissage/crash enfin **relative** au corps (`CollisionHandler.getCelestialBodyVelocity`).
+  Test headless : une fusée co‑mobile avec un corps rapide (~960 u/s) est maintenant détectée comme
+  **atterrissage** (était un **crash**), sans régression du décollage (dérive/catapulte inchangées).
+  Achève l'intention du commit `0e9546e`.
+- ✅ Stabilisation posé/débris (`SynchronizationManager`), vélocité de collision des corps
+  (`PhysicsController` étape 1), vélocité de spawn (`GameSetupController`) : toutes en `× MATTER_BASE_DELTA`.
+- ✅ Constante `MATTER_BASE_DELTA` centralisée dans `constants.js` (plus de `1000/60` en dur).
 
-> ⚠️ Idéalement, **unifier toutes ces conversions** en une seule passe cohérente (helper unique) en
-> revérifiant atterrissage/crash/collision sur corps mobiles avec le harnais headless. Ne pas faire à
-> l'aveugle : ces lignes « marchent » par compensation et impactent des comportements calibrés.
+> Reste à valider **en jeu réel** : l'atterrissage sur les lunes rapides (Phobos `orbitSpeed=0.8`,
+> Deimos, Io…) devrait désormais être possible quand on co‑bouge avec elles.
 
 ---
 

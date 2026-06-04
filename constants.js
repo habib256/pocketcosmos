@@ -59,10 +59,17 @@ const PHYSICS = {
     
     // Multiplicateur de propulsion
     // Ajustez cette valeur pour augmenter la puissance de tous les propulseurs
-    // Note: La gravité avec G=0.0001 et masses ~2e11 génère des forces énormes
-    // Il faut un multiplicateur élevé pour permettre le décollage
+    // Note: la gravité réelle (plugin matter-attractors, G=0.001) avec des masses ~2e11 génère des
+    // forces énormes ; un multiplicateur élevé est nécessaire pour permettre le décollage. Voir PHYSICS.md.
     THRUST_MULTIPLIER: 100.0,    // Multiplicateur global pour toutes les forces de propulsion
-    
+
+    // Conversion vitesse "monde" (unités/seconde) -> vitesse Matter.js.
+    // Le jeu passe deltaTime en SECONDES à Engine.update alors que Matter suppose des ms
+    // (_baseDelta = 1000/60). Donc body.velocity ≈ (unités/seconde) × (1000/60). Pour traduire une
+    // vélocité modèle (orbitale, u/s) en vélocité Matter cohérente avec rocketBody.velocity,
+    // multiplier par cette constante (PAS par deltaTime). Voir PHYSICS.md §1.
+    MATTER_BASE_DELTA: 1000 / 60,
+
     // Contrôles assistés
     ASSISTED_CONTROLS: {
         NORMAL_ANGULAR_DAMPING: 0.0,     // Amortissement angulaire normal (mode réaliste)

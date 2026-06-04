@@ -280,7 +280,9 @@ class GameSetupController {
                                 const x = fallbackHost.position.x + Math.cos(spawn.angle) * r;
                                 const y = fallbackHost.position.y + Math.sin(spawn.angle) * r;
                                 existingRocketModel.setPosition(x, y);
-                                existingRocketModel.setVelocity(fallbackHost.velocity?.x || 0, fallbackHost.velocity?.y || 0);
+                                // Vélocité héritée du corps hôte à l'échelle Matter (u/s × 1000/60), cohérente
+                                // avec la stabilisation au sol et le décollage. Voir PHYSICS.md §1.
+                                existingRocketModel.setVelocity((fallbackHost.velocity?.x || 0) * PHYSICS.MATTER_BASE_DELTA, (fallbackHost.velocity?.y || 0) * PHYSICS.MATTER_BASE_DELTA);
                                 existingRocketModel.setAngle(spawn.angle);
                                 existingRocketModel.isLanded = true;
                                 existingRocketModel.landedOn = fallbackHost.name;
@@ -295,7 +297,9 @@ class GameSetupController {
                             const x = host.position.x + Math.cos(spawn.angle) * r;
                             const y = host.position.y + Math.sin(spawn.angle) * r;
                             existingRocketModel.setPosition(x, y);
-                            existingRocketModel.setVelocity(host.velocity?.x || 0, host.velocity?.y || 0);
+                            // Vélocité héritée du corps hôte à l'échelle Matter (u/s × 1000/60), cohérente
+                            // avec la stabilisation au sol et le décollage. Voir PHYSICS.md §1.
+                            existingRocketModel.setVelocity((host.velocity?.x || 0) * PHYSICS.MATTER_BASE_DELTA, (host.velocity?.y || 0) * PHYSICS.MATTER_BASE_DELTA);
                             existingRocketModel.setAngle(spawn.angle);
                             existingRocketModel.isLanded = true;
                             existingRocketModel.landedOn = host.name;

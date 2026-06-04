@@ -19,6 +19,15 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 - **Catapulte tangentielle au décollage** (`PhysicsController.update`, étape 1) — `0851b0b`.
   La vélocité Matter des corps mobiles est convertie en par‑pas (`× lastDeltaTime`) ; complète le
   fix d'unités `96b471b` qui avait oublié cette ligne.
+- **Cohérence des unités de vélocité (secondes↔ms).** Détection atterrissage/crash
+  (`CollisionHandler.getCelestialBodyVelocity`), stabilisation posé/débris (`SynchronizationManager`),
+  vélocité de collision des corps mobiles (`PhysicsController` étape 1) et vélocité de spawn
+  (`GameSetupController`) passent toutes de `× deltaTime` (~1000× trop petit) à `× MATTER_BASE_DELTA`
+  (`= 1000/60`), désormais **centralisée** dans `constants.js`. Vérifié en headless : un atterrissage
+  **co-mobile** sur un corps rapide (~960 u/s), auparavant classé à tort comme **crash**, est
+  maintenant correctement détecté comme **atterrissage**, sans régression du décollage (dérive et
+  catapulte inchangées). Achève l'intention du commit `0e9546e` (« vitesse relative au corps ») que
+  le bug d'unités rendait inopérante.
 
 ### Modifié
 - **Rééquilibrage des masses du monde Outer Wilds** (`assets/worlds/3_outerwilds.json`) — `145e3bb`,
@@ -29,10 +38,8 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   (cinématiques).
 
 ### Connu / non corrigé (voir [TODO.md](TODO.md))
-- Incohérence d'unités secondes↔ms encore présente dans la stabilisation au sol, la détection de
-  crash relatif (`getCelestialBodyVelocity`) et la vélocité de collision des corps célestes.
 - `gravityConstant` du plugin (0,001) ≠ `PHYSICS.G` (0,0001) : le champ de gravité affiché et les
-  calculs IA sont ~10× sous la gravité réelle.
+  calculs IA sont ~10× sous la gravité réelle (choix de design — re‑tuning des mondes requis).
 
 ---
 
