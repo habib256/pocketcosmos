@@ -43,24 +43,31 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ## Équilibrage des mondes
 
-- 🟠 **Vérifier la décollabilité de TOUS les corps des 6 mondes.** Seul `3_outerwilds` a été
-  rééquilibré (rapport poussée/gravité visé ~1,5–3, cf. [PHYSICS.md §2.3](PHYSICS.md)). Auditer
-  `1_solar`, `2_kerbol`, `4_Tatoo`, `5_Endor`, `6_alien` : tout corps atterrissable doit avoir
-  `poussée/gravité > 1`. *Action :* script de calcul du rapport par corps + ajuster les masses ;
-  documenter les corps volontairement non‑décollables (étoiles).
-- 🟢 **Documenter le rationnel des masses** dans les JSON (commentaire d'en‑tête impossible en JSON →
-  noter dans [PHYSICS.md](PHYSICS.md)/ici).
+> ⚠️ **Intention de design (confirmée)** : tous les corps n'ont PAS à être décollables avec le
+> vaisseau actuel. Certaines planètes à forte gravité sont **volontairement inaccessibles** ; des
+> vaisseaux à poussée supérieure viendront plus tard. La contrainte forte est donc : **le corps de
+> SPAWN de chaque monde DOIT être décollable** (sinon le joueur est bloqué dès le départ).
+
+- 🔴 **`4_Tatoo` : le corps de spawn (Tatooine) n'est PAS décollable** (poussée/gravité ≈ 0,85).
+  Le joueur spawn dessus et reste collé. *Action :* rendre Tatooine décollable (réduire sa masse) OU
+  déplacer le spawn — **décision de design en attente**.
+- ✅ **Audit réalisé** (script de rapport poussée/gravité par corps). Spawns décollables : Terre,
+  Kerbin, Âtrebois, Forêt‑lune d'Endor, Acheron. Corps volontairement « lourds » (géantes gazeuses /
+  étoiles binaires, non‑spawn — cibles de futurs vaisseaux) : Jupiter, Saturne, Uranus, Ohann,
+  Adriana, Endor Prime, Calpamos, Tatoo II, Zeta I/II — laissés tels quels.
+- 🟢 Cibles rocheuses < 1 hors spawn (Moho 0,60 · Minmus 0,89 · Duna 0,85 dans Kerbol) : à arbitrer si
+  on veut les rendre accessibles au vaisseau actuel (sinon, ce sont des cibles « futur vaisseau »).
 
 ---
 
 ## Hygiène / debug
 
-- 🟠 **`globalThis.DEBUG = true` laissé activé** (`constants.js`, marqué « TEMPORAIRE ») + plusieurs
-  `console.log` **inconditionnels** dans des chemins chauds (`ThrusterPhysics.handleLiftoff`,
-  `SynchronizationManager`, diagnostics `DEBUG_LIFTOFF`). *Action :* repasser `DEBUG=false` par défaut
-  et gater tous les logs derrière `if (globalThis.DEBUG)`.
-- 🟢 **Constantes en dur à remonter dans `constants.js`** : `CRASH_SINK_DEPTH = 40`
-  (`CollisionHandler`), `MATTER_BASE_DELTA`, seuils de proximité (15 px).
+- ✅ **`globalThis.DEBUG` repassé à `false`** ; les logs de décollage les plus fréquents (`[LIFTOFF]`,
+  `[DECOLLAGE]`) sont gatés derrière `if (globalThis.DEBUG)`. Reste quelques logs d'événements
+  discrets (atterrissage confirmé, position relative des débris) non gatés — gating optionnel.
+- ✅ **Constantes en dur remontées dans `constants.js`** : `LANDING_PROXIMITY_THRESHOLD` (15),
+  `CRASH_SINK_DEPTH` (40) et `MATTER_BASE_DELTA` (1000/60). Restent mineurs : `COLLISION_THRESHOLD`
+  (2,5) et le seuil de décollage local.
 
 ---
 
