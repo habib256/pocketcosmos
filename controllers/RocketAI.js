@@ -658,11 +658,15 @@ class RocketAI {
             return;
         }
         
-        if (this.replayBuffer.length < this.config.batchSize) return;
-        
+        if (this.replayBuffer.length < this.config.batchSize) {
+            this._diagTrain('buffer', `replayBuffer=${this.replayBuffer.length} < batchSize=${this.config.batchSize} (jamais assez d'expériences)`);
+            return;
+        }
+
         // Éviter les appels concurrents
         if (this.isTrainingInProgress) {
             this.concurrencyMetrics.blockedCalls++;
+            this._diagTrain('inprogress', `appel réentrant bloqué (blockedCalls=${this.concurrencyMetrics.blockedCalls}) — un fit() précédent ne se termine pas ?`);
             return;
         }
         
@@ -769,6 +773,7 @@ class RocketAI {
             ys = tf.tensor2d(qTargets, [this.config.batchSize, this.actions.length]);
             
             // Entraîner le modèle avec la référence locale
+            this._diagTrain('fit-start', `appel model.fit (batch=${this.config.batchSize}) — si aucun 'ok' ne suit, fit() ne revient jamais (backend bloqué)`);
             const history = await localModel.fit(xs, ys, {
                 epochs: 1,
                 verbose: 0
@@ -791,7 +796,8 @@ class RocketAI {
             this.concurrencyMetrics.averageTrainingDuration = 
                 (this.concurrencyMetrics.averageTrainingDuration * (this.concurrencyMetrics.successfulTrainings - 1) + trainingDuration) / 
                 this.concurrencyMetrics.successfulTrainings;
-            
+            this._diagTrain('ok', `apprentissage OK — successfulTrainings=${this.concurrencyMetrics.successfulTrainings}, loss=${(typeof currentLoss === 'number') ? currentLoss.toFixed(5) : currentLoss}`);
+
         } catch (error) {
             // Tracer l'erreur réelle (throttlé) au lieu de l'avaler silencieusement : c'est ce
             // silence qui masquait pourquoi l'entraînement n'aboutissait pas (successfulTrainings=0).
