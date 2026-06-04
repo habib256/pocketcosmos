@@ -85,6 +85,31 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
+## Chasse aux bugs — items différés (2e passe, 5 agents)
+
+> Le « Tier 1 » (8 bugs sûrs : O1 missions, P1/P2 physique, D1 respawn, O2/O3 reload, R1 rendu,
+> A1 tracé IA) est **corrigé** — voir [CHANGELOG.md](CHANGELOG.md). Ci-dessous : trouvailles réelles
+> mais à traiter avec prudence (balance/tuning non validable sans playtest/entraînement) ou mineures.
+
+- 🟠 **P3 — Échelle des dégâts de collision.** `IMPACT_DAMAGE_FACTOR` (10) et `COLLISION_THRESHOLD`
+  (2,5) sont restés à l'ancienne échelle alors qu'`impactVelocity` est en échelle Matter (×16,67) :
+  tout contact non-atterrissage (ex. angle 30–45°) inflige des centaines de dégâts → destruction
+  quasi systématique. **Sensible au gameplay** → recalibrer + playtester (diviser `impactVelocity`
+  par `MATTER_BASE_DELTA` avant les dégâts, ou rescaler les deux constantes).
+- 🟠 **A2 — Isolation des environnements d'entraînement.** `RocketController.subscribeToEvents` n'est
+  pas idempotent et l'`EventBus` est partagé entre `trainingEnv`/`evaluationEnv` → double-abonnement
+  / cross-talk (impact borné). *Action :* désabonner avant de réabonner, ou isoler les bus.
+- 🟢 **A3/A4/A5 — Calibrage IA (navigate).** Cibles de vitesse en « units/s » vs vitesses Matter
+  (×16,67) ; `VELOCITY_SCALE` (1000) sature le vecteur d'état ; la récompense de stabilisation
+  réutilise `DISTANCE_DELTA` (100) comme poids. À valider par un **entraînement réel** avant ajustement.
+- 🟢 **Nettoyage / cosmétique.** `angularDamping` inopérant (propriété absente de Matter.js) ; events/
+  états morts (`ROCKET.CRASHED`, `ROCKET.STATE_UPDATED`, `GAME.GAME_STARTED`, états FSM inatteignables) ;
+  ceintures d'astéroïdes mondes 5/6 centrées sur l'origine (cosmétique) ; `narratives`/`timeStepMs`
+  parsés mais jamais lus ; dégradé d'anneaux « front » désaligné ; gardes de parsing preset
+  (`parentName` introuvable, `spawn.angle` manquant) sans avertissement.
+
+---
+
 ## Architecture / scalabilité (roadmap)
 
 - 🟢 **Découper `GameController`** (monolithique : FSM, boucle, chargement d'univers, médiation

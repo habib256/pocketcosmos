@@ -232,7 +232,9 @@ class RenderingController {
         if (universeModel && universeModel.stations && universeModel.celestialBodies && this.stationView) {
             for (const st of universeModel.stations) {
                 const host = universeModel.celestialBodies.find(b => b.name === st.hostName);
-                if (!host) continue;
+                // Garde : sans cette vérif, un hôte sans position (corps partiellement initialisé /
+                // preset mal formé) ferait lever TypeError à host.position.x, interrompant TOUTE la frame.
+                if (!host || !host.position || typeof host.position.x !== 'number' || typeof host.position.y !== 'number') continue;
                 // Positionner la station juste SOUS la surface: rayon - inset (fallback sur +offset si ancien champ).
                 // Calcul durci via variables intermédiaires + fallback numérique final garanti
                 // pour éviter tout NaN si STATIONS existe sans SURFACE_INSET ni SURFACE_OFFSET.
@@ -252,7 +254,8 @@ class RenderingController {
                 }
                 // Borne à 0 : un inset supérieur au rayon (corps-hôte très petit) donnerait un
                 // rayon négatif, plaçant l'icône à l'opposé du centre.
-                const r = Math.max(0, host.radius - surfaceInset);
+                const hostRadius = Number.isFinite(host.radius) ? host.radius : 0;
+                const r = Math.max(0, hostRadius - surfaceInset);
                 // Garde : un angle non fini (station mal formée) donnerait des coordonnées NaN.
                 const stAngle = Number.isFinite(st.angle) ? st.angle : 0;
                 const worldX = host.position.x + Math.cos(stAngle) * r;
