@@ -292,8 +292,11 @@ class SynchronizationManager {
             }
         } // fin if(rocketModel.isLanded)
 
-        // CAS 2: Fusée détruite et attachée (logique existante semble correcte)
-        if (rocketModel.isDestroyed && rocketModel.attachedTo) {
+        // CAS 2: Fusée détruite et attachée (l'épave suit le corps).
+        // Robustesse : certains chemins de crash (collision "impact" dans CollisionHandler) ne posent
+        // que landedOn, pas attachedTo. On retombe sur landedOn pour que l'épave suive un corps MOBILE.
+        if (rocketModel.isDestroyed && (rocketModel.attachedTo || rocketModel.landedOn)) {
+            if (!rocketModel.attachedTo) rocketModel.attachedTo = rocketModel.landedOn;
             // CORRECTION: Vérifier que model existe avant d'accéder à model.name
             const attachedToInfo = celestialBodies.find(cb => cb.model && cb.model.name === rocketModel.attachedTo);
             const attachedToModel = attachedToInfo && attachedToInfo.model ? attachedToInfo.model : null;

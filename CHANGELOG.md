@@ -33,6 +33,12 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   en cours (propulseurs tenus, période de grâce, `relativePosition`/`attachedTo` périmés) "fuyait"
   dans le nouveau monde → redécollage immédiat du spawn / téléport. Vérifié en headless (avant :
   `power=1000`, redécolle ; après : `power=0`, reste posé).
+- **Épave qui ne suivait pas une planète MOBILE après un crash.** Le crash via le chemin "impact"
+  (`CollisionHandler` collisionStart, choc de côté/angle) posait `landedOn` mais **pas** `attachedTo`,
+  or le suivi de l'épave (`SynchronizationManager` CAS débris) exigeait `attachedTo` → l'épave restait
+  fixe pendant que la planète s'éloignait. Double correctif : (1) ce chemin pose désormais `attachedTo`
+  (+ `relativePosition=null`) à la destruction ; (2) le CAS débris retombe sur `landedOn` si
+  `attachedTo` est absent. Vérifié headless (corps mobile ~72 u/s : dérive de l'épave 72 u → **1,5 u**).
 
 ### Modifié
 - **Rééquilibrage des masses du monde Outer Wilds** (`assets/worlds/3_outerwilds.json`) — `145e3bb`,

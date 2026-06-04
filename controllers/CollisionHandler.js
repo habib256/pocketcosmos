@@ -112,15 +112,23 @@ class CollisionHandler {
                             if (!rocketModel.isDestroyed) {
                                 rocketModel.landedOn = otherBody.label;
                                 const wasJustDestroyedByNonFatal = rocketModel.applyDamage(impactDamage);
-                                this.playCollisionSound(impactVelocity); 
+                                this.playCollisionSound(impactVelocity);
 
-                                if (wasJustDestroyedByNonFatal && this.physicsController && this.physicsController.eventBus) {
-                                    this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
-                                        position: { ...rocketModel.position },
-                                        velocity: { ...rocketModel.velocity },
-                                        impactVelocity: impactVelocity,
-                                        destroyedOn: otherBody.label
-                                    });
+                                if (wasJustDestroyedByNonFatal) {
+                                    // L'épave doit suivre le corps (surtout s'il est MOBILE) : poser attachedTo
+                                    // active le suivi par SynchronizationManager (CAS débris). Sans cela, un crash
+                                    // via ce chemin "impact" laissait attachedTo vide et l'épave restait fixe
+                                    // pendant que la planète s'éloignait.
+                                    rocketModel.attachedTo = otherBody.label;
+                                    rocketModel.relativePosition = null;
+                                    if (this.physicsController && this.physicsController.eventBus) {
+                                        this.physicsController.eventBus.emit(window.EVENTS.ROCKET.DESTROYED, {
+                                            position: { ...rocketModel.position },
+                                            velocity: { ...rocketModel.velocity },
+                                            impactVelocity: impactVelocity,
+                                            destroyedOn: otherBody.label
+                                        });
+                                    }
                                 }
                             }
                         }
