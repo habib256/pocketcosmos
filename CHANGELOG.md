@@ -38,6 +38,23 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   `rocketModel.x/.vx/.isCrashed` (inexistants → `undefined`/NaN). Corrigé en `position/velocity`/
   `isDestroyed`. N'affectait que la visualisation (l'état réseau était déjà correct).
 
+### IA / entraînement — diagnostic (apprentissage inactif) + calibration vitesse
+- **Diagnostic instrumenté.** Sur l'interface d'entraînement : `Entraînements Réussis = 0` malgré
+  ~1,5M appels et **perte plate à 0** → `RocketAI.train()` n'aboutit jamais à la mise à jour des poids
+  (la hausse de récompense est un artefact de la décroissance d'epsilon → action fixe → la fusée fonce
+  et s'éloigne au lieu de freiner à B). Le `catch` de `train()` **avalait silencieusement** l'erreur.
+  Ajout d'un log throttlé (`_diagTrain`) sur le garde d'entrée ET dans le `catch` (hors « dispose »)
+  pour révéler la cause exacte au prochain run.
+- **Calibration vitesse par cohérence d'unités** (cibles documentées en u/s mais comparées à une
+  vitesse en échelle Matter, ×16,67) :
+  - État (`RocketAI.buildStateVector`) : `vx/vy` ramenés en **u/s** (÷ `MATTER_BASE_DELTA`) → fin de la
+    **saturation** (croisière ~382 u/s : feature 2,000 saturé → **0,382** informatif, vérifié en node).
+  - Récompenses navigate (`calculateVelocityReward`, stabilisation, `checkNavigateSuccess`) : vitesse
+    mesurée en **u/s** via `_rocketSpeedUnitsPerSec()` → cibles `VELOCITY_TARGET/MAX` et seuil de succès
+    enfin cohérents (avant, la vitesse de croisière requise était **pénalisée**).
+  - Stabilisation : poids dédié `STABILIZE_REWARD_WEIGHT` (au lieu de réutiliser `DISTANCE_DELTA=100`).
+  > ⚠️ Valeurs absolues à **valider par un entraînement réel** une fois l'apprentissage rétabli.
+
 ### Corrigé
 - **Décollage propre depuis un corps en orbite** (`ThrusterPhysics.handleLiftoff`) — `35352c8`.
   La vélocité orbitale héritée passe de `× deltaTime` (~0,0167, soit ~1000× trop petit) à
