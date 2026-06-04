@@ -46,9 +46,13 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   masse 3e11 → 1,4e11, ratio 0,85 → 1,82). Les corps à forte gravité non‑spawn sont laissés
   volontairement inaccessibles au vaisseau actuel (cibles de futurs vaisseaux plus puissants).
 
-### Connu / non corrigé (voir [TODO.md](TODO.md))
-- `gravityConstant` du plugin (0,001) ≠ `PHYSICS.G` (0,0001) : le champ de gravité affiché et les
-  calculs IA sont ~10× sous la gravité réelle (choix de design — re‑tuning des mondes requis).
+### Unification de la gravité (Option A)
+- `PHYSICS.G` devient la **source unique** : `PhysicsController.initPhysics` et `GameSetupController`
+  copient `PHYSICS.G` dans `MatterAttractors.Attractors.gravityConstant` ⇒ gravité réelle = viz = IA.
+- `PHYSICS.G` et les `physics.G` des 6 presets passés de `0,0001` à **`0,001`** (la valeur réelle déjà
+  en vigueur) → **gameplay inchangé** ; seules la visualisation du champ de gravité et l'IA (qui
+  utilisaient 0,0001) deviennent correctes. Cibles `AI_TRAINING.ORBIT` recalculées ×√10 (calibrage
+  absolu IA à valider par entraînement). Vérifié en headless : gravité réelle inchangée (0,001).
 
 ---
 

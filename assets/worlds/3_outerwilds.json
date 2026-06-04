@@ -1,7 +1,7 @@
 {
     "seed": 1002,
     "physics": {
-      "G": 0.0001,
+      "G": 0.001,
       "timeStepMs": 16.6667
     },
     "bodies": [

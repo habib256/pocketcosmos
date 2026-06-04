@@ -123,7 +123,7 @@ JSON files in `assets/worlds/` can define:
 ## Physics & Matter.js
 
 - **Engine**: Matter.js 0.19.0 with the matter-attractors plugin
-- **Gravity**: Applied by the matter-attractors plugin during `Engine.update`. ⚠️ The plugin's `gravityConstant` is **0.001** (its default, never overridden in the code) — that is the REAL gravity. `PHYSICS.G` (0.0001 in `constants.js`, overridable per preset) feeds ONLY the debug/visualization and AI gravity calculations, **NOT** the actual forces.
+- **Gravity**: Applied by the matter-attractors plugin during `Engine.update`. `PHYSICS.G` (**0.001**, overridable per preset) is the SINGLE source of truth: at init and on each world load, the code copies `PHYSICS.G` into the plugin's `gravityConstant`, so **real gravity = visualization = AI**. See [PHYSICS.md §2](PHYSICS.md).
 - **Units pitfall**: the game passes `deltaTime` in **seconds** to `Engine.update`, while Matter assumes **milliseconds** (`_baseDelta = 1000/60`). Consequence: a body's `velocity` ≈ (units/second) × (1000/60). This is the root of most physics subtleties.
 - **Orbits are kinematic**: celestial bodies follow a prescribed `orbitSpeed` (not gravity), so a body's mass only affects the gravity felt by the rocket — never the bodies' own trajectories.
 - **Collision categories**: Defined in `PHYSICS.COLLISION_CATEGORIES`
@@ -193,7 +193,7 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 
 **Other reward configs** (`AI_TRAINING` in `constants.js`):
 - `REWARDS`: Standard reward values for orbit, landing, and penalties
-- `ORBIT`: Orbital parameters for the `orbit` objective. ⚠️ Computed with G=0.0001, but the REAL gravity uses G=0.001 (see [PHYSICS.md](PHYSICS.md)) — a known inconsistency (see [TODO.md](TODO.md))
+- `ORBIT`: Orbital parameters for the `orbit` objective, computed with G=0.001 (consistent with the real gravity since the gravity unification). ⚠️ Absolute speed calibration vs the simulation's velocity units should still be validated by training (see [PHYSICS.md §2](PHYSICS.md))
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
