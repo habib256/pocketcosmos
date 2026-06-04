@@ -157,6 +157,11 @@ class GameSetupController {
                 // du G d'un monde précédent).
                 PHYSICS.G = GameSetupController._defaultPhysicsG;
             }
+            // SOURCE UNIQUE DE GRAVITÉ : aligner la gravité RÉELLE (plugin matter-attractors) sur
+            // PHYSICS.G, pour que gravité réelle = visualisation = IA. Voir PHYSICS.md §2.
+            if (typeof MatterAttractors !== 'undefined' && MatterAttractors.Attractors) {
+                MatterAttractors.Attractors.gravityConstant = PHYSICS.G;
+            }
         } catch (e) {
             console.warn('[GameSetupController.buildWorldFromData] Impossible d\'appliquer physics.G depuis data:', e);
         }

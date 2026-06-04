@@ -77,24 +77,29 @@ Toutes les conversions `model.velocity (u/s) → vitesse Matter` utilisent **`PH
 
 ## 2. Gravité
 
-### 2.1 La gravité réelle utilise G = 0,001 (pas `PHYSICS.G`)
+### 2.1 Source unique : `PHYSICS.G` (= 0,001) pilote la gravité réelle
 
 - La gravité est fournie par `MatterAttractors.Attractors.gravity`, attaché à la fusée **et** à
   chaque corps céleste dans `BodyFactory` (`plugin.attractors`).
 - Formule du plugin : `magnitude = -gravityConstant × (massA × massB) / distanceSq`.
-- `gravityConstant` du plugin = **0,001** par défaut, et **rien dans le projet ne le surcharge**
-  (vérifié : aucun set de `MatterAttractors.Attractors.gravityConstant`). → **La gravité réelle
-  utilise 0,001.**
+- **`PHYSICS.G` est la source unique.** Au démarrage (`PhysicsController.initPhysics`) et à chaque
+  chargement de monde (`GameSetupController`, après lecture de `data.physics.G`), le code copie
+  `PHYSICS.G` dans `MatterAttractors.Attractors.gravityConstant` ; le plugin lit cette valeur à chaque
+  `Engine.update`.
+- ⇒ **Gravité RÉELLE = visualisation = IA = `PHYSICS.G` (= 0,001 par défaut).** Un preset peut la
+  surcharger via `data.physics.G`, et la gravité réelle suit.
 
-### 2.2 `PHYSICS.G = 0.0001` est une valeur de VISUALISATION uniquement
+### 2.2 Visualisation & IA utilisent la même `PHYSICS.G`
 
-- `PHYSICS.G` (constants.js) et la `gravitationalConstant` de `PhysicsController` ne servent qu'aux
-  calculs de **debug/visualisation/IA** : `calculateGravityForceForDebug`, `calculateGravityAtPoint`,
-  `calculateGravityAccelerationAt` (champ de gravité affiché, vecteurs, état pour l'IA).
-- Un preset JSON peut faire `PHYSICS.G = data.physics.G` (`GameSetupController`), mais cela
-  **n'affecte QUE la visualisation/IA**, **pas** la gravité réelle du plugin.
-- ⇒ Le champ de gravité dessiné (G=0,0001) est ~**10× plus faible** que la gravité réellement subie
-  (G=0,001). Incohérence connue (voir [TODO.md](TODO.md)).
+- Les calculs de **debug/visualisation/IA** (`calculateGravityForceForDebug`, `calculateGravityAtPoint`,
+  `calculateGravityAccelerationAt` → champ de gravité affiché, vecteurs, état pour l'IA) utilisent
+  `PHYSICS.G`, **désormais égale à la gravité réelle** : le champ dessiné est fidèle et l'IA perçoit la
+  vraie gravité.
+- Les cibles d'orbite IA (`AI_TRAINING.ORBIT`) sont recalculées pour `G=0,001` (≈ ×√10 vs l'ancien
+  0,0001). ⚠️ Leur calibrage absolu en unités Matter (cf. §1) reste à valider par un entraînement réel.
+- Historique : avant le 2026‑06‑04, le plugin gardait son défaut 0,001 (jamais surchargé) tandis que
+  `PHYSICS.G=0,0001` ne servait qu'à la viz/IA → champ ~10× trop faible et IA incohérente. Unifié
+  (Option A) ; voir [CHANGELOG.md](CHANGELOG.md).
 
 ### 2.3 Décollabilité = rapport poussée/gravité (indépendant des unités)
 
@@ -236,7 +241,7 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 
 ## 7. Référence des constantes (`constants.js`)
 
-**PHYSICS** : `G=0.0001` (viz) · `MAX_SPEED=10000` · `COLLISION_DELAY=2000` ·
+**PHYSICS** : `G=0.001` (source unique : gravité réelle = viz = IA, copiée dans le plugin) · `MAX_SPEED=10000` · `COLLISION_DELAY=2000` ·
 `IMPACT_DAMAGE_FACTOR=10` · `RESTITUTION=0.2` · `CRASH_SPEED_THRESHOLD=2500` ·
 `LANDING_MAX_SPEED=2500` · `LANDING_MAX_ANGLE_DEG=30` · `LANDING_MAX_ANGULAR_VELOCITY=400` ·
 `CRASH_ANGLE_DEG=45` · `CRASH_ANGULAR_VELOCITY=400` · `TAKEOFF_THRUST_THRESHOLD_PERCENT=10` ·
@@ -257,7 +262,7 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 ## 8. Pièges récapitulatifs
 
 1. **Ne jamais raisonner « body.velocity = déplacement par pas ».** C'est `× 1000/60` la vitesse u/s.
-2. **La gravité réelle = 0,001**, pas `PHYSICS.G`. Le champ de gravité affiché est 10× trop faible.
+2. **La gravité réelle = `PHYSICS.G` = 0,001** (copiée dans le plugin) ; le champ de gravité affiché est fidèle.
 3. **Masses des presets** : tuner pour `poussée/gravité > 1` (G=0,001).
 4. **Orbites cinématiques** : changer une masse ne change pas les orbites.
 5. **Décollage corps mobile** : la vélocité héritée doit être `× 1000/60` (sinon glissement orbital).

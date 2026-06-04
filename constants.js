@@ -11,10 +11,13 @@ if (typeof globalThis !== 'undefined' && typeof globalThis.DEBUG === 'undefined'
 // Constantes physiques
 const PHYSICS = {
     // Gravité
-    G: 0.0001,                // Constante gravitationnelle
-                               // REMARQUE: si un preset JSON est chargé (assets/worlds/*.json),
-                               // GameSetupController.buildWorldFromData() écrase cette valeur
-                               // avec data.physics.G pour aligner la simulation sur le monde.
+    G: 0.001,                 // Constante gravitationnelle = SOURCE UNIQUE.
+                               // C'est aussi le gravityConstant du plugin matter-attractors : au
+                               // démarrage et à chaque chargement de monde, PhysicsController et
+                               // GameSetupController copient PHYSICS.G dans
+                               // MatterAttractors.Attractors.gravityConstant. Donc gravité RÉELLE =
+                               // visualisation = IA. Un preset JSON peut l'écraser via data.physics.G.
+                               // Voir PHYSICS.md §2.
     
     // Limites et seuils
     MAX_SPEED: 10000.0,        // Vitesse maximale de la fusée
@@ -376,7 +379,7 @@ const AI_TRAINING = {
         ROCKET_INITIAL_OFFSET: 50, // Distance au-dessus de la surface
     },
     
-    // Paramètres d'orbite pour la Terre (calculés avec G=0.0001, M=2e11, R=720)
+    // Paramètres d'orbite pour la Terre (calculés avec G=0.001, M=2e11, R=720)
     ORBIT: {
         // Plage d'altitude pour considérer une orbite stable (au-dessus de la surface)
         MIN_ALTITUDE: 100,           // Altitude minimale sécuritaire
@@ -384,14 +387,17 @@ const AI_TRAINING = {
         TARGET_ALTITUDE: 500,        // Altitude cible idéale
         
         // Vitesse orbitale théorique : v = sqrt(G * M / (R + altitude))
-        // Pour altitude=500 : v = sqrt(0.0001 * 2e11 / 1220) ≈ 128
-        MIN_ORBITAL_SPEED: 100,      // Vitesse minimale pour orbite stable
-        MAX_ORBITAL_SPEED: 160,      // Vitesse maximale pour orbite stable
-        TARGET_ORBITAL_SPEED: 128,   // Vitesse orbitale cible (calculée)
+        // Pour altitude=500 : v = sqrt(0.001 * 2e11 / 1220) ≈ 405
+        // ⚠️ Calibrage absolu à valider par entraînement : la vitesse "vue" par l'IA est en unités
+        //    Matter (≈ u/s × 1000/60, cf. PHYSICS.md §1) ; ces cibles (×√10 vs l'ancien G) peuvent
+        //    devoir être re-calibrées empiriquement pour l'objectif 'orbit'.
+        MIN_ORBITAL_SPEED: 316,      // Vitesse minimale pour orbite stable
+        MAX_ORBITAL_SPEED: 506,      // Vitesse maximale pour orbite stable
+        TARGET_ORBITAL_SPEED: 405,   // Vitesse orbitale cible (calculée)
         
         // Tolérance pour considérer l'orbite réussie
         ALTITUDE_TOLERANCE: 200,     // ±200 autour de la cible
-        SPEED_TOLERANCE: 30,         // ±30 autour de la vitesse cible
+        SPEED_TOLERANCE: 95,         // ±95 autour de la vitesse cible (≈ ±30 × √10)
         
         // Nombre de pas pour confirmer une orbite stable
         STABILITY_STEPS: 100,        // ~1.67 secondes à 60 FPS

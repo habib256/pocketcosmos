@@ -104,6 +104,12 @@ class PhysicsController {
 
         // Re-lire G : un preset chargé via UNIVERSE_LOAD_REQUESTED peut avoir muté PHYSICS.G
         this.gravitationalConstant = this.PHYSICS.G;
+        // SOURCE UNIQUE DE GRAVITÉ : la gravité RÉELLE (plugin matter-attractors) suit PHYSICS.G,
+        // de sorte que gravité réelle = visualisation = IA (cf. PHYSICS.md §2). Le plugin lit
+        // gravityConstant à chaque Engine.update ; il suffit donc de la (re)poser ici.
+        if (this.Attractors && this.Attractors.Attractors) {
+            this.Attractors.Attractors.gravityConstant = this.PHYSICS.G;
+        }
 
         // CORRECTION: Nettoyage explicite des anciens corps physiques avant reconstruction
         // Cela évite les fuites mémoire lors du rechargement d'univers

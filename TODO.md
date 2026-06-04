@@ -28,16 +28,17 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
-## Constante de gravité
+## Constante de gravité — ✅ RÉSOLU (2026‑06‑04, Option A)
 
-- 🔴 **`gravityConstant` plugin (0,001) ≠ `PHYSICS.G` (0,0001).** La gravité réelle (plugin) n'est pas
-  celle utilisée pour la visualisation et l'IA. Conséquences : (a) le champ de gravité dessiné
-  (`VectorsView`/`PhysicsVectors` via `calculateGravity*`) est ~10× trop faible ; (b) les paramètres
-  d'orbite IA (`AI_TRAINING.ORBIT`, calculés avec G=0,0001) sont incohérents avec la physique réelle ;
-  (c) `physics.G` d'un preset ne change que la viz, pas la gravité. Voir [PHYSICS.md §2](PHYSICS.md).
-  *Action :* décider d'une source unique — soit fixer `MatterAttractors.Attractors.gravityConstant =
-  PHYSICS.G` au démarrage (⚠️ re‑tune toutes les masses des 6 mondes), soit aligner `PHYSICS.G` et les
-  calculs IA/viz sur 0,001. **Choix de design — ne pas trancher sans validation gameplay.**
+> `PHYSICS.G` est désormais la **source unique** (= 0,001) : `PhysicsController.initPhysics` et
+> `GameSetupController` copient `PHYSICS.G` dans `MatterAttractors.Attractors.gravityConstant`.
+> ⇒ gravité réelle = visualisation = IA. **Gameplay inchangé** (la gravité réelle était déjà 0,001 ;
+> seules la viz et l'IA étaient fausses). `physics.G` des 6 presets passés à 0,001. Vérifié en
+> headless (gravité réelle inchangée). Voir [PHYSICS.md §2](PHYSICS.md).
+
+- 🟢 **Reste à valider** : le calibrage absolu des cibles `AI_TRAINING.ORBIT` (recalculées ×√10 pour
+  G=0,001) face aux unités de vitesse Matter (cf. [PHYSICS.md §1](PHYSICS.md)) — à confirmer par un
+  entraînement réel de l'objectif `orbit`.
 
 ---
 

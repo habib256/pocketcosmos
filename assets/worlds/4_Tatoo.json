@@ -1,6 +1,6 @@
 {
     "seed": 1138,
-    "physics": { "G": 0.0001, "timeStepMs": 16.6667 },
+    "physics": { "G": 0.001, "timeStepMs": 16.6667 },
     "bodies": [
       {
         "name": "Tatoo I",
