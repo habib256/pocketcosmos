@@ -20,8 +20,7 @@ const PHYSICS = {
                                // Voir PHYSICS.md §2.
     
     // Limites et seuils
-    MAX_SPEED: 10000.0,        // Vitesse maximale de la fusée
-    MAX_COORDINATE: 10000,      // Valeur maximale de coordonnée autorisée
+    MAX_COORDINATE: 10000,      // Valeur max de coordonnée (sert à width/height de UniverseModel)
     
     // Collisions
     COLLISION_DELAY: 2000,      // Délai avant d'activer les collisions (ms)

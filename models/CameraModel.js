@@ -215,9 +215,12 @@ class CameraModel {
         // 1. Enlever l'offset de l'écran : (screenX - this.offsetX)
         // 2. Inverser le zoom : / this.zoom
         // 3. Ajouter la position de la caméra pour retrouver les coordonnées monde : + this.x
+        // Garde : zoom doit être > 0 (normalement clampé par setZoom, mais cette méthode publique
+        // pourrait être appelée après une affectation directe de zoom). Évite des coordonnées NaN.
+        const safeZoom = this.zoom > 0 ? this.zoom : 1;
         return {
-            x: (screenX - this.offsetX) / this.zoom + this.x,
-            y: (screenY - this.offsetY) / this.zoom + this.y
+            x: (screenX - this.offsetX) / safeZoom + this.x,
+            y: (screenY - this.offsetY) / safeZoom + this.y
         };
     }
 } 

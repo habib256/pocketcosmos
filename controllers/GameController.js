@@ -129,6 +129,7 @@ class GameController {
         document.addEventListener('visibilitychange', this._onVisibilityChange);
 
         this._lastRocketDestroyed = false;
+        this._universeLoadInFlight = false;
     }
     
     /**

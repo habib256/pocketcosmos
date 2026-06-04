@@ -223,7 +223,7 @@ class RocketAI {
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data)));
         trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
         trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
-        trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.CRASHED, () => this.handleCrash()));
+        // ROCKET.CRASHED n'est jamais émis (le crash passe par ROCKET.DESTROYED) -> abonnement retiré.
         trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.DESTROYED, () => this.handleCrash()));
         trackSub(this.eventBus.subscribe(window.EVENTS.MISSION.COMPLETED, () => this.handleSuccess()));
 
@@ -607,10 +607,9 @@ class RocketAI {
         this.lastAction = null;
         this.episodeSteps = 0;
         
-        // Décrémenter epsilon pour réduire l'exploration au fil du temps
-        if (this.config.epsilon > this.config.epsilonMin) {
-            this.config.epsilon *= this.config.epsilonDecay;
-        }
+        // NOTE: la décroissance d'epsilon est gérée UNE seule fois par épisode par
+        // TrainingOrchestrator (couvre crash/succès/timeout). Ne pas la dupliquer ici
+        // (sinon double décroissance par épisode -> exploration coupée trop tôt).
     }
     
     // Gestion d'un succès
@@ -639,10 +638,9 @@ class RocketAI {
         this.lastAction = null;
         this.episodeSteps = 0;
         
-        // Décrémenter epsilon pour réduire l'exploration au fil du temps
-        if (this.config.epsilon > this.config.epsilonMin) {
-            this.config.epsilon *= this.config.epsilonDecay;
-        }
+        // NOTE: la décroissance d'epsilon est gérée UNE seule fois par épisode par
+        // TrainingOrchestrator (couvre crash/succès/timeout). Ne pas la dupliquer ici
+        // (sinon double décroissance par épisode -> exploration coupée trop tôt).
     }
     
     // Entraîner le modèle avec un batch du replay buffer

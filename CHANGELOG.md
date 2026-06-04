@@ -59,6 +59,22 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   utilisaient 0,0001) deviennent correctes. Cibles `AI_TRAINING.ORBIT` recalculées ×√10 (calibrage
   absolu IA à valider par entraînement). Vérifié en headless : gravité réelle inchangée (0,001).
 
+### Robustesse / nettoyage (chasse aux bugs — workflow de 5 agents)
+- Code mort : abonnement à `ROCKET.CRASHED` (jamais émis) retiré de `RocketAI` — le crash passe par
+  `ROCKET.DESTROYED` ; constante `PHYSICS.MAX_SPEED` (inutilisée) retirée (`MAX_COORDINATE` conservée,
+  utilisée par `UniverseModel`).
+- `GameController._universeLoadInFlight` désormais initialisé dans le constructeur (au lieu de
+  reposer sur `undefined`).
+- Abonnement `ROCKET.RESET` de `InputController` désormais tracké via `controllerContainer`.
+- Gardes défensives : `CameraModel.screenToWorld` protège contre `zoom<=0` ; le rendu des stations
+  protège contre un `angle` non fini (coordonnées NaN).
+- IA : décroissance d'epsilon dédupliquée — gérée une seule fois par épisode par
+  `TrainingOrchestrator` (retirée de `RocketAI.handleCrash`/`handleSuccess` où elle s'ajoutait,
+  causant une décroissance ~2× trop rapide et ratant les épisodes en timeout).
+- Faux positifs écartés après vérification (aucun changement) : « fuite » `newWeights.dispose()`
+  (code correct, `setWeights` copie), overlap audio thruster, double `STATION.REFUELED`, fuites
+  d'écouteurs au reload (vues/input créés une seule fois), `bestModelWeights` (déjà libéré).
+
 ---
 
 ## 2026‑06‑02 — Stabilisation décollage & atterrissage relatif
