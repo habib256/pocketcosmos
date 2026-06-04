@@ -172,16 +172,24 @@ class ThrusterPhysics {
                 cb => cb.model && cb.model.name === landedOnBodyName
             );
             if (celestialBodyInfo && celestialBodyInfo.model && celestialBodyInfo.model.velocity) {
-                // model.velocity est en unités/seconde (vélocité orbitale du corps). La vélocité
-                // d'un corps Matter.js (rocketBody) est un déplacement PAR PAS de simulation. On
-                // convertit donc (× deltaTime), sinon la fusée hériterait d'une vitesse ~60× trop
-                // grande et le décollage ne serait pas relatif à la planète.
-                const dt = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+                // model.velocity est en unités/SECONDE (vélocité orbitale du corps). La fusée doit
+                // hériter de ce mouvement pour décoller "avec" la planète (rester relative à elle).
+                //
+                // SUBTILITÉ MATTER.JS (vérifiée empiriquement par repro headless) : le jeu passe
+                // deltaTime en SECONDES à Engine.update, alors que Matter suppose des millisecondes
+                // (_baseDelta = 1000/60). Conséquence : la `velocity` d'un corps Matter vaut
+                // (déplacement réel par pas) × (1000/60). Pour qu'au décollage la fusée se déplace
+                // EXACTEMENT comme le corps (model.velocity × dt par pas), il faut donc régler sa
+                // vélocité Matter à model.velocity × (1000/60) — le dt se simplifie, le facteur est
+                // constant. L'ancienne conversion × deltaTime (≈ ×0.0167) était ~1000× trop petite :
+                // la fusée n'héritait quasiment pas de l'orbite et "glissait" en arrière du corps
+                // mobile (dérive tangentielle ~2× celle d'un corps statique). Avec ce facteur, la
+                // dérive orbitale est annulée (décollage propre, comme sur un corps immobile).
+                const MATTER_BASE_DELTA = 1000 / 60; // _baseDelta interne de Matter.js (ms)
                 inheritedVelocity = {
-                    x: (celestialBodyInfo.model.velocity.x || 0) * dt,
-                    y: (celestialBodyInfo.model.velocity.y || 0) * dt
+                    x: (celestialBodyInfo.model.velocity.x || 0) * MATTER_BASE_DELTA,
+                    y: (celestialBodyInfo.model.velocity.y || 0) * MATTER_BASE_DELTA
                 };
-                console.log(`[LIFTOFF] Vélocité héritée de ${landedOnBodyName} (par pas): (${inheritedVelocity.x.toFixed(3)}, ${inheritedVelocity.y.toFixed(3)})`);
             }
         }
 
