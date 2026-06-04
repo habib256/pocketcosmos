@@ -476,7 +476,14 @@ async function testUpdateFrequency() {
     try {
         const eventBus = new EventBus();
         const rocketAI = new RocketAI(eventBus);
-        
+
+        // CORRECTION : attendre la création ASYNCHRONE du modèle. Sinon train() ressort
+        // immédiatement à la garde (model=null, ready=false) et ce test ne mesure RIEN de réel
+        // (il affichait "25/25 PARFAIT" alors qu'aucun poids n'était mis à jour).
+        console.log('Attente de l\'initialisation du modèle (waitForReady)...');
+        await rocketAI.waitForReady();
+        console.log(`Modèle prêt: model=${!!rocketAI.model} targetModel=${!!rocketAI.targetModel} ready=${rocketAI.modelReady}`);
+
         console.log(`Configuration: updateFrequency = ${rocketAI.config.updateFrequency} pas`);
         
         // Compter les updates pendant une simulation courte
@@ -532,13 +539,18 @@ async function testUpdateFrequency() {
         console.log(`   Updates attendus: ${expectedUpdates}`);
         console.log(`   Updates réels: ${updateCount}`);
         console.log(`   Ratio: ${updateCount}/${targetSteps} = ${(updateCount/targetSteps*100).toFixed(1)}%`);
-        
-        if (updateCount === expectedUpdates) {
-            console.log(`   ✅ PARFAIT! Fréquence respectée.`);
-        } else if (updateCount > expectedUpdates * 0.8) {
-            console.log(`   ⚡ CORRECT, légère variation acceptable.`);
+
+        // APPELS vs APPRENTISSAGE RÉEL : updateCount ne compte que les APPELS à train().
+        // Ce qui compte, c'est successfulTrainings (poids réellement mis à jour par model.fit).
+        const m = rocketAI.concurrencyMetrics;
+        console.log(`   Appels train(): ${m.totalTrainingCalls} | bloqués: ${m.blockedCalls} | RÉUSSIS: ${m.successfulTrainings}`);
+        console.log(`   Dernier loss: ${m.lastLoss}`);
+
+        if (m.successfulTrainings > 0 && typeof m.lastLoss === 'number' && isFinite(m.lastLoss) && m.lastLoss > 0) {
+            console.log(`   ✅ APPRENTISSAGE RÉEL OK : les poids sont mis à jour (loss=${m.lastLoss.toFixed(5)}).`);
         } else {
-            console.log(`   ❌ PROBLÈME: Trop peu d'updates réels.`);
+            console.log(`   ❌ AUCUN apprentissage réel : train() est appelé mais ne met pas à jour les poids.`);
+            console.log(`      -> voir les lignes [RocketAI.train] ci-dessus (guard/inprogress/fit) pour la cause.`);
         }
         
         // Restaurer la fonction originale
