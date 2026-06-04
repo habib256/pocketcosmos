@@ -223,7 +223,7 @@ class PhysicsController {
                                (this.rocketModel.landedOn || this.rocketModel.attachedTo) &&
                                this.celestialBodies.some(cb =>
                                    (cb.model.name === this.rocketModel.landedOn || cb.model.name === this.rocketModel.attachedTo) &&
-                                   typeof cb.model.updateOrbit === 'function'
+                                   cb.model.parentBody != null // un corps orbite ssi il a un parent (updateOrbit, méthode de prototype, est toujours défini)
                                );
 
         const isHandledManually = isLandedOnTerre || isOnMobileBody;

@@ -565,18 +565,20 @@ class TrainingOrchestrator {
                     step: steps,
                     episode: this.metrics.episode,
                     rocket: {
-                        position: { 
-                            x: this.trainingEnv.rocketModel.x, 
-                            y: this.trainingEnv.rocketModel.y 
+                        // CORRECTION: RocketModel expose position/velocity (objets) et isDestroyed,
+                        // pas .x/.y/.vx/.vy/.isCrashed (qui valaient undefined -> NaN dans le tracé).
+                        position: {
+                            x: this.trainingEnv.rocketModel.position.x,
+                            y: this.trainingEnv.rocketModel.position.y
                         },
-                        velocity: { 
-                            x: this.trainingEnv.rocketModel.vx, 
-                            y: this.trainingEnv.rocketModel.vy 
+                        velocity: {
+                            x: this.trainingEnv.rocketModel.velocity.x,
+                            y: this.trainingEnv.rocketModel.velocity.y
                         },
                         angle: this.trainingEnv.rocketModel.angle,
                         fuel: this.trainingEnv.rocketModel.fuel,
                         isLanded: this.trainingEnv.rocketModel.isLanded,
-                        isDestroyed: this.trainingEnv.rocketModel.isCrashed
+                        isDestroyed: this.trainingEnv.rocketModel.isDestroyed
                     },
                     celestialBodies: stepCelestialBodies
                 });

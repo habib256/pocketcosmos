@@ -61,9 +61,11 @@ class SynchronizationManager {
         if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
             window.controllerContainer.track(
                 this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, () => {
-                    // Les références seront automatiquement mises à jour via physicsController.celestialBodies
-                    // Mais on peut forcer une réinitialisation si nécessaire
-                    console.log('[SynchronizationManager] Univers mis à jour, références seront réinitialisées au prochain update');
+                    // Les références sont relues via physicsController.celestialBodies à chaque update.
+                    // On réinitialise l'état d'émission d'atterrissage : sinon, après un reload où la
+                    // fusée respawn posée sur le MÊME corps que précédemment, ROCKET.LANDED ne serait
+                    // pas ré-émis (ravitaillement / complétion de mission "déjà posé" manqués).
+                    this._lastLandedEventBody = null;
                 })
             );
         }

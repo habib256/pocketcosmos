@@ -165,8 +165,9 @@ class GameController {
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.DECREASE_THRUST_MULTIPLIER, () => this.adjustThrustMultiplier(0.5)));
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.AI.TOGGLE_CONTROL, () => this.toggleAIControl()));
         
-        // Événement pour les mises à jour d'état de la fusée
-        window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.STATE_UPDATED, (data) => this.handleRocketStateUpdated(data)));
+        // Note : l'échec de mission à la destruction est déclenché directement dans update()
+        // (transition PLAYING -> CRASH_ANIMATION). L'ancien abonnement à ROCKET.STATE_UPDATED
+        // était mort (cet événement n'est jamais émis).
         // Événement lorsque la fusée atterrit
         window.controllerContainer.track(this.eventBus.subscribe(EVENTS.ROCKET.LANDED, (data) => this.handleRocketLanded(data)));
 
@@ -227,6 +228,9 @@ class GameController {
      * @private
      */
     handleResumeIfPaused() {
+        // Ne pas reprendre la simulation tant qu'un chargement d'univers est en cours :
+        // sinon une touche pressée pendant le fetch async ferait redémarrer l'ANCIEN monde.
+        if (this._universeLoadInFlight) return;
         if (this.currentState === GameStates.PAUSED) {
             this.changeState(GameStates.PLAYING);
         }
@@ -616,7 +620,7 @@ class GameController {
                 const x = host.position.x + Math.cos(spawn.angle) * r;
                 const y = host.position.y + Math.sin(spawn.angle) * r;
                 this.rocketModel.setPosition(x, y);
-                this.rocketModel.setVelocity(host.velocity?.x || 0, host.velocity?.y || 0);
+                this.rocketModel.setVelocity((host.velocity?.x || 0) * PHYSICS.MATTER_BASE_DELTA, (host.velocity?.y || 0) * PHYSICS.MATTER_BASE_DELTA);
                 this.rocketModel.setAngle(spawn.angle);
                 this.rocketModel.isLanded = true;
                 this.rocketModel.landedOn = host.name;
@@ -638,7 +642,7 @@ class GameController {
                 const rocketStartX = host.position.x + Math.cos(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
                 const rocketStartY = host.position.y + Math.sin(angleVersSoleil) * (host.radius + ROCKET.HEIGHT / 2 + 1);
                 this.rocketModel.setPosition(rocketStartX, rocketStartY);
-                this.rocketModel.setVelocity(host.velocity?.x || 0, host.velocity?.y || 0);
+                this.rocketModel.setVelocity((host.velocity?.x || 0) * PHYSICS.MATTER_BASE_DELTA, (host.velocity?.y || 0) * PHYSICS.MATTER_BASE_DELTA);
                 this.rocketModel.setAngle(angleVersSoleil);
                 this.rocketModel.isLanded = true;
                 this.rocketModel.landedOn = host.name;
@@ -783,6 +787,9 @@ class GameController {
 
         // Vérifier les conditions de Game Over
         if (this.rocketModel && this.rocketModel.isDestroyed && this.currentState === GameStates.PLAYING) {
+            // La fusée (et son cargo) est détruite -> faire échouer les missions encore en attente.
+            // handleRocketStateUpdated est idempotent (garde _lastRocketDestroyed, remis à false au respawn).
+            this.handleRocketStateUpdated({ isDestroyed: true });
             this.changeState(GameStates.CRASH_ANIMATION); // Passer à l'animation de crash d'abord
         }
     }

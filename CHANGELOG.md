@@ -9,6 +9,35 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 
 ## [Non publié] — Corrections du décollage (corps mobiles) — 2026‑06‑04
 
+### Chasse aux bugs — 2e passe (5 agents), correctifs « Tier 1 » (faible risque)
+- **O1 — Les missions n'échouaient jamais à la destruction de la fusée.** La logique d'échec
+  dépendait de `ROCKET.STATE_UPDATED`, un événement **jamais émis**. Désormais déclenchée
+  directement dans `update()` à la transition `PLAYING → CRASH_ANIMATION` (appel idempotent à
+  `handleRocketStateUpdated`). Abonnement mort retiré.
+- **P2 — Décollage sous le seuil.** `ThrusterPhysics.applyThrusterForce` déclenchait `handleLiftoff`
+  dès `thrustForce > 0`, court-circuitant le seuil `TAKEOFF_THRUST_THRESHOLD_PERCENT` (10 %) appliqué
+  ailleurs : la fusée « sautait » à ~5 %. Le décollage est désormais gaté par le même seuil. Vérifié
+  headless (5 % reste posé, 50 % décolle).
+- **P1 — `isOnMobileBody` toujours vrai** (`PhysicsController`) : le test `typeof updateOrbit ===
+  'function'` (méthode de prototype, toujours présente) ne distinguait jamais un corps statique.
+  Remplacé par `parentBody != null` (cohérent avec `SynchronizationManager`). Non-régression du suivi
+  d'épave vérifiée headless.
+- **D1 — Vélocité de respawn non convertie.** `resetRocket` posait la vélocité héritée sans
+  `× MATTER_BASE_DELTA` (≠ `buildWorldFromData`) → glitch d'~1 frame au respawn sur astres mobiles
+  (mondes 3/5/6). Conversion ajoutée.
+- **O2 — Course au reload.** Une touche pressée pendant le `fetch` async d'un monde pouvait
+  relancer l'**ancien** monde (`RESUME_IF_PAUSED`). Garde ajoutée sur `_universeLoadInFlight`.
+- **O3 — Ré-atterrissage manqué après reload.** `_lastLandedEventBody` (état rémanent de
+  `SynchronizationManager`) n'était pas réinitialisé : après un reload où la fusée respawn posée sur
+  le **même** corps, `ROCKET.LANDED` n'était pas ré-émis (ravitaillement / mission « déjà posé »
+  manqués). Reset ajouté sur `UNIVERSE.STATE_UPDATED`.
+- **R1 — Frame cassée par une station mal formée.** Le rendu des stations lisait `host.position.x`
+  sans garde → `TypeError` interrompant **toute** la frame (avant fusée+UI). Gardes ajoutées sur
+  `host.position` et `host.radius`.
+- **A1 — Tracé d'entraînement corrompu.** `TrainingOrchestrator` émettait `TRAINING_STEP` avec
+  `rocketModel.x/.vx/.isCrashed` (inexistants → `undefined`/NaN). Corrigé en `position/velocity`/
+  `isDestroyed`. N'affectait que la visualisation (l'état réseau était déjà correct).
+
 ### Corrigé
 - **Décollage propre depuis un corps en orbite** (`ThrusterPhysics.handleLiftoff`) — `35352c8`.
   La vélocité orbitale héritée passe de `× deltaTime` (~0,0167, soit ~1000× trop petit) à

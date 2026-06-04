@@ -151,8 +151,13 @@ class ThrusterPhysics {
         // La force est appliquée au point 'position' calculé précédemment
         this.Body.applyForce(rocketBody, position, { x: thrustX, y: thrustY });
 
-        // Gérer le décollage si le propulseur principal est actif et que la fusée est posée
-        if (thrusterName === 'main' && rocketModel.isLanded && thrustForce > 0) {
+        // Gérer le décollage : seulement si la fusée est posée ET la poussée principale dépasse le
+        // seuil de décollage. (Auparavant: déclenché dès thrustForce>0, ce qui faisait décoller sous
+        // le seuil 10% et court-circuitait la garde de handleLandedOrAttachedRocket.)
+        const mainMaxPower = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main.maxPower : 0;
+        const mainThrustPct = mainMaxPower > 0 ? (power / mainMaxPower) * 100 : 0;
+        if (thrusterName === 'main' && rocketModel.isLanded && thrustForce > 0 &&
+            mainThrustPct > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
             // Applique une impulsion initiale pour vaincre l'inertie/gravité au sol
             this.handleLiftoff(rocketModel, rocketBody);
         }
