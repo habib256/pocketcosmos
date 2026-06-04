@@ -73,9 +73,13 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ## Robustesse / risques
 
-- 🟠 **Rechargement d'univers pendant un décollage/atterrissage.** `SynchronizationManager` retombe sur
-  `isLanded=false` si le corps `landedOn` est introuvable ; risque de transition d'état inattendue
-  pendant un reload. *Action :* test ciblé + log explicite.
+- ✅ **Rechargement d'univers pendant un décollage/atterrissage** (2026‑06‑04). La simulation est déjà
+  mise en pause pendant la reconstruction, mais le même `rocketModel` était réutilisé sans purge :
+  propulseurs encore actifs → redécollage immédiat du nouveau spawn ; `relativePosition`/`attachedTo`
+  périmés → téléport ; grâce active → atterrissage non détecté. Fix : `buildWorldFromData` appelle
+  `rocketModel.reset()` avant d'appliquer le spawn. Vérifié headless (reload en tenant la poussée :
+  avant = redécollage `power=1000` ; après = reste posé `power=0`). `SynchronizationManager` efface
+  déjà `isLanded/landedOn/relativePosition` si le corps `landedOn` est introuvable.
 - 🟢 **`relativePosition` recalculée une seule fois** à l'atterrissage sur corps mobile ; dérive
   visuelle possible sur corps très rapides. *Action :* recalcul périodique si dérive mesurée.
 

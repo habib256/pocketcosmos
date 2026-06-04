@@ -269,6 +269,15 @@ class GameSetupController {
             // Stocker l'info de spawn et repositionner la fusée si demandé
             if (existingRocketModel) {
                 if (data && data.rocket && data.rocket.spawn && existingRocketModel.setPosition) {
+                    // RELOAD SÛR : repartir d'un état fusée PROPRE avant d'appliquer le spawn.
+                    // Sans cela, un décollage/atterrissage en cours au moment du reload "fuit" dans le
+                    // nouveau monde : propulseurs encore actifs -> redécollage immédiat ;
+                    // relativePosition/attachedTo périmés -> téléport ; période de grâce active ->
+                    // atterrissage non détecté. reset() coupe les propulseurs, efface
+                    // grâce/relativePosition/attachedTo/destruction et restaure carburant/santé.
+                    if (typeof existingRocketModel.reset === 'function') {
+                        existingRocketModel.reset();
+                    }
                     const spawn = data.rocket.spawn;
                     universeModel.spawnInfo = JSON.parse(JSON.stringify(spawn));
                     // Mode 1: hostName + angle (spécifie l'astre de départ et l'angle à la surface)

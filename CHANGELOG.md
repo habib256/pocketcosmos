@@ -28,6 +28,11 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   maintenant correctement détecté comme **atterrissage**, sans régression du décollage (dérive et
   catapulte inchangées). Achève l'intention du commit `0e9546e` (« vitesse relative au corps ») que
   le bug d'unités rendait inopérante.
+- **Reload d'univers pendant un décollage** (`GameSetupController.buildWorldFromData`) : le
+  `rocketModel` est désormais réinitialisé (`reset()`) avant d'appliquer le spawn. Sans cela, l'état
+  en cours (propulseurs tenus, période de grâce, `relativePosition`/`attachedTo` périmés) "fuyait"
+  dans le nouveau monde → redécollage immédiat du spawn / téléport. Vérifié en headless (avant :
+  `power=1000`, redécolle ; après : `power=0`, reste posé).
 
 ### Modifié
 - **Rééquilibrage des masses du monde Outer Wilds** (`assets/worlds/3_outerwilds.json`) — `145e3bb`,
