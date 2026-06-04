@@ -452,7 +452,8 @@ const AI_TRAINING = {
         // Stabilisation au point B
         BRAKE_ZONE_RATIO: 0.2,      // En dessous de 20% de distance, réduire la vitesse cible
         STABILIZE_ZONE_RATIO: 0.1,  // En dessous de 10%, forte récompense pour vitesse quasi nulle
-        STABILIZE_SPEED_REF: 100,   // Vitesse de référence pour le calcul de stabilisation
+        STABILIZE_SPEED_REF: 100,   // Vitesse de référence (u/s) pour le calcul de stabilisation
+        STABILIZE_REWARD_WEIGHT: 10, // Poids dédié du bonus de stabilisation (avant: DISTANCE_DELTA=100 réutilisé à tort)
 
         // Récompenses de terminaison
         SUCCESS_REWARD: 1000,        // Récompense finale pour succès (proche ET stabilisé)

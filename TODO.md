@@ -99,9 +99,15 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 - 🟠 **A2 — Isolation des environnements d'entraînement.** `RocketController.subscribeToEvents` n'est
   pas idempotent et l'`EventBus` est partagé entre `trainingEnv`/`evaluationEnv` → double-abonnement
   / cross-talk (impact borné). *Action :* désabonner avant de réabonner, ou isoler les bus.
-- 🟢 **A3/A4/A5 — Calibrage IA (navigate).** Cibles de vitesse en « units/s » vs vitesses Matter
-  (×16,67) ; `VELOCITY_SCALE` (1000) sature le vecteur d'état ; la récompense de stabilisation
-  réutilise `DISTANCE_DELTA` (100) comme poids. À valider par un **entraînement réel** avant ajustement.
+- 🔴 **Apprentissage IA inactif (`successfulTrainings = 0`).** `RocketAI.train()` est appelé ~1,5M
+  fois mais n'aboutit JAMAIS à une mise à jour des poids (perte plate à 0 ; la hausse de récompense est
+  un artefact de la décroissance d'epsilon). Instrumentation throttlée ajoutée (`_diagTrain` + `catch`
+  non muet `RocketAI.js`). *Action :* **relancer ~30 s d'entraînement et lire la console** (`[RocketAI.train]
+  guard:` vs `fit:`) pour la cause exacte (garde l.652 vs exception `model.fit`), puis corriger la racine.
+- ✅ **A3/A4/A5 — Calibrage vitesse IA (cohérence d'unités).** État + récompenses navigate + succès
+  mesurés en **u/s** (÷ `MATTER_BASE_DELTA`) ; dé-saturation du vecteur d'état vérifiée (croisière
+  0,382 au lieu de 2,0 saturé) ; poids de stabilisation dédié `STABILIZE_REWARD_WEIGHT`. **Valeurs
+  absolues à valider par un entraînement** une fois l'apprentissage rétabli (item ci-dessus).
 - 🟢 **Nettoyage / cosmétique.** `angularDamping` inopérant (propriété absente de Matter.js) ; events/
   états morts (`ROCKET.CRASHED`, `ROCKET.STATE_UPDATED`, `GAME.GAME_STARTED`, états FSM inatteignables) ;
   ceintures d'astéroïdes mondes 5/6 centrées sur l'origine (cosmétique) ; `narratives`/`timeStepMs`

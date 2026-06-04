@@ -716,16 +716,14 @@ class HeadlessRocketEnvironment {
         reward += zoneReward;
 
         // 6. Stabilisation Reward - Bonus pour ralentir près du point B
-        const speed = Math.sqrt(
-            this.rocketModel.velocity.x ** 2 +
-            this.rocketModel.velocity.y ** 2
-        );
+        const speed = this._rocketSpeedUnitsPerSec(); // u/s (réf. STABILIZE_SPEED_REF en u/s)
         const distRatio = currentDistance / (this._initialDistanceToTarget || 1);
         const stabilizeZone = config.STABILIZE_ZONE_RATIO || 0.1;
         const stabilizeSpeedRef = config.STABILIZE_SPEED_REF || 100;
         if (distRatio < stabilizeZone) {
             // Proche du point B : forte récompense pour vitesse basse
-            const stabilReward = Math.max(0, 1 - speed / stabilizeSpeedRef) * (config.DISTANCE_DELTA || 50);
+            const stabilWeight = (typeof config.STABILIZE_REWARD_WEIGHT === 'number') ? config.STABILIZE_REWARD_WEIGHT : 10;
+            const stabilReward = Math.max(0, 1 - speed / stabilizeSpeedRef) * stabilWeight;
             reward += stabilReward;
         }
 
@@ -809,13 +807,19 @@ class HeadlessRocketEnvironment {
      * 3. Velocity Control Reward - Récompense pour vitesse optimale
      * La vitesse cible diminue à l'approche du point B pour forcer le freinage.
      */
+    // Vitesse de la fusée en unités/s. Le modèle stocke la vélocité en échelle Matter
+    // (≈ u/s × 1000/60) ; les cibles NAVIGATE_REWARDS et seuils de succès sont définis en u/s.
+    _rocketSpeedUnitsPerSec() {
+        const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+        const vx = (this.rocketModel && this.rocketModel.velocity) ? (this.rocketModel.velocity.x || 0) : 0;
+        const vy = (this.rocketModel && this.rocketModel.velocity) ? (this.rocketModel.velocity.y || 0) : 0;
+        return Math.sqrt(vx * vx + vy * vy) / k;
+    }
+
     calculateVelocityReward(targetPoint, config) {
         if (!this.rocketModel || !this.rocketModel.velocity) return 0;
 
-        const speed = Math.sqrt(
-            this.rocketModel.velocity.x ** 2 +
-            this.rocketModel.velocity.y ** 2
-        );
+        const speed = this._rocketSpeedUnitsPerSec(); // u/s (cibles VELOCITY_* en u/s)
 
         // Vitesse cible adaptative : proportionnelle à la distance restante
         // Loin → vitesse croisière, Proche → quasi immobile
@@ -1278,10 +1282,7 @@ class HeadlessRocketEnvironment {
         const dy = this.rocketModel.position.y - targetPoint.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        const speed = Math.sqrt(
-            this.rocketModel.velocity.x ** 2 +
-            this.rocketModel.velocity.y ** 2
-        );
+        const speed = this._rocketSpeedUnitsPerSec(); // u/s (seuil SUCCESS_SPEED_THRESHOLD en u/s)
 
         // Succès = proche du point B ET stabilisé (vitesse quasi nulle)
         const SUCCESS_DISTANCE_THRESHOLD = 3000;

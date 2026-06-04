@@ -376,8 +376,12 @@ class RocketAI {
         const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : 0;
         const x = num(p.x);
         const y = num(p.y);
-        const vx = Math.max(-2000, Math.min(2000, num(p.vx)));
-        const vy = Math.max(-2000, Math.min(2000, num(p.vy)));
+        // Le modèle stocke la vélocité en échelle Matter (≈ u/s × 1000/60). On la ramène en u/s
+        // (cohérent avec VELOCITY_SCALE) pour ne plus saturer : auparavant clampée à ±2000 puis
+        // /1000 -> toujours ±2, le réseau ne "voyait" jamais la magnitude de vitesse réelle.
+        const VK = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+        const vx = Math.max(-3000, Math.min(3000, num(p.vx) / VK));
+        const vy = Math.max(-3000, Math.min(3000, num(p.vy) / VK));
         const angle = num(p.angle);
         const angularVelocity = Math.max(-50, Math.min(50, num(p.angularVelocity)));
         const targetX = num(p.targetX);
@@ -650,6 +654,7 @@ class RocketAI {
         
         // Vérifier que les modèles existent, ne sont pas disposés et sont prêts
         if (!this.model || !this.targetModel || this.isDisposed || !this.modelReady) {
+            this._diagTrain('guard', `model=${!!this.model} targetModel=${!!this.targetModel} disposed=${this.isDisposed} ready=${this.modelReady}`);
             return;
         }
         
@@ -788,7 +793,11 @@ class RocketAI {
                 this.concurrencyMetrics.successfulTrainings;
             
         } catch (error) {
-            // Ignorer silencieusement les erreurs (dont "disposed")
+            // Tracer l'erreur réelle (throttlé) au lieu de l'avaler silencieusement : c'est ce
+            // silence qui masquait pourquoi l'entraînement n'aboutissait pas (successfulTrainings=0).
+            // Les erreurs liées à un "dispose" restent ignorées (attendues à l'arrêt).
+            const _msg = (error && error.message) ? error.message : String(error);
+            if (!/dispos/i.test(_msg)) this._diagTrain('fit', _msg);
         } finally {
             // Libérer la mémoire tensor (si les tenseurs existent)
             if (xs) { try { xs.dispose(); } catch (e) {} }
@@ -916,6 +925,17 @@ class RocketAI {
         }
     }
     
+    // Diagnostic throttlé : pourquoi train() n'aboutit pas (successfulTrainings reste à 0).
+    // Loggue au plus une fois / 2 s par catégorie (évite le spam sur des milliers d'appels).
+    _diagTrain(tag, msg) {
+        const now = Date.now();
+        if (!this._trainDiag) this._trainDiag = {};
+        if (now - (this._trainDiag[tag] || 0) > 2000) {
+            this._trainDiag[tag] = now;
+            try { console.warn('[RocketAI.train] ' + tag + ' : ' + msg); } catch (e) {}
+        }
+    }
+
     // Obtenir les métriques de concurrence
     getConcurrencyMetrics() {
         return {
