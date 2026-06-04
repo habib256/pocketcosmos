@@ -709,6 +709,7 @@ class RocketAI {
             
             // Vérifications de validité
             if (states.length !== this.config.batchSize || nextStates.length !== this.config.batchSize) {
+                this._diagTrain('shape-len', `states=${states.length} next=${nextStates.length} batchSize=${this.config.batchSize}`);
                 return;
             }
             
@@ -716,11 +717,13 @@ class RocketAI {
             const totalNextStateValues = nextStates.reduce((sum, state) => sum + state.length, 0);
             
             if (totalStateValues !== this.config.batchSize * STATE_SIZE || totalNextStateValues !== this.config.batchSize * STATE_SIZE) {
+                this._diagTrain('shape-tot', `tot=${totalStateValues}/${totalNextStateValues} attendu=${this.config.batchSize * STATE_SIZE}`);
                 return;
             }
             
             // PROTECTION CRITIQUE : Vérifier à nouveau avant les opérations TensorFlow
             if (this.isDisposed || !this.model || !this.targetModel) {
+                this._diagTrain('disp-pre', `disposed=${this.isDisposed} model=${!!this.model} target=${!!this.targetModel}`);
                 return;
             }
             
@@ -734,6 +737,7 @@ class RocketAI {
             // Vérifier après la première opération
             if (this.isDisposed) {
                 if (qValues) { try { qValues.dispose(); } catch (e) {} }
+                this._diagTrain('disp-post', 'isDisposed juste après predict');
                 return;
             }
             
@@ -765,6 +769,7 @@ class RocketAI {
             
             // PROTECTION CRITIQUE : Vérifier avant l'entraînement
             if (this.isDisposed || !this.model) {
+                this._diagTrain('disp-fit', `disposed=${this.isDisposed} model=${!!this.model}`);
                 return;
             }
             
@@ -799,11 +804,10 @@ class RocketAI {
             this._diagTrain('ok', `apprentissage OK — successfulTrainings=${this.concurrencyMetrics.successfulTrainings}, loss=${(typeof currentLoss === 'number') ? currentLoss.toFixed(5) : currentLoss}`);
 
         } catch (error) {
-            // Tracer l'erreur réelle (throttlé) au lieu de l'avaler silencieusement : c'est ce
-            // silence qui masquait pourquoi l'entraînement n'aboutissait pas (successfulTrainings=0).
-            // Les erreurs liées à un "dispose" restent ignorées (attendues à l'arrêt).
+            // DIAGNOSTIC : on loggue TOUTE erreur, y compris "dispose" (auparavant masquée), pour
+            // révéler la cause exacte de l'échec d'entraînement (successfulTrainings restait à 0).
             const _msg = (error && error.message) ? error.message : String(error);
-            if (!/dispos/i.test(_msg)) this._diagTrain('fit', _msg);
+            this._diagTrain('fit', _msg);
         } finally {
             // Libérer la mémoire tensor (si les tenseurs existent)
             if (xs) { try { xs.dispose(); } catch (e) {} }
