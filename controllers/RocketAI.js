@@ -187,16 +187,14 @@ class RocketAI {
         }
         
         try {
-            // CORRECTION MEMORY LEAK: Dispose les anciens et nouveaux poids après utilisation
-            const oldWeights = this.targetModel.getWeights();
-            const newWeights = this.model.getWeights();
-            this.targetModel.setWeights(newWeights);
-            // Libérer les anciens poids (copies retournées par getWeights)
-            oldWeights.forEach(w => w.dispose());
-            // Libérer aussi les nouveaux poids car setWeights() crée ses propres copies
-            newWeights.forEach(w => w.dispose());
+            // getWeights() renvoie les tenseurs VIVANTS des variables des modèles (PAS des copies) ;
+            // setWeights() recopie leurs valeurs dans les variables de la cible. Il ne faut donc PAS
+            // les disposer : le faire libérait les poids des modèles eux-mêmes, d'où l'erreur
+            // "LayersVariable dense_Dense1/kernel is already disposed" qui faisait échouer model.fit()
+            // à CHAQUE appel (successfulTrainings restait à 0 -> aucun apprentissage).
+            this.targetModel.setWeights(this.model.getWeights());
         } catch (error) {
-            // Ignorer les erreurs de dispose silencieusement
+            // Ignorer les erreurs silencieusement
         }
     }
     
