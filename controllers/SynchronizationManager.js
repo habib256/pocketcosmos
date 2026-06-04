@@ -220,13 +220,13 @@ class SynchronizationManager {
                     // --- STABILISATION ACTIVE (Pas de tentative de décollage) ---
                     // Détecter si le corps est mobile (orbite)
                     const isMobile = landedOnModel.parentBody !== null;
-                    // model.velocity est en unités/seconde ; Matter.js (rocketBody.velocity) et la
-                    // vélocité de la fusée en vol sont en déplacement PAR PAS. On convertit (× dt)
-                    // pour que la fusée posée partage exactement le mouvement par pas de la planète
-                    // (et que handleLiftoff, qui applique la même conversion, soit cohérent au décollage).
-                    const dt = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+                    // model.velocity (orbital) est en unités/seconde. rocketBody.velocity est à
+                    // l'échelle Matter ≈ u/s × (1000/60). On convertit donc avec MATTER_BASE_DELTA
+                    // pour que la fusée posée co-bouge exactement avec la planète, de façon cohérente
+                    // avec handleLiftoff au décollage. Voir PHYSICS.md §1.
+                    const k = this.PHYSICS.MATTER_BASE_DELTA;
                     const parentVelocity = isMobile
-                        ? { x: (landedOnModel.velocity.x || 0) * dt, y: (landedOnModel.velocity.y || 0) * dt }
+                        ? { x: (landedOnModel.velocity.x || 0) * k, y: (landedOnModel.velocity.y || 0) * k }
                         : { x: 0, y: 0 };
 
                     // 1. Forcer les vitesses (Physique)
@@ -300,10 +300,10 @@ class SynchronizationManager {
 
             // Vérifier si le corps est mobile (orbite) - Correction du test ici
             const isAttachedToMobile = attachedToModel && attachedToModel.parentBody !== null;
-            // model.velocity (u/s) → déplacement par pas pour Matter.js (cf. CAS 1).
-            const dtAttached = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+            // model.velocity (u/s) → échelle Matter via MATTER_BASE_DELTA (cf. CAS 1, PHYSICS.md §1).
+            const kAttached = this.PHYSICS.MATTER_BASE_DELTA;
             const parentVelocity = isAttachedToMobile
-                ? { x: (attachedToModel.velocity.x || 0) * dtAttached, y: (attachedToModel.velocity.y || 0) * dtAttached }
+                ? { x: (attachedToModel.velocity.x || 0) * kAttached, y: (attachedToModel.velocity.y || 0) * kAttached }
                 : { x: 0, y: 0 };
 
             if (isAttachedToMobile) {

@@ -55,18 +55,23 @@ velocityMatter = model.velocity × (1000/60)
 Le `dt` se **simplifie** (le mouvement réel du corps ∝ dt, et le scaling Matter ∝ 1/dt) → le facteur
 est **constant = `_baseDelta = 1000/60`**, indépendant du FPS.
 
-### 1.4 Où cette conversion est faite (et son exactitude)
+### 1.4 Où cette conversion est faite
 
-| Endroit | Facteur actuel | Facteur correct | État |
-|---|---|---|---|
-| `ThrusterPhysics.handleLiftoff` (vélocité héritée au décollage) | **`× 1000/60`** | `× 1000/60` | ✅ correct (fix `35352c8`) |
-| `PhysicsController.update` étape 1 (vélocité Matter du corps céleste, pour le solveur de collision) | `× lastDeltaTime` | `× 1000/60` | ⚠️ ~1000× trop petit (sûr : évite la catapulte, mais le corps paraît ~immobile au solveur) |
-| `SynchronizationManager` stabilisation au sol (`parentVelocity`) | `× lastDeltaTime` | `× 1000/60` | ⚠️ ~1000× trop petit (masqué : la position est forcée quand on est posé) |
-| `CollisionHandler.getCelestialBodyVelocity` (vitesse relative pour atterrissage/crash) | `× lastDeltaTime` | `× 1000/60` | ⚠️ ~1000× trop petit → la détection est **de fait ABSOLUE** sur les corps mobiles, pas relative |
+Toutes les conversions `model.velocity (u/s) → vitesse Matter` utilisent **`PHYSICS.MATTER_BASE_DELTA`
+(= 1000/60)**, centralisé dans `constants.js` :
 
-> Ces 3 lignes ⚠️ sont des **incohérences connues** : elles « marchent » par effet de bord mais sont
-> en mauvaises unités. Ne pas les « corriger » à l'aveugle (cela change l'atterrissage/crash et la
-> détection de collision sur les corps mobiles — tester). Voir [TODO.md](TODO.md).
+| Endroit | Rôle |
+|---|---|
+| `ThrusterPhysics.handleLiftoff` | vélocité héritée au décollage (co‑mouvement avec le corps quitté) |
+| `PhysicsController.update` étape 1 | vélocité Matter du corps mobile (vue par le solveur de collision) |
+| `SynchronizationManager` (posé / débris) | stabilisation : la fusée posée co‑bouge avec le corps |
+| `CollisionHandler.getCelestialBodyVelocity` | vitesse **relative** pour atterrissage/crash |
+| `GameSetupController` (spawn) | vélocité héritée du corps hôte au spawn |
+
+> Historique : ces conversions utilisaient `× deltaTime` (~1000× trop petit), ce qui rendait la
+> détection atterrissage/crash **de fait absolue** sur les corps mobiles (une fusée co‑mobile sur une
+> lune rapide était classée à tort comme crash). Corrigé le 2026‑06‑04, **vérifié en headless** (vrai
+> Matter.js) ; voir [CHANGELOG.md](CHANGELOG.md). `handleLiftoff` (décollage) avait été corrigé en premier.
 
 ---
 
@@ -191,8 +196,8 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 - **Délai de collision** : aucune collision pendant `COLLISION_DELAY = 2000 ms` après init.
 - **Grâce de décollage** : si `isInLiftoffGracePeriod()` → renvoie `false` (jamais posé).
 - **Proximité** : `|distance - rayon - HEIGHT/2| < 15 px`.
-- **Vitesse relative** au corps (via `getCelestialBodyVelocity`, cf. §1.4 ⚠️ : de fait ~absolue sur
-  corps mobiles).
+- **Vitesse relative** au corps (via `getCelestialBodyVelocity`, à l'échelle Matter correcte — donc
+  réellement relative : co‑mobile sur une lune rapide ⇒ atterrissage doux, pas crash).
 - **CRASH** si proche & collisions actives & au moins un de :
   `vitesse ≥ CRASH_SPEED_THRESHOLD (2500)` · `|Δangle| ≥ CRASH_ANGLE_DEG (45°)` ·
   `|ω| ≥ CRASH_ANGULAR_VELOCITY (400)` → `isDestroyed=true`, dégâts fatals, enfoncement visuel.
@@ -256,5 +261,5 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 3. **Masses des presets** : tuner pour `poussée/gravité > 1` (G=0,001).
 4. **Orbites cinématiques** : changer une masse ne change pas les orbites.
 5. **Décollage corps mobile** : la vélocité héritée doit être `× 1000/60` (sinon glissement orbital).
-6. **Détection atterrissage/crash sur corps mobile** : actuellement ~absolue (incohérence d'unités).
+6. **Détection atterrissage/crash sur corps mobile** : relative au corps (co‑mobile = atterrissage doux).
 7. **Tester** tout changement physique avec le harnais headless (vrai Matter.js) — voir CHANGELOG.

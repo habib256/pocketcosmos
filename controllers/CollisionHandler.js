@@ -257,10 +257,13 @@ class CollisionHandler {
                 info = this.physicsController.celestialBodies.find(cb => cb.model && cb.model.name === otherBody.label);
             }
             if (info && info.model && info.model.velocity) {
-                // model.velocity est en unités/seconde (vélocité orbitale). On la convertit en
-                // déplacement par pas de simulation pour la comparer à rocketBody.velocity (Matter.js).
-                const dt = (this.physicsController.lastDeltaTime) || (1 / 60);
-                return { x: (info.model.velocity.x || 0) * dt, y: (info.model.velocity.y || 0) * dt };
+                // model.velocity est en unités/seconde (orbital). On la met à l'échelle Matter
+                // (× MATTER_BASE_DELTA = 1000/60) pour la comparer à rocketBody.velocity. Avec
+                // l'ancienne conversion × deltaTime (~1000× trop petite), la vélocité du corps était
+                // négligeable et la vitesse "relative" était de fait ABSOLUE : un atterrissage en
+                // douceur (co-mobile) sur un corps rapide était classé à tort comme crash. Voir PHYSICS.md §1.
+                const k = this.PHYSICS.MATTER_BASE_DELTA;
+                return { x: (info.model.velocity.x || 0) * k, y: (info.model.velocity.y || 0) * k };
             }
         }
         // Repli : la vélocité d'un corps physique dynamique est déjà en unités Matter (par pas).

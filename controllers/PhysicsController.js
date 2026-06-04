@@ -184,17 +184,13 @@ class PhysicsController {
                 // Mettre à jour la position du corps physique Matter.js
                 this.Body.setPosition(celestialInfo.body, celestialInfo.model.position);
                 // Mettre à jour la vélocité du corps physique Matter.js (calculée dans updateOrbit).
-                // CORRECTION UNITÉS (cf. commit 96b471b, oublié ici) : model.velocity est en
-                // unités/SECONDE (orbitSpeed × orbitDistance). Matter.js attend une vélocité
-                // PAR PAS de simulation (= déplacement par tick ≈ valeur/seconde × deltaTime).
-                // Sans la conversion ×lastDeltaTime, un corps mobile comme Âtrebois (~72 u/s)
-                // voyait son body.velocity fixé à ~72/pas (≈60× trop). Au décollage, lorsque la
-                // fusée n'est plus épinglée mais encore en contact avec la surface, le solveur de
-                // collision de Matter.js applique alors cette vélocité tangentielle énorme à la
-                // fusée (friction), la catapultant latéralement à une vitesse anormale (~4320 u/s).
+                // model.velocity est en unités/SECONDE (orbital). rocketBody.velocity — et donc le
+                // solveur de collision — raisonne à l'échelle Matter ≈ u/s × (1000/60). On convertit
+                // avec MATTER_BASE_DELTA pour que le corps mobile présente au solveur sa vraie vitesse
+                // (collision/friction correctes), cohérent avec la fusée. Voir PHYSICS.md §1.
                 this.Body.setVelocity(celestialInfo.body, {
-                    x: (celestialInfo.model.velocity.x || 0) * this.lastDeltaTime,
-                    y: (celestialInfo.model.velocity.y || 0) * this.lastDeltaTime
+                    x: (celestialInfo.model.velocity.x || 0) * this.PHYSICS.MATTER_BASE_DELTA,
+                    y: (celestialInfo.model.velocity.y || 0) * this.PHYSICS.MATTER_BASE_DELTA
                 });
                 // Assurer que le corps ne s'endort pas
                 celestialInfo.body.isSleeping = false;

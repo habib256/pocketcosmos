@@ -185,10 +185,10 @@ class ThrusterPhysics {
                 // la fusée n'héritait quasiment pas de l'orbite et "glissait" en arrière du corps
                 // mobile (dérive tangentielle ~2× celle d'un corps statique). Avec ce facteur, la
                 // dérive orbitale est annulée (décollage propre, comme sur un corps immobile).
-                const MATTER_BASE_DELTA = 1000 / 60; // _baseDelta interne de Matter.js (ms)
+                const k = this.PHYSICS.MATTER_BASE_DELTA; // u/s -> échelle Matter (cf. PHYSICS.md §1)
                 inheritedVelocity = {
-                    x: (celestialBodyInfo.model.velocity.x || 0) * MATTER_BASE_DELTA,
-                    y: (celestialBodyInfo.model.velocity.y || 0) * MATTER_BASE_DELTA
+                    x: (celestialBodyInfo.model.velocity.x || 0) * k,
+                    y: (celestialBodyInfo.model.velocity.y || 0) * k
                 };
             }
         }
