@@ -2,10 +2,10 @@
  * Fichier de constantes centralisées pour la simulation de fusée
  */
 
-// Drapeau global de debug (désactive les logs verbeux si false)
-// TEMPORAIRE: Activé pour le diagnostic du décollage
+// Drapeau global de debug (désactive les logs verbeux si false).
+// Mettre à true pour réactiver les logs de diagnostic (EventBus "aucun auditeur", décollage, etc.).
 if (typeof globalThis !== 'undefined' && typeof globalThis.DEBUG === 'undefined') {
-    globalThis.DEBUG = true; // Temporairement true pour voir les logs de diagnostic
+    globalThis.DEBUG = false;
 }
 
 // Constantes physiques
@@ -26,6 +26,8 @@ const PHYSICS = {
     COLLISION_DAMPING: 0.7,     // Facteur d'amortissement des collisions
     IMPACT_DAMAGE_FACTOR: 10,   // Facteur de dommages lors des impacts (appliqué sur la vitesse d'impact)
     RESTITUTION: 0.2,           // Coefficient de restitution (rebond)
+    LANDING_PROXIMITY_THRESHOLD: 15, // Distance (px) à la surface pour considérer un contact (atterrissage/crash)
+    CRASH_SINK_DEPTH: 40,            // Enfoncement visuel (px) de l'épave dans le sol lors d'un crash
 
     // ————————————————————————————————————————————————
     // Seuils de détection atterrissage/crash (utilisés par CollisionHandler)

@@ -317,7 +317,7 @@ class CollisionHandler {
         
         const rocketEffectiveRadius = this.ROCKET.HEIGHT / 2; // Approximation du "rayon" de la fusée pour contact.
         const distanceToSurface = distance - bodyRadius - rocketEffectiveRadius;
-        const proximityThreshold = 15; // Pixels. Seuil de proximité pour considérer un contact potentiel.
+        const proximityThreshold = this.PHYSICS.LANDING_PROXIMITY_THRESHOLD; // Seuil de proximité (px) pour un contact potentiel.
         const isCloseToSurface = Math.abs(isNaN(distanceToSurface) ? Infinity : distanceToSurface) < proximityThreshold;
 
 
@@ -421,7 +421,7 @@ class CollisionHandler {
                         return false;
                     }
                     
-                    const CRASH_SINK_DEPTH = 40; // Profondeur d'enfoncement en pixels.
+                    const CRASH_SINK_DEPTH = this.PHYSICS.CRASH_SINK_DEPTH; // Profondeur d'enfoncement (px) au crash.
                     const directionX = dx / distance; // Vecteur direction normalisé.
                     const directionY = dy / distance;
                     // Nouvelle position : sur la surface moins la moitié de la hauteur de la fusée, plus la profondeur d'enfoncement.

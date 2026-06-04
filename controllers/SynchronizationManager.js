@@ -184,7 +184,7 @@ class SynchronizationManager {
                 if (mainThrusterPercent > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT) {
                 // La fusée essaie activement de décoller, forcer isLanded à false et retourner
                 if (rocketModel.isLanded) {
-                    console.log(`[DECOLLAGE] Détection précoce: poussée=${mainThrusterPercent.toFixed(1)}%, forçant isLanded=false`);
+                    if (globalThis.DEBUG) console.log(`[DECOLLAGE] Détection précoce: poussée=${mainThrusterPercent.toFixed(1)}%, forçant isLanded=false`);
                     // IMPORTANT: Sauvegarder landedOn AVANT de le mettre à null pour le repositionnement
                     const savedLandedOn = rocketModel.landedOn;
                     rocketModel.isLanded = false;

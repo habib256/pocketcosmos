@@ -37,6 +37,15 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   interplanétaire) ; *Trou blanc*/*L'Intrus* (exotiques) laissés tels quels. Orbites inchangées
   (cinématiques).
 
+### Nettoyage / hygiène
+- `globalThis.DEBUG` repassé à `false` ; les logs de décollage fréquents (`[LIFTOFF]`, `[DECOLLAGE]`)
+  gatés derrière `if (globalThis.DEBUG)`.
+- Constantes en dur centralisées dans `constants.js` : `MATTER_BASE_DELTA` (1000/60),
+  `LANDING_PROXIMITY_THRESHOLD` (15), `CRASH_SINK_DEPTH` (40).
+- Audit d'équilibrage des 6 mondes : **tous les corps de spawn sont décollables** (Tatooine corrigé :
+  masse 3e11 → 1,4e11, ratio 0,85 → 1,82). Les corps à forte gravité non‑spawn sont laissés
+  volontairement inaccessibles au vaisseau actuel (cibles de futurs vaisseaux plus puissants).
+
 ### Connu / non corrigé (voir [TODO.md](TODO.md))
 - `gravityConstant` du plugin (0,001) ≠ `PHYSICS.G` (0,0001) : le champ de gravité affiché et les
   calculs IA sont ~10× sous la gravité réelle (choix de design — re‑tuning des mondes requis).

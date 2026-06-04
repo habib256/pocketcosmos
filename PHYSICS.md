@@ -249,8 +249,8 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 `THRUSTER_EFFECTIVENESS{MAIN:1.5, REAR:1.5, LATERAL:0.3}` ·
 `THRUSTER_POSITIONS{MAIN:{-π/2,30}, REAR:{π/2,30}, LEFT:{π,15}, RIGHT:{0,15}}`.
 
-> ⚠️ « Note magique » : `MATTER_BASE_DELTA = 1000/60` est défini en dur dans `ThrusterPhysics`.
-> Candidat à centraliser dans `constants.js` (voir [TODO.md](TODO.md)).
+> Constantes liées centralisées dans `PHYSICS` : `MATTER_BASE_DELTA` (= 1000/60, cf. §1),
+> `LANDING_PROXIMITY_THRESHOLD` (15 px), `CRASH_SINK_DEPTH` (40 px).
 
 ---
 

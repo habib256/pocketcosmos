@@ -162,7 +162,7 @@ class ThrusterPhysics {
     // @param {string|null} forcedLandedOnName - Nom du corps (optionnel, utilisé si landedOn est déjà null)
     handleLiftoff(rocketModel, rocketBody, forcedLandedOnName = null) {
         const landedOnBodyName = forcedLandedOnName || rocketModel.landedOn;
-        console.log(`[LIFTOFF] Décollage initié depuis ${landedOnBodyName || 'surface inconnue'}`);
+        if (globalThis.DEBUG) console.log(`[LIFTOFF] Décollage initié depuis ${landedOnBodyName || 'surface inconnue'}`);
 
         // CORRECTION BUG INERTIE: Récupérer la vélocité du corps céleste AVANT de modifier l'état
         // Cela permet à la fusée d'hériter de l'inertie du corps en mouvement (lune, planète)
@@ -227,7 +227,7 @@ class ThrusterPhysics {
         };
         this.Body.setVelocity(rocketBody, liftoffVelocity);
         
-        console.log(`[LIFTOFF] ✅ Décollage naturel initié avec vélocité: (${liftoffVelocity.x.toFixed(2)}, ${liftoffVelocity.y.toFixed(2)})`);
+        if (globalThis.DEBUG) console.log(`[LIFTOFF] ✅ Décollage naturel initié avec vélocité: (${liftoffVelocity.x.toFixed(2)}, ${liftoffVelocity.y.toFixed(2)})`);
     }
 
     // Jouer le son du propulseur principal
