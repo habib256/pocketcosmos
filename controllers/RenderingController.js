@@ -253,8 +253,10 @@ class RenderingController {
                 // Borne à 0 : un inset supérieur au rayon (corps-hôte très petit) donnerait un
                 // rayon négatif, plaçant l'icône à l'opposé du centre.
                 const r = Math.max(0, host.radius - surfaceInset);
-                const worldX = host.position.x + Math.cos(st.angle) * r;
-                const worldY = host.position.y + Math.sin(st.angle) * r;
+                // Garde : un angle non fini (station mal formée) donnerait des coordonnées NaN.
+                const stAngle = Number.isFinite(st.angle) ? st.angle : 0;
+                const worldX = host.position.x + Math.cos(stAngle) * r;
+                const worldY = host.position.y + Math.sin(stAngle) * r;
                 const screen = this.universeView.worldToScreen(worldX, worldY, camera);
                 if (this.universeView.isPointVisible(screen.x, screen.y, camera)) {
                     // Taille proportionnelle au zoom; toujours dessiner l'icône, même très petite

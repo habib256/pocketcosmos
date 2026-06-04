@@ -218,7 +218,10 @@ class InputController {
         // START n'est alors émis et le propulseur reste "fantôme" à 0. On purge donc l'état
         // d'entrée (et on émet les STOP correspondants) pour resynchroniser entrées et modèle.
         if (this.eventBus && typeof this.eventBus.subscribe === 'function') {
-            this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this._releaseAllActiveActions());
+            const _unsubReset = this.eventBus.subscribe(EVENTS.ROCKET.RESET, () => this._releaseAllActiveActions());
+            if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+                window.controllerContainer.track(_unsubReset);
+            }
         }
 
         console.log(`[InputController] ✅ Événements initialisés, keyMap contient ${Object.keys(this.keyMap).length} touches`);
