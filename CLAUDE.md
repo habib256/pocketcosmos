@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Pocket Cosmos is an interactive 2D rocket simulation with realistic physics using Matter.js. It features a mission system, cargo management, optional AI (TensorFlow.js), and procedural universe generation. The project uses a modular MVC-extended architecture with an EventBus for decoupled communication.
 
+## Documentation Map
+
+These four docs are complementary — keep them in sync when you change the code:
+
+| File | Purpose |
+|------|---------|
+| **CLAUDE.md** (this file) | Architecture, conventions, how to work in the repo — start here |
+| **[PHYSICS.md](PHYSICS.md)** | Precise physics/simulation reference (units, gravity, forces, collision, takeoff). **Read before touching physics.** |
+| **[CHANGELOG.md](CHANGELOG.md)** | Reverse-chronological history of notable changes |
+| **[TODO.md](TODO.md)** | Known issues & tech debt (esp. unit/gravity inconsistencies) and roadmap |
+
 ## Running the Project
 
 This is a browser-based application with no build step:
@@ -70,18 +81,20 @@ The EventBus is the heart of inter-module communication:
 3. `RocketController` updates `RocketModel`
 4. `ThrusterPhysics` applies force to Matter.js body
 
-**Game Loop** (60 FPS):
-1. `gameController.update()` called
-2. `physicsController.update()` advances Matter.js
-3. `synchronizationManager.sync()` updates models from physics
-4. Other controllers update their logic
-5. `renderingController.render()` draws current state
+**Game Loop** (~60 FPS via `requestAnimationFrame`; `deltaTime` in **seconds**, capped at 0.05):
+1. `inputController.update()`
+2. `universeModel.update(deltaTime)` — advances the kinematic orbits
+3. `physicsController.update(deltaTime)` — orbits sync → landed-rocket pinning → thrusters → `Engine.update` (gravity + collisions) → model sync → periodic landing check
+4. `rocketController.update()`, `rocketAI.update()` (if active), `particleController.update()`, `rocketModel.update()` (fuel), `cameraModel.update()`, `missionManager.update()`
+5. `renderingController.render()` draws the current state
+
+> `SynchronizationManager` has **no** `sync()` entry point: it hooks Matter's `beforeUpdate`/`afterUpdate` events and syncs **bidirectionally** (physics→model in flight; model→physics when landed/attached, to pin the rocket to a surface). See [PHYSICS.md §4](PHYSICS.md).
 
 **Collision Handling**:
 1. Matter.js detects collision
 2. `CollisionHandler` analyzes impact (speed, angle, angular velocity) against thresholds in `constants.js`
-3. Updates `rocketModel.isLanded` or `rocketModel.isCrashed`, recalculates relative position on landing
-4. `SynchronizationManager` creates physical constraint to "attach" rocket
+3. Updates `rocketModel.isLanded` or `rocketModel.isDestroyed`, recalculates relative position on landing
+4. `SynchronizationManager` force-syncs the rocket's position/velocity to "attach" it to the body (no Matter constraint is created)
 5. Landing triggers `MISSION_COMPLETED` check via `MissionManager`
 
 ## Universe System (Presets & Procedural)
@@ -109,12 +122,16 @@ JSON files in `assets/worlds/` can define:
 
 ## Physics & Matter.js
 
-- **Engine**: Matter.js 0.19.0 with matter-attractors plugin
-- **Gravity**: Applied by matter-attractors plugin during physics update
-- **Collision categories**: Defined in `PHYSICS.COLLISION_CATEGORIES` to control what collides
-- **Thresholds**: Landing/crash/liftoff speeds in `constants.js`
+- **Engine**: Matter.js 0.19.0 with the matter-attractors plugin
+- **Gravity**: Applied by the matter-attractors plugin during `Engine.update`. ⚠️ The plugin's `gravityConstant` is **0.001** (its default, never overridden in the code) — that is the REAL gravity. `PHYSICS.G` (0.0001 in `constants.js`, overridable per preset) feeds ONLY the debug/visualization and AI gravity calculations, **NOT** the actual forces.
+- **Units pitfall**: the game passes `deltaTime` in **seconds** to `Engine.update`, while Matter assumes **milliseconds** (`_baseDelta = 1000/60`). Consequence: a body's `velocity` ≈ (units/second) × (1000/60). This is the root of most physics subtleties.
+- **Orbits are kinematic**: celestial bodies follow a prescribed `orbitSpeed` (not gravity), so a body's mass only affects the gravity felt by the rocket — never the bodies' own trajectories.
+- **Collision categories**: Defined in `PHYSICS.COLLISION_CATEGORIES`
+- **Thresholds**: Landing/crash/liftoff in `constants.js`
 
-**Important**: Manual gravity calculations (like `calculateGravityAccelerationAt`) are for visualization/debug only, NOT for applying forces.
+**Important**: Manual gravity calculations (`calculateGravityAccelerationAt`, etc.) are for visualization/debug/AI only, NOT for applying forces.
+
+👉 **Precise physics reference (units, forces, takeoff, collision, sync, constants): [PHYSICS.md](PHYSICS.md). Read it before changing physics.**
 
 ## Constants & Configuration
 
@@ -134,10 +151,15 @@ World-specific data (body masses, positions) should come from preset JSON files,
 
 **Rendering pipeline** (in `RenderingController.render()`):
 1. Clear canvas
-2. `universeView.render()`: Background, stars, celestial bodies
-3. `rocketView.render()`: Rocket with thrusters
-4. Conditional views: `traceView`, `vectorsView`, `gravityFieldView`
-5. `uiView.render()`: UI overlays
+2. `universeView.render()`: Background, stars, celestial bodies, asteroid belts
+3. `stationView.render()`: Station icons/labels anchored to bodies
+4. `traceView.render()`: Trajectory trail
+5. `particleView`: Thrust/explosion particles
+6. `rocketView.render()`: Rocket with thrusters
+7. Conditional: `vectorsView` (force vectors and/or gravity field arrows/equipotentials)
+8. `uiView.render()`: HUD and modal screens
+
+(When paused, only `uiView.render()` runs.)
 
 **Visual features**:
 - Day/night shadowing on planets oriented by central star
@@ -171,7 +193,7 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 
 **Other reward configs** (`AI_TRAINING` in `constants.js`):
 - `REWARDS`: Standard reward values for orbit, landing, and penalties
-- `ORBIT`: Calculated orbital parameters consistent with physics (G=0.0001)
+- `ORBIT`: Orbital parameters for the `orbit` objective. ⚠️ Computed with G=0.0001, but the REAL gravity uses G=0.001 (see [PHYSICS.md](PHYSICS.md)) — a known inconsistency (see [TODO.md](TODO.md))
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
