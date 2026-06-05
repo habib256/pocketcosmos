@@ -8,6 +8,8 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 
 - [Lancer la Simulation](https://habib256.github.io/pocketcosmos/index.html)
   _(Cliquez pour essayer !)_ ✨
+- [Interface d'Entraînement IA](https://habib256.github.io/pocketcosmos/training-interface.html)
+  _(Entraîner l'IA à piloter de A vers B !)_ 🤖
 
 ### Captures d'écran 📸
 
