@@ -525,18 +525,25 @@ class TrainingOrchestrator {
                     nextState: nextAIState,
                     done: result.done
                 });
+
+                // Borne le replay buffer pour éviter une croissance mémoire illimitée
+                // (l'orchestrateur pousse directement ici, sans passer par RocketAI.remember()).
+                const _maxBuf = this.rocketAI.config.replayBufferSize || 50000;
+                if (this.rocketAI.replayBuffer.length > _maxBuf + 1000) {
+                    this.rocketAI.replayBuffer.splice(0, this.rocketAI.replayBuffer.length - _maxBuf);
+                }
             }
             
             // Entraîner le modèle si suffisamment d'expériences (et si pas dispose)
             if (this.rocketAI && !this.rocketAI.isDisposed &&
                 this.rocketAI.replayBuffer.length >= this.config.batchSize &&
                 steps % this.rocketAI.config.updateFrequency === 0) {
-                // DIAGNOSTIC throttlé : prouver que ce site est atteint et que train est appelable.
-                // hasDiag=undefined => le RocketAI.js servi est une version en CACHE (sans nos logs).
+                // Trace de diagnostic (silencieuse par défaut, activable via window.DEBUG_AI = true).
                 const _nowT = Date.now();
-                if (!this._lastTrainCallDiag || _nowT - this._lastTrainCallDiag > 2000) {
+                if (typeof window !== 'undefined' && window.DEBUG_AI &&
+                    (!this._lastTrainCallDiag || _nowT - this._lastTrainCallDiag > 2000)) {
                     this._lastTrainCallDiag = _nowT;
-                    try { console.warn(`[Orchestrator] -> appel train() typeof=${typeof this.rocketAI.train} hasDiag=${typeof this.rocketAI._diagTrain} successfulTrainings=${this.rocketAI.concurrencyMetrics ? this.rocketAI.concurrencyMetrics.successfulTrainings : '?'}`); } catch (e) {}
+                    try { console.warn(`[Orchestrator] -> appel train() successfulTrainings=${this.rocketAI.concurrencyMetrics ? this.rocketAI.concurrencyMetrics.successfulTrainings : '?'}`); } catch (e) {}
                 }
                 try {
                     await this.rocketAI.train();
@@ -554,16 +561,15 @@ class TrainingOrchestrator {
             done = result.done;
             steps++;
 
-            // DIAGNOSTIC throttlé (<=1x/2s) : pourquoi train() peut ne jamais se déclencher.
-            // Montre si le buffer se remplit, si l'agent est en mode entraînement, et la valeur
-            // réelle de batchSize/updateFreq (un batchSize undefined rendrait la condition l.532
-            // toujours fausse -> train() jamais appelé -> aucun tag [RocketAI.train]).
-            const _nowDiag = Date.now();
-            if (!this._lastEpDiag || _nowDiag - this._lastEpDiag > 2000) {
-                this._lastEpDiag = _nowDiag;
-                try {
-                    console.warn(`[Orchestrator] ep=${this.metrics.episode} steps=${steps} buffer=${this.rocketAI.replayBuffer.length}/${this.config.batchSize} aiTraining=${this.rocketAI.isTraining} updateFreq=${this.rocketAI.config.updateFrequency}`);
-                } catch (e) {}
+            // Trace de diagnostic (silencieuse par défaut, activable via window.DEBUG_AI = true).
+            if (typeof window !== 'undefined' && window.DEBUG_AI) {
+                const _nowDiag = Date.now();
+                if (!this._lastEpDiag || _nowDiag - this._lastEpDiag > 2000) {
+                    this._lastEpDiag = _nowDiag;
+                    try {
+                        console.warn(`[Orchestrator] ep=${this.metrics.episode} steps=${steps} buffer=${this.rocketAI.replayBuffer.length}/${this.config.batchSize} aiTraining=${this.rocketAI.isTraining}`);
+                    } catch (e) {}
+                }
             }
 
             // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive

@@ -345,7 +345,7 @@
                 <h2 style="margin: 0;">🎯 Visualisation de l'Entraînement</h2>
                 <div class="visualization-controls">
                     <button id="toggleVisualization">👁️ Activer</button>
-                    <button id="resetView">🌌 Vue absolue</button>
+                    <button id="toggleView">🌌 Vue absolue</button>
                     <button id="clearTrajectory">🧹 Effacer</button>
                     <button id="zoomOut" class="zoom-button">➖</button>
                     <button id="zoomIn" class="zoom-button">➕</button>
@@ -653,7 +653,7 @@
                 
                 // Événements de visualisation
                 document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
-                document.getElementById('resetView').addEventListener('click', () => this.resetView());
+                document.getElementById('toggleView').addEventListener('click', () => this.toggleView());
                 document.getElementById('clearTrajectory').addEventListener('click', () => this.clearTrajectory());
                 document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
                 document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
@@ -1188,10 +1188,12 @@
                 }
             }
             
-            resetView() {
-                if (this.visualizer && typeof this.visualizer.resetView === 'function') {
-                    this.visualizer.resetView();
-                    this.log('Vue réinitialisée en vue absolue', 'info');
+            toggleView() {
+                if (this.visualizer && typeof this.visualizer.toggleView === 'function') {
+                    const following = this.visualizer.toggleView();
+                    const btn = document.getElementById('toggleView');
+                    if (btn) btn.textContent = following ? '🌌 Vue absolue' : '🚀 Vue vaisseau';
+                    this.log(following ? 'Vue vaisseau (suivi de la fusée)' : 'Vue absolue (centrée A↔B)', 'info');
                 }
             }
         }

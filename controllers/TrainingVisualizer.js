@@ -344,7 +344,27 @@ class TrainingVisualizer {
             this.render();
         }
     }
-    
+
+    /**
+     * Bascule entre la vue du vaisseau (suivi de la fusée) et la vue absolue (centrée entre A et B).
+     * @returns {boolean} true si on suit désormais le vaisseau, false si on est en vue absolue.
+     */
+    toggleView() {
+        if (this.camera.followRocket) {
+            // Suivi actif -> passer en vue absolue (centrée A↔B)
+            this.resetView();
+        } else {
+            // Vue absolue -> repasser en suivi du vaisseau
+            this.camera.followRocket = true;
+            this.camera.manualZoomControl = false;
+            this.initializeCamera(false);
+            if (this.isActive) {
+                this.render();
+            }
+        }
+        return this.camera.followRocket;
+    }
+
     /**
      * Générer des étoiles de fond
      */

@@ -59,6 +59,13 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
     enfin cohérents (avant, la vitesse de croisière requise était **pénalisée**).
   - Stabilisation : poids dédié `STABILIZE_REWARD_WEIGHT` (au lieu de réutiliser `DISTANCE_DELTA=100`).
   > ⚠️ Valeurs absolues à **valider par un entraînement réel** une fois l'apprentissage rétabli.
+- **Interface d'entraînement — bascule de vue + nettoyage.** Le bouton « 🌌 Vue absolue » devient une
+  **bascule** vue vaisseau (suivi) ↔ vue absolue (centrée A↔B) via `TrainingVisualizer.toggleView()`
+  (avant : impossible de revenir au suivi de la fusée). Les traces de diagnostic verbeuses
+  (`[RocketAI.train]`, `[Orchestrator]`) sont désormais **silencieuses par défaut**, activables via
+  `window.DEBUG_AI = true` ; les vraies erreurs de `model.fit` restent toujours remontées. Le replay
+  buffer (poussé directement par l'orchestrateur) est **borné** à `replayBufferSize` (avant : croissance
+  illimitée, ~270 000 entrées observées → fuite mémoire).
 
 ### Corrigé
 - **Décollage propre depuis un corps en orbite** (`ThrusterPhysics.handleLiftoff`) — `35352c8`.

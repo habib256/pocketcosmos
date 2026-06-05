@@ -802,10 +802,17 @@ class RocketAI {
             this._diagTrain('ok', `apprentissage OK — successfulTrainings=${this.concurrencyMetrics.successfulTrainings}, loss=${(typeof currentLoss === 'number') ? currentLoss.toFixed(5) : currentLoss}`);
 
         } catch (error) {
-            // DIAGNOSTIC : on loggue TOUTE erreur, y compris "dispose" (auparavant masquée), pour
-            // révéler la cause exacte de l'échec d'entraînement (successfulTrainings restait à 0).
+            // Surfacer les VRAIES erreurs d'entraînement (throttlé) — ne JAMAIS les ré-avaler en
+            // silence (ce silence avait masqué le bug "kernel is already disposed"). Les erreurs
+            // "dispose" attendues lors d'un teardown restent silencieuses.
             const _msg = (error && error.message) ? error.message : String(error);
-            this._diagTrain('fit', _msg);
+            if (!/dispos/i.test(_msg)) {
+                const _now = Date.now();
+                if (!this._lastFitErrLog || _now - this._lastFitErrLog > 2000) {
+                    this._lastFitErrLog = _now;
+                    try { console.warn('[RocketAI.train] erreur model.fit :', _msg); } catch (e) {}
+                }
+            }
         } finally {
             // Libérer la mémoire tensor (si les tenseurs existent)
             if (xs) { try { xs.dispose(); } catch (e) {} }
@@ -933,9 +940,10 @@ class RocketAI {
         }
     }
     
-    // Diagnostic throttlé : pourquoi train() n'aboutit pas (successfulTrainings reste à 0).
-    // Loggue au plus une fois / 2 s par catégorie (évite le spam sur des milliers d'appels).
+    // Diagnostic verbeux de train() (guard/buffer/fit-start/ok/…). Silencieux par défaut,
+    // activable via window.DEBUG_AI = true. Throttlé à 1 log / 2 s par catégorie.
     _diagTrain(tag, msg) {
+        if (!(typeof window !== 'undefined' && window.DEBUG_AI)) return;
         const now = Date.now();
         if (!this._trainDiag) this._trainDiag = {};
         if (now - (this._trainDiag[tag] || 0) > 2000) {
