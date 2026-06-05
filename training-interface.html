@@ -346,6 +346,10 @@
                 <div class="visualization-controls">
                     <button id="toggleVisualization">👁️ Activer</button>
                     <button id="toggleView">🌌 Vue absolue</button>
+                    <label title="Vitesse de l'animation (×1 fluide … ×20 avance rapide)" style="display:flex; align-items:center; gap:4px; color:#aaa; font-size:0.85em;">
+                        ⏩ <input type="range" id="visualSpeed" min="1" max="20" step="1" value="1" style="width:70px; vertical-align:middle;">
+                        <span id="visualSpeedLabel" style="min-width:30px; display:inline-block;">×1</span>
+                    </label>
                     <button id="clearTrajectory">🧹 Effacer</button>
                     <button id="zoomOut" class="zoom-button">➖</button>
                     <button id="zoomIn" class="zoom-button">➕</button>
@@ -654,6 +658,7 @@
                 // Événements de visualisation
                 document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
                 document.getElementById('toggleView').addEventListener('click', () => this.toggleView());
+                document.getElementById('visualSpeed').addEventListener('input', (e) => this.onVisualSpeedChanged(e.target.value));
                 document.getElementById('clearTrajectory').addEventListener('click', () => this.clearTrajectory());
                 document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
                 document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
@@ -796,6 +801,7 @@
                         gamma: config.gamma,
                         batchSize: config.batchSize,
                         headlessMode: config.trainingMode === 'headless',
+                        visualSpeed: this.visualSpeed || 1,
                         objectives: [config.objective]
                     };
                     
@@ -1194,6 +1200,17 @@
                     const btn = document.getElementById('toggleView');
                     if (btn) btn.textContent = following ? '🌌 Vue absolue' : '🚀 Vue vaisseau';
                     this.log(following ? 'Vue vaisseau (suivi de la fusée)' : 'Vue absolue (centrée A↔B)', 'info');
+                }
+            }
+
+            onVisualSpeedChanged(value) {
+                const speed = Math.max(1, Math.min(20, parseInt(value) || 1));
+                this.visualSpeed = speed;
+                const label = document.getElementById('visualSpeedLabel');
+                if (label) label.textContent = '×' + speed;
+                // Appliquer immédiatement, même pendant un entraînement en cours.
+                if (this.trainingOrchestrator && this.trainingOrchestrator.config) {
+                    this.trainingOrchestrator.config.visualSpeed = speed;
                 }
             }
         }
