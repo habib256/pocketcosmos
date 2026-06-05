@@ -1208,9 +1208,15 @@
                 this.visualSpeed = speed;
                 const label = document.getElementById('visualSpeedLabel');
                 if (label) label.textContent = '×' + speed;
-                // Appliquer immédiatement, même pendant un entraînement en cours.
+                // Appliquer immédiatement, même pendant un entraînement en cours :
+                // 1) l'orchestrateur émet les événements de rendu et cède au navigateur moins souvent ;
                 if (this.trainingOrchestrator && this.trainingOrchestrator.config) {
                     this.trainingOrchestrator.config.visualSpeed = speed;
+                }
+                // 2) le visualiseur saute des frames de rendu (libère le thread pour l'entraînement).
+                //    C'est ce qui rend l'avance rapide réellement plus rapide.
+                if (this.visualizer) {
+                    this.visualizer.renderEveryNFrames = speed;
                 }
             }
         }

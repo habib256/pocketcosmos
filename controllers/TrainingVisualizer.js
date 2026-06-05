@@ -478,14 +478,23 @@ class TrainingVisualizer {
      */
     startRenderLoop() {
         if (this.renderLoopId) return;
-        
+
+        let frame = 0;
         const render = () => {
             if (this.isActive) {
-                this.render();
+                // Saute des frames quand la vitesse visuelle est élevée (curseur ⏩) : le rendu de la
+                // trajectoire est coûteux et monopolise le thread principal (il s'exécute entre chaque
+                // model.fit). En n'affichant qu'1 frame sur N, on libère le thread pour la boucle
+                // d'entraînement -> la simulation avance réellement plus vite (avance rapide).
+                const skip = Math.max(1, this.renderEveryNFrames || 1);
+                if (frame % skip === 0) {
+                    this.render();
+                }
+                frame++;
                 this.renderLoopId = requestAnimationFrame(render);
             }
         };
-        
+
         this.renderLoopId = requestAnimationFrame(render);
     }
     
