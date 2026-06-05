@@ -572,14 +572,17 @@ class TrainingOrchestrator {
                 }
             }
 
-            // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive
-            // Toutes les 50 steps pour un bon équilibre performance/réactivité
-            if (steps % 50 === 0) {
+            // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive.
+            // En mode headless (sans rendu) on cède beaucoup plus rarement -> entraînement nettement
+            // plus rapide ; en mode visuel on cède souvent pour garder l'animation fluide.
+            const _yieldEvery = this.config.headlessMode ? 500 : 50;
+            if (steps % _yieldEvery === 0) {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
-            
-            // Émettre l'événement de step pour la visualisation (toutes les 10 étapes pour les performances)
-            if (steps % 10 === 0 && this.trainingEnv.rocketModel) {
+
+            // Émettre l'événement de step pour la visualisation (toutes les 10 étapes).
+            // Inutile en mode headless (aucun rendu) -> on l'évite pour accélérer l'entraînement.
+            if (!this.config.headlessMode && steps % 10 === 0 && this.trainingEnv.rocketModel) {
                 const stepCelestialBodies = (this.trainingEnv.universeModel && this.trainingEnv.universeModel.celestialBodies) 
                     ? this.trainingEnv.universeModel.celestialBodies.map(body => ({
                         name: body.name,
