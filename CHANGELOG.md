@@ -66,6 +66,10 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   `window.DEBUG_AI = true` ; les vraies erreurs de `model.fit` restent toujours remontées. Le replay
   buffer (poussé directement par l'orchestrateur) est **borné** à `replayBufferSize` (avant : croissance
   illimitée, ~270 000 entrées observées → fuite mémoire).
+- **Vitesse d'entraînement.** Le mode « Sans rendu (rapide) » est désormais réellement rapide (plus
+  d'émission d'événements de rendu par step, cession au navigateur 10× plus rare). En mode visuel, un
+  **curseur de vitesse ⏩ ×1→×20** règle la cadence de rendu (1 rendu tous les `10 × vitesse` steps)
+  pour observer en avance rapide ; modifiable **en direct** pendant l'entraînement.
 
 ### Corrigé
 - **Décollage propre depuis un corps en orbite** (`ThrusterPhysics.handleLiftoff`) — `35352c8`.

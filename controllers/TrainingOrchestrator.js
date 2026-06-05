@@ -32,6 +32,7 @@ class TrainingOrchestrator {
             // Configuration environnement
             headlessMode: true,
             logInterval: 50,
+            visualSpeed: 1, // Mode visuel : cadence de rendu (×1 = fluide … ×20 = avance rapide)
             
             // Objectifs d'entraînement
             // CORRECTION (bug défaut objectif): la doc décrit 'navigate' comme objectif par
@@ -573,16 +574,17 @@ class TrainingOrchestrator {
             }
 
             // IMPORTANT: Céder le contrôle au navigateur périodiquement pour garder l'UI réactive.
-            // En mode headless (sans rendu) on cède beaucoup plus rarement -> entraînement nettement
-            // plus rapide ; en mode visuel on cède souvent pour garder l'animation fluide.
-            const _yieldEvery = this.config.headlessMode ? 500 : 50;
+            // Headless : on cède rarement (rapide). Visuel : la cadence dépend du curseur de vitesse
+            // (×1 = fluide ; ×N = on saute N fois plus de steps entre deux rendus -> avance rapide).
+            const _speed = Math.max(1, this.config.visualSpeed || 1);
+            const _yieldEvery = this.config.headlessMode ? 500 : Math.min(500, 50 * _speed);
             if (steps % _yieldEvery === 0) {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
 
-            // Émettre l'événement de step pour la visualisation (toutes les 10 étapes).
-            // Inutile en mode headless (aucun rendu) -> on l'évite pour accélérer l'entraînement.
-            if (!this.config.headlessMode && steps % 10 === 0 && this.trainingEnv.rocketModel) {
+            // Émettre l'événement de step pour la visualisation. Inutile en headless ; en visuel on
+            // rend tous les (10 × vitesse) steps -> plus la vitesse est haute, moins on rend (= rapide).
+            if (!this.config.headlessMode && steps % (10 * _speed) === 0 && this.trainingEnv.rocketModel) {
                 const stepCelestialBodies = (this.trainingEnv.universeModel && this.trainingEnv.universeModel.celestialBodies) 
                     ? this.trainingEnv.universeModel.celestialBodies.map(body => ({
                         name: body.name,
