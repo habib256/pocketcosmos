@@ -70,6 +70,10 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
   d'émission d'événements de rendu par step, cession au navigateur 10× plus rare). En mode visuel, un
   **curseur de vitesse ⏩ ×1→×20** règle la cadence de rendu (1 rendu tous les `10 × vitesse` steps)
   pour observer en avance rapide ; modifiable **en direct** pendant l'entraînement.
+- **Temps de vol A→B réduit ~5×.** Budget d'épisode navigate `20000 → 4000` steps (~66 s) + cibles de
+  vitesse mises à l'échelle ×5 (`VELOCITY_TARGET 500 → 2500` u/s, `MAX 2000 → 10000`, `SIGMA 200 → 1000`,
+  `MIN 50 → 250`) pour que la fusée croise assez vite et atteigne B dans le budget réduit.
+  ⚠️ À valider par un entraînement (freinage/stabilisation plus serrés).
 
 ### Corrigé
 - **Décollage propre depuis un corps en orbite** (`ThrusterPhysics.handleLiftoff`) — `35352c8`.
