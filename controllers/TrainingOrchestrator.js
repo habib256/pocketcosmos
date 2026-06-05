@@ -211,8 +211,9 @@ class TrainingOrchestrator {
             // Angle initial aléatoire pour forcer l'IA à s'orienter
             const rocketInitialAngle = Math.random() * Math.PI * 2;
 
-            // Budget de steps : distance ~127k, vitesse cible ~500 m/s → ~254s → ~15000 steps
-            const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 20000);
+            // Budget de steps réduit ~5× (vol plus court A→B). Distance ~127k unités, croisière
+            // cible ~2500 u/s → ~51s → ~3000 steps de croisière + freinage ⇒ 4000 steps (66s @ 1/60s).
+            const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 4000);
 
             // IMPORTANT: Mettre à jour this.config pour que la boucle d'entraînement (runEpisode)
             // utilise aussi cette limite, pas seulement l'environnement

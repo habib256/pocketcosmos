@@ -178,7 +178,7 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 - **Visualization**: `TrainingVisualizer.js` - Real-time training metrics with navigation point display
 
 **Training objectives**:
-- `navigate` - Point-to-point navigation (default): the rocket must fly from point A `(0,0)` to point B `(90000, 90000)` (~127k units diagonal), then **brake and stabilize** at point B. Success requires distance < 3000 AND speed < 30. Random initial angle forces the AI to learn orientation. Budget: 20000 steps, infinite fuel.
+- `navigate` - Point-to-point navigation (default): the rocket must fly from point A `(0,0)` to point B `(90000, 90000)` (~127k units diagonal), then **brake and stabilize** at point B. Success requires distance < 3000 AND speed < 30. Random initial angle forces the AI to learn orientation. Budget: **4000 steps** (~66s @ 1/60s — flight ~5× shorter; cruise target `VELOCITY_TARGET` ≈ 2500 u/s), infinite fuel.
 - `orbit` - Achieve stable orbit at target altitude
 - `land` - Soft landing on a celestial body
 - `crash` - (used for crash avoidance training)

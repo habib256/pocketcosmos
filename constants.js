@@ -439,11 +439,11 @@ const AI_TRAINING = {
         // PRIORITÉ BASSE - Optimisation théorique
         POTENTIAL: 1.0,              // Potential-Based Reward (priorité basse) - Potential-based reward shaping
 
-        // Paramètres de vitesse (distance A-B ~127k unités, budget ~20k steps)
-        VELOCITY_TARGET: 500.0,      // Vitesse cible optimale (unités/s)
-        VELOCITY_SIGMA: 200.0,       // Écart-type pour gaussienne de vitesse
-        VELOCITY_MIN: 50.0,          // Vitesse minimale acceptable
-        VELOCITY_MAX: 2000.0,        // Vitesse maximale acceptable
+        // Paramètres de vitesse (distance A-B ~127k unités, budget ~4k steps → vol ~5× plus rapide)
+        VELOCITY_TARGET: 2500.0,     // Vitesse de croisière cible (u/s) — ×5 pour un temps de vol plus court
+        VELOCITY_SIGMA: 1000.0,      // Écart-type pour la gaussienne de vitesse
+        VELOCITY_MIN: 250.0,         // Vitesse minimale acceptable
+        VELOCITY_MAX: 10000.0,       // Vitesse maximale acceptable (avant pénalité)
 
         // Zones progressives (ratio de distance initiale)
         ZONE_REWARDS: [10, 25, 50, 100], // Récompenses par zone (croissantes, augmentées)
