@@ -58,8 +58,26 @@ class MissionManager {
             console.error("[MissionManager] EventBus non fourni au constructeur.");
             return;
         }
+        // Idempotence : si on a déjà souscrit (ex: re-bind sur un autre EventBus par
+        // TrainingOrchestrator), désabonner d'abord pour éviter les abonnements orphelins
+        // (fuite mémoire) sur le bus privé abandonné et le double-binding.
+        if (!Array.isArray(this._subscriptions)) {
+            this._subscriptions = [];
+        }
+        if (this._subscriptions.length > 0) {
+            for (const unsub of this._subscriptions) {
+                if (typeof unsub === 'function') {
+                    try { unsub(); }
+                    catch (err) { console.error("[MissionManager] Erreur lors du désabonnement:", err); }
+                }
+            }
+            this._subscriptions = [];
+        }
         // CORRECTION: Track l'abonnement pour éviter les fuites mémoire
         const unsubscribe = this.eventBus.subscribe(EVENTS.MISSION.FAILED, data => this.failMission(data));
+        if (typeof unsubscribe === 'function') {
+            this._subscriptions.push(unsubscribe);
+        }
         if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
             window.controllerContainer.track(unsubscribe);
         }

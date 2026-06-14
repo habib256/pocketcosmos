@@ -412,8 +412,12 @@ class CelestialBodyFactory {
         // Deuxième passe: lier les parents (par name) pour tous les corps valides.
         for (const body of created) {
             const cfg = body._sourceConfig;
-            if (cfg.parentName && nameToBody[cfg.parentName]) {
-                body.parentBody = nameToBody[cfg.parentName];
+            if (cfg.parentName) {
+                if (nameToBody[cfg.parentName]) {
+                    body.parentBody = nameToBody[cfg.parentName];
+                } else {
+                    console.warn(`[CelestialBodyFactory] Corps '${cfg.name}': parentName '${cfg.parentName}' introuvable (typo ou parent ignoré). Le corps restera statique à sa position initiale (${cfg.position ? `${cfg.position.x},${cfg.position.y}` : '0,0'}).`);
+                }
             }
         }
 

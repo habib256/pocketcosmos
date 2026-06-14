@@ -18,13 +18,12 @@ class CelestialBodyView {
         }
         
         ctx.save();
-        
-        // Dessiner l'atmosphère si elle existe (arrière et avant avec éclairage)
+
+        // Dessiner l'atmosphère (halo externe) derrière le corps, si elle existe.
+        // Le corps opaque (drawBody) est dessiné par-dessus et recouvre la portion interne,
+        // ne laissant visible que la couronne dépassant du disque.
         if (celestialBodyModel.atmosphere && celestialBodyModel.atmosphere.exists) {
             this.drawAtmosphere(ctx, celestialBodyModel, camera, 'back', sunBodyModel);
-        }
-        if (celestialBodyModel.atmosphere && celestialBodyModel.atmosphere.exists) {
-            this.drawAtmosphere(ctx, celestialBodyModel, camera, 'front', sunBodyModel);
         }
 
         // Dessiner la partie ARRIÈRE des anneaux avant le corps (pour qu'ils passent derrière)
@@ -176,28 +175,13 @@ class CelestialBodyView {
 
         const baseColor = body.atmosphere.color || 'rgba(25, 35, 80, 0.2)';
 
-        // Couche arrière
+        // Couche arrière : disque complet de l'atmosphère (corps + couronne).
+        // Le corps opaque dessiné ensuite recouvre la partie interne ; seul le
+        // halo externe (la couronne) reste visible. Une ancienne « couche avant »
+        // clippée à l'intérieur du disque était systématiquement recouverte par le
+        // corps opaque : code mort et contradictoire, supprimé (aucun changement visuel).
         if (layer === 'back' || layer === 'both') {
             ctx.save();
-            ctx.beginPath();
-            ctx.arc(screenPos.x, screenPos.y, screenRadius + screenAtmosphereHeight, 0, Math.PI * 2);
-            ctx.fillStyle = baseColor;
-            ctx.fill();
-            if (grad) {
-                ctx.fillStyle = grad;
-                ctx.fill();
-            }
-            ctx.restore();
-        }
-
-        // Couche avant (après le corps): uniquement le halo externe
-        if (layer === 'front' || layer === 'both') {
-            ctx.save();
-            // Clip pour exclure le disque de la planète
-            ctx.beginPath();
-            ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
-            ctx.clip();
-            // Dessiner la couronne
             ctx.beginPath();
             ctx.arc(screenPos.x, screenPos.y, screenRadius + screenAtmosphereHeight, 0, Math.PI * 2);
             ctx.fillStyle = baseColor;
@@ -253,7 +237,12 @@ class CelestialBodyView {
             // Dessiner l'ellipse à nouveau en coordonnées écran
             ctx.beginPath();
             ctx.ellipse(screenPos.x, screenPos.y, screenRadius * 2, screenRadius * 0.5, 0, 0, Math.PI * 2);
-            ctx.strokeStyle = gradient;
+            // Le dégradé doit être recréé en coordonnées écran (resetTransform a annulé la translation)
+            const frontGradient = ctx.createLinearGradient(screenPos.x, screenPos.y - screenRadius * 2, screenPos.x, screenPos.y + screenRadius * 2);
+            frontGradient.addColorStop(0, 'rgba(200, 200, 200, 0.7)');
+            frontGradient.addColorStop(0.5, 'rgba(150, 150, 150, 0.3)');
+            frontGradient.addColorStop(1, 'rgba(200, 200, 200, 0.7)');
+            ctx.strokeStyle = frontGradient;
             ctx.lineWidth = screenRadius * 0.2;
             ctx.stroke();
             ctx.restore();

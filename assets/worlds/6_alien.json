@@ -79,6 +79,7 @@
   
     "asteroidBelts": [
       {
+        "centerName": "Calpamos",
         "innerRadius": 2100,
         "outerRadius": 2300,
         "count": 800,

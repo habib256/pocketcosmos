@@ -218,7 +218,10 @@ class RocketAI {
             return;
         }
         
-        trackSub(this.eventBus.subscribe(window.EVENTS.ROCKET.STATE_UPDATED, data => this.updateRocketData(data)));
+        // NOTE: ROCKET.STATE_UPDATED n'est JAMAIS émis -> l'ancien abonnement qui pilotait
+        // updateRocketData() ne se déclenchait jamais (IA inerte en jeu). Le pilotage en jeu
+        // passe désormais par update(deltaTime), appelé chaque frame par GameController quand
+        // this.isActive. updateRocketData() reste utilisable (appelée depuis update()).
         trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_CONTROL, () => this.toggleActive()));
         trackSub(this.eventBus.subscribe(window.EVENTS.AI.TOGGLE_TRAINING, () => this.toggleTraining()));
         // ROCKET.CRASHED n'est jamais émis (le crash passe par ROCKET.DESTROYED) -> abonnement retiré.
@@ -462,7 +465,10 @@ class RocketAI {
         }
         
         // Stratégie epsilon-greedy
-        if (Math.random() < this.config.epsilon) {
+        // N'explorer (action aléatoire) QUE pendant l'entraînement. En évaluation/inférence
+        // (isTraining === false), on force la politique gloutonne pour mesurer la vraie
+        // performance et sélectionner les bons poids "best".
+        if (this.isTraining && Math.random() < this.config.epsilon) {
             // Exploration: action aléatoire
             return Math.floor(Math.random() * this.actions.length);
         } else {
@@ -921,6 +927,9 @@ class RocketAI {
     // Charger le modèle
     async loadModel() {
         try {
+            // Disposer le modèle existant avant de le remplacer pour éviter de fuiter
+            // ses variables/tenseurs de poids dans TF.js.
+            if (this.model && !this.isDisposed) { try { this.model.dispose(); } catch (e) {} }
             this.model = await tf.loadLayersModel('localstorage://rocket-ai-model');
             this.model.compile({
                 optimizer: tf.train.adam(this.config.learningRate),
@@ -992,7 +1001,12 @@ class RocketAI {
         const dx = this.rocketData.x - this.celestialBodyData.x;
         const dy = this.rocketData.y - this.celestialBodyData.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
+        // Garde anti division-par-zéro : si la fusée coïncide avec le centre du corps
+        // (distance ~0), les calculs de vitesse radiale plus bas produiraient des NaN.
+        // Ce chemin est désormais atteignable en jeu (update() pilote maintainOrbit).
+        if (!isFinite(distance) || distance <= 0) return;
+
         // Calculer l'angle entre la fusée et le corps céleste
         const angleToBody = Math.atan2(dy, dx);
         
@@ -1085,9 +1099,91 @@ class RocketAI {
         this.eventBus.emit(window.EVENTS.AI.CONTROL_ACTION, { action });
     }
     
-    // Ajouter la méthode update appelée par GameController pour éviter l'erreur
+    // Hook de pilotage en jeu : appelé chaque frame par GameController quand this.isActive.
+    // (Auparavant un no-op : l'IA était inerte en jeu car elle attendait ROCKET.STATE_UPDATED,
+    //  événement jamais émis.) On construit ici un instantané de l'état réel à partir des
+    //  modèles vivants puis on délègue à updateRocketData() -> makeDecision() (inférence ;
+    //  step() uniquement si this.isTraining, ce qui n'est pas le cas du pilotage en jeu).
     update(deltaTime) {
-        // Rien à faire ici car updateRocketData gère déjà les décisions de l'agent
+        // Sécurité : ne rien faire si inactif ou disposé.
+        if (!this.isActive || this.isDisposed) return;
+
+        // checkDependencies() exige rocketModel/universeModel/physicsController/missionManager/
+        // rocketController. Le pilotage n'a strictement besoin que de rocketModel + universeModel,
+        // mais on respecte le contrat demandé : on ne pilote que si tout est câblé.
+        if (!this.checkDependencies()) return;
+
+        const rm = this.rocketModel;
+        const pos = rm.position || { x: 0, y: 0 };
+        const vel = rm.velocity || { x: 0, y: 0 };
+
+        // PARITÉ D'UNITÉS (critique) : en entraînement, HeadlessRocketEnvironment.getObservation()
+        // expose rocketVX/VY = rocketModel.velocity.x/y BRUT (échelle Matter ≈ u/s × MATTER_BASE_DELTA),
+        // et c'est RocketAI.buildStateVector qui divise par MATTER_BASE_DELTA pour obtenir des u/s.
+        // On reproduit EXACTEMENT ce chemin : on passe ici la vitesse BRUTE (non convertie) pour que
+        // buildStateVector applique la même conversion qu'à l'entraînement (sinon double division ->
+        // vitesses 16,7× trop petites, état hors-distribution pour le réseau).
+        const rocket = {
+            x: pos.x,
+            y: pos.y,
+            vx: vel.x,                      // brut (échelle Matter), comme à l'entraînement
+            vy: vel.y,                      // brut (échelle Matter), comme à l'entraînement
+            angle: rm.angle,
+            angularVelocity: rm.angularVelocity,
+            fuel: rm.fuel
+        };
+
+        // Corps céleste de référence : le PLUS PROCHE de la fusée, comme la logique de proximité
+        // gravitationnelle (UniverseModel.findNearestBody). On aplatit position -> x/y car les
+        // consommateurs (buildState/calculateReward/maintainOrbit) attendent celestialBody.x/.y.
+        let celestialBody = null;
+        if (this.universeModel && typeof this.universeModel.findNearestBody === 'function') {
+            const nearest = this.universeModel.findNearestBody(pos);
+            const body = nearest && nearest.body;
+            if (body && body.position) {
+                celestialBody = {
+                    x: body.position.x,
+                    y: body.position.y,
+                    radius: body.radius,
+                    mass: body.mass,
+                    name: body.name
+                };
+            }
+        }
+
+        // Sans corps de référence, buildState() renverrait un état neutre : inutile de décider.
+        if (!celestialBody) return;
+
+        // Cible : si une mission active désigne un corps céleste par son nom (mission.to), viser
+        // sa position ; sinon, laisser targetX/targetY indéfinis pour que le fallback existant de
+        // buildState (targetX = celestialBody.x) s'applique.
+        const missionTarget = this.resolveMissionTarget();
+        if (missionTarget) {
+            rocket.targetX = missionTarget.x;
+            rocket.targetY = missionTarget.y;
+        }
+
+        // Un seul chemin de code : updateRocketData() affecte rocketData/celestialBodyData puis
+        // appelle makeDecision() (inférence) — ou step() si this.isTraining (entraînement en jeu).
+        this.updateRocketData({ rocket, celestialBody });
+    }
+
+    // Résout la cible de la mission active (mission.to est un NOM de corps/station) vers une
+    // position {x, y} en cherchant le corps céleste correspondant dans l'univers. Renvoie null
+    // si aucune mission active, pas de missionManager, ou nom introuvable.
+    resolveMissionTarget() {
+        if (!this.missionManager || typeof this.missionManager.getCurrentMissionDetails !== 'function') {
+            return null;
+        }
+        const mission = this.missionManager.getCurrentMissionDetails();
+        if (!mission || typeof mission.to !== 'string') return null;
+        if (!this.universeModel || !Array.isArray(this.universeModel.celestialBodies)) return null;
+
+        const body = this.universeModel.celestialBodies.find(b => b && b.name === mission.to);
+        if (body && body.position) {
+            return { x: body.position.x, y: body.position.y };
+        }
+        return null;
     }
     
     /**

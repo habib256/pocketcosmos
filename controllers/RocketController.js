@@ -36,15 +36,32 @@ class RocketController {
     subscribeToEvents() {
         console.log(`[RocketController] ⚠️ subscribeToEvents() APPELÉ`);
         let subscriptionCount = 0;
-        
+
         // Vérifier que EVENTS est défini
         if (!window.EVENTS || !window.EVENTS.ROCKET) {
             console.error(`[RocketController] ❌ EVENTS non défini! window.EVENTS=`, window.EVENTS);
             return;
         }
-        
+
         console.log(`[RocketController] ✅ EVENTS défini, THRUST_FORWARD_START=${window.EVENTS.ROCKET.THRUST_FORWARD_START}`);
-        
+
+        // Idempotence : si on a déjà souscrit (ex: re-bind sur un autre EventBus par
+        // TrainingOrchestrator), désabonner d'abord les anciens handlers pour éviter
+        // les abonnements orphelins (fuite mémoire) et le double-binding.
+        // eventBus.subscribe() retourne une fonction de désabonnement (cf. EventBus.js).
+        if (!Array.isArray(this._subscriptions)) {
+            this._subscriptions = [];
+        }
+        if (this._subscriptions.length > 0) {
+            for (const unsubscribe of this._subscriptions) {
+                if (typeof unsubscribe === 'function') {
+                    try { unsubscribe(); }
+                    catch (err) { console.error(`[RocketController] Erreur lors du désabonnement:`, err); }
+                }
+            }
+            this._subscriptions = [];
+        }
+
         // S'abonner aux événements sémantiques pour les actions de la fusée
         // CORRECTION: Utiliser uniquement controllerContainer.track() pour éviter la double gestion
         const subscribeAndTrack = (eventType, handler) => {
@@ -53,6 +70,11 @@ class RocketController {
                 return null;
             }
             const unsubscribe = this.eventBus.subscribe(eventType, handler);
+            // Conserver la fn de désabonnement sur l'instance pour pouvoir rendre
+            // subscribeToEvents() idempotent lors d'un re-bind d'EventBus.
+            if (typeof unsubscribe === 'function') {
+                this._subscriptions.push(unsubscribe);
+            }
             if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
                 window.controllerContainer.track(unsubscribe);
             }

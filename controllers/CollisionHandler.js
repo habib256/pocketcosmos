@@ -72,7 +72,13 @@ class CollisionHandler {
                     const relVelX = rocketBody.velocity.x - otherVel.x;
                     const relVelY = rocketBody.velocity.y - otherVel.y;
                     const impactVelocity = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
-                    const COLLISION_THRESHOLD = 2.5; // m/s, seuil pour différencier un contact léger d'un impact notable.
+                    // impactVelocity est en ÉCHELLE MATTER (rocketBody.velocity et getCelestialBodyVelocity
+                    // le sont). Le gate et les dégâts doivent raisonner en unités/seconde (u/s), sinon une
+                    // vitesse ~16.67× trop grande inflige des centaines de dégâts au moindre contact rasant.
+                    // On convertit localement (÷ MATTER_BASE_DELTA) : ce chemin de dégâts est le SEUL à
+                    // utiliser u/s, les détections de crash/atterrissage restent en échelle Matter.
+                    const impactSpeedUs = impactVelocity / this.PHYSICS.MATTER_BASE_DELTA;
+                    const COLLISION_THRESHOLD = 2.5; // u/s, seuil pour différencier un contact léger d'un impact notable.
 
                     // CORRECTION: Vérifier si le propulseur principal est actif (tentative de décollage)
                     const mainStart = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
@@ -105,9 +111,9 @@ class CollisionHandler {
                         // Gérer une collision normale (pas un atterrissage en douceur).
                         // Cette section est atteinte si isRocketLanded retourne false (soit c'est un crash, soit un contact non-atterrissage).
                         // Si c'est un crash, rocketModel.isDestroyed sera déjà true à cause de la logique dans isRocketLanded.
-                        const impactDamage = impactVelocity * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
+                        const impactDamage = impactSpeedUs * this.PHYSICS.IMPACT_DAMAGE_FACTOR;
 
-                        if (otherBody.label !== 'rocket' && impactVelocity > COLLISION_THRESHOLD) {
+                        if (otherBody.label !== 'rocket' && impactSpeedUs > COLLISION_THRESHOLD) {
                             // Collision significative.
                             if (!rocketModel.isDestroyed) {
                                 rocketModel.landedOn = otherBody.label;

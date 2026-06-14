@@ -135,14 +135,14 @@ class UniverseView {
      * @returns {number} La luminosité scintillante, bornée dans [0, 1].
      */
     computeStarTwinkle(star, time) {
-        const twinkleFactor = RENDER.STAR_TWINKLE_FACTOR;
         // Vitesse de scintillement, potentiellement basée sur une constante ou dynamique
         const twinkleSpeed = RENDER.ZOOM_SPEED * 0.02; // Exemple: lié à ZOOM_SPEED
 
         // Calcul simple basé sur sin() pour un effet périodique
         const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
-        // Applique le scintillement à la luminosité de base
-        const brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * twinkleFactor + RENDER.STAR_BRIGHTNESS_RANGE;
+        // Applique le scintillement à la luminosité de base, en utilisant
+        // STAR_BRIGHTNESS_RANGE comme amplitude du scintillement (et non comme offset).
+        const brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * RENDER.STAR_BRIGHTNESS_RANGE;
         // S'assure que la luminosité reste dans une plage valide (ex: 0 à 1)
         return Math.max(0, Math.min(1, brightness));
     }
@@ -279,8 +279,10 @@ class UniverseView {
        // 4. Dessiner les corps célestes directement (les vues utilisent worldToScreen)
        this.renderCelestialBodies(ctx, camera, celestialBodies);
 
-       // 5. Dessiner les astéroïdes (particules non physiques)
-       this.renderAsteroidBelt(ctx, camera, asteroids);
+       // 5. Dessiner les astéroïdes (particules non physiques).
+       //    celestialBodies est transmis pour permettre aux ceintures ancrées (centerName)
+       //    de suivre la position COURANTE de leur corps hôte en orbite (mondes 5/6).
+       this.renderAsteroidBelt(ctx, camera, asteroids, celestialBodies);
 
        // Note: Le rendu de la trace (TraceView) est généralement géré séparément
        // car il se superpose à tout le reste et travaille en coordonnées écran.
@@ -289,17 +291,50 @@ class UniverseView {
 
     /**
      * Dessine des particules d'astéroïdes simples en dehors de matter.js.
+     *
+     * Ceintures ancrées : un astéroïde possédant `centerName` (+ `offsetX`/`offsetY`) est
+     * recentré à chaque frame sur la position COURANTE de son corps hôte (résolu par nom dans
+     * `celestialBodies`). Cela permet à la ceinture de suivre un corps en orbite (mondes 5/6).
+     * Les astéroïdes non ancrés (mondes 1-4) sont rendus tels quels via leurs coordonnées
+     * absolues `x`/`y`, exactement comme avant.
+     *
      * @param {CanvasRenderingContext2D} ctx
      * @param {CameraModel} camera
-     * @param {Array<{x:number,y:number,size?:number,color?:string,brightness?:number}>} asteroids
+     * @param {Array<{x:number,y:number,size?:number,color?:string,brightness?:number,centerName?:string,offsetX?:number,offsetY?:number}>} asteroids
+     * @param {Array<CelestialBodyModel>} [celestialBodies] - Corps célestes courants (pour l'ancrage).
      */
-    renderAsteroidBelt(ctx, camera, asteroids) {
+    renderAsteroidBelt(ctx, camera, asteroids, celestialBodies) {
         if (!asteroids || asteroids.length === 0) return;
+
+        // Cache local des positions d'hôtes (résolution par nom une seule fois par frame).
+        const hostPosCache = {};
+        const resolveHostPos = (name) => {
+            if (name in hostPosCache) return hostPosCache[name];
+            let pos = null;
+            if (celestialBodies && celestialBodies.length) {
+                const host = celestialBodies.find(b => b && b.name === name);
+                if (host && host.position && typeof host.position.x === 'number' && typeof host.position.y === 'number') {
+                    pos = host.position;
+                }
+            }
+            hostPosCache[name] = pos;
+            return pos;
+        };
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         for (const a of asteroids) {
-            const screen = this.worldToScreen(a.x, a.y, camera);
+            // Position monde : recentrée sur l'hôte courant si la ceinture est ancrée.
+            let worldX = a.x;
+            let worldY = a.y;
+            if (a.centerName && typeof a.offsetX === 'number' && typeof a.offsetY === 'number') {
+                const hostPos = resolveHostPos(a.centerName);
+                if (hostPos) {
+                    worldX = hostPos.x + a.offsetX;
+                    worldY = hostPos.y + a.offsetY;
+                }
+            }
+            const screen = this.worldToScreen(worldX, worldY, camera);
             if (!this.isPointVisible(screen.x, screen.y, camera)) continue;
             const size = Math.max(1, Math.min(5, a.size || 2));
             ctx.fillStyle = a.color || 'rgba(180,180,180,0.9)';

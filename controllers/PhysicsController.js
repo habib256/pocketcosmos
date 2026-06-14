@@ -260,8 +260,8 @@ class PhysicsController {
                     const dist = Math.hypot(rb.position.x - bx, rb.position.y - by);
                     const bodyR = ref.model.radius || 0;
                     const distSurf = (dist - bodyR).toFixed(1);
-                    const relvx = (rb.velocity.x - (ref.model.velocity ? ref.model.velocity.x * this.lastDeltaTime : 0)).toFixed(2);
-                    const relvy = (rb.velocity.y - (ref.model.velocity ? ref.model.velocity.y * this.lastDeltaTime : 0)).toFixed(2);
+                    const relvx = (rb.velocity.x - (ref.model.velocity ? ref.model.velocity.x * this.PHYSICS.MATTER_BASE_DELTA : 0)).toFixed(2);
+                    const relvy = (rb.velocity.y - (ref.model.velocity ? ref.model.velocity.y * this.PHYSICS.MATTER_BASE_DELTA : 0)).toFixed(2);
                     info = `body=${ref.model.name} distSurf=${distSurf} relV=(${relvx},${relvy})`;
                 }
                 console.log(`[LIFTOFF-DBG] isLanded=${rm.isLanded} landedOn=${rm.landedOn} thrust=${pct}% grace=${rm.isInLiftoffGracePeriod && rm.isInLiftoffGracePeriod()} ` +

@@ -293,13 +293,18 @@ class TrainingOrchestrator {
         this.trainingEnv = new HeadlessRocketEnvironment(trainingConfig);
         this.trainingEnv.eventBus = this.eventBus; // Utiliser l'EventBus partagé
         
-        // Réinitialiser les abonnements aux événements avec le nouvel EventBus
+        // Réinitialiser les abonnements aux événements avec le nouvel EventBus.
+        // On réassigne l'EventBus partagé (nécessaire : HeadlessRocketEnvironment émet
+        // AI.TRAINING_STEP / AI.EPISODE_ENDED sur this.eventBus, écouté par le visualizer/UI).
         this.trainingEnv.rocketController.eventBus = this.eventBus;
         this.trainingEnv.physicsController.eventBus = this.eventBus;
         this.trainingEnv.missionManager.eventBus = this.eventBus;
-        
-        
-        // Re-souscrire aux événements avec le bon EventBus
+
+
+        // Re-souscrire aux événements avec le bon EventBus.
+        // subscribeToEvents() est désormais idempotent : il désabonne d'abord les anciens
+        // handlers du bus privé jeté avant de se ré-abonner sur le bus partagé, ce qui
+        // évite les abonnements orphelins (fuite mémoire) et le double-binding.
         if (typeof this.trainingEnv.rocketController.subscribeToEvents === 'function') {
             this.trainingEnv.rocketController.subscribeToEvents();
         }
@@ -311,12 +316,14 @@ class TrainingOrchestrator {
         this.evaluationEnv = new HeadlessRocketEnvironment(evaluationConfig);
         this.evaluationEnv.eventBus = this.eventBus; // Utiliser l'EventBus partagé
         
-        // Réinitialiser les abonnements aux événements avec le nouvel EventBus
+        // Réinitialiser les abonnements aux événements avec le nouvel EventBus.
+        // (Même rationale que pour trainingEnv : bus partagé requis pour AI.*/UI events.)
         this.evaluationEnv.rocketController.eventBus = this.eventBus;
         this.evaluationEnv.physicsController.eventBus = this.eventBus;
         this.evaluationEnv.missionManager.eventBus = this.eventBus;
-        
-        // Re-souscrire aux événements avec le bon EventBus
+
+        // Re-souscrire aux événements avec le bon EventBus.
+        // subscribeToEvents() idempotent : nettoie les abonnements orphelins du bus jeté.
         if (typeof this.evaluationEnv.rocketController.subscribeToEvents === 'function') {
             this.evaluationEnv.rocketController.subscribeToEvents();
         }
@@ -711,8 +718,8 @@ class TrainingOrchestrator {
         const actions = [
             { mainThruster: 1.0, rotationInput: 0 },    // Poussée avant
             { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 }, // Poussée arrière
-            { mainThruster: 0, rotationInput: -1.0 },   // Rotation droite
-            { mainThruster: 0, rotationInput: 1.0 },    // Rotation gauche
+            { mainThruster: 0, rotationInput: 1.0 },    // index 2 = Rotation gauche (rotateLeft -> propulseur gauche)
+            { mainThruster: 0, rotationInput: -1.0 },   // index 3 = Rotation droite (rotateRight -> propulseur droit)
             { mainThruster: 0, rotationInput: 0 }       // Aucune action
         ];
         
@@ -725,8 +732,8 @@ class TrainingOrchestrator {
     getActionIndex(action) {
         if (action.mainThruster > 0.5) return 0;
         if (action.rearThruster > 0.5) return 1;
-        if (action.rotationInput < -0.5) return 2;
-        if (action.rotationInput > 0.5) return 3;
+        if (action.rotationInput > 0.5) return 2;  // index 2 = rotateLeft (rotationInput +1.0)
+        if (action.rotationInput < -0.5) return 3; // index 3 = rotateRight (rotationInput -1.0)
         return 4;
     }
     
@@ -806,7 +813,9 @@ class TrainingOrchestrator {
                 this.rocketAI && !this.rocketAI.isDisposed && this.rocketAI.model) {
                 this.metrics.bestAverageReward = averageScore;
                 
-                // CORRECTION MEMORY LEAK: Dispose les anciens poids avant de stocker les nouveaux
+                // CORRECTION MEMORY LEAK: Dispose les anciens clones avant de stocker les nouveaux.
+                // (Ce sont des clones indépendants — voir ci-dessous — donc les disposer ne touche
+                //  jamais aux poids vivants du modèle.)
                 if (this.trainingState.bestModelWeights) {
                     this.trainingState.bestModelWeights.forEach(w => {
                         if (w && typeof w.dispose === 'function') {
@@ -814,9 +823,13 @@ class TrainingOrchestrator {
                         }
                     });
                 }
-                
+
                 try {
-                    this.trainingState.bestModelWeights = await this.rocketAI.model.getWeights();
+                    // getWeights() renvoie les tenseurs VIVANTS des variables du modèle (PAS des copies).
+                    // On en stocke des CLONES indépendants : ainsi les dispose() ultérieurs libèrent les
+                    // clones et JAMAIS les poids vivants du modèle (sinon model.fit()/predict() échouerait
+                    // avec "LayersVariable ... is already disposed").
+                    this.trainingState.bestModelWeights = this.rocketAI.model.getWeights().map(w => w.clone());
                 } catch (weightsError) {
                     // Ignorer les erreurs si le modèle a été disposé entre-temps
                     if (!weightsError.message.includes('disposed')) {
