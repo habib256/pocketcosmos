@@ -355,16 +355,36 @@ class GameSetupController {
 
     /**
      * Génère une ceinture d'astéroïdes (particules non physiques) entre deux rayons.
-     * @param {{innerRadius:number, outerRadius:number, count:number, seed?:number, center?:{x:number,y:number}, sizeRange?:{min:number,max:number}, color?:string, brightness?:number}} cfg
+     *
+     * Ancrage optionnel sur un corps céleste : si `cfg.centerName` est fourni et que le corps
+     * correspondant existe dans `universeModel.celestialBodies`, la ceinture est centrée sur la
+     * position COURANTE de ce corps. Chaque astéroïde mémorise alors `centerName` ainsi que son
+     * offset (`offsetX`, `offsetY`) relatif au centre de l'hôte, ce qui permet à la vue de
+     * recentrer la ceinture à chaque frame sur la position courante de l'hôte (corps en orbite).
+     * Sans `centerName`, on retombe sur `cfg.center || {x:0,y:0}` (comportement mondes 1-4).
+     *
+     * @param {{innerRadius:number, outerRadius:number, count:number, seed?:number, center?:{x:number,y:number}, centerName?:string, sizeRange?:{min:number,max:number}, color?:string, brightness?:number}} cfg
      * @param {UniverseModel} universeModel
-     * @returns {Array<{x:number,y:number,size:number,color:string,brightness:number}>}
+     * @returns {Array<{x:number,y:number,size:number,color:string,brightness:number,centerName?:string,offsetX?:number,offsetY?:number}>}
      */
     _generateAsteroidBeltFromConfig(cfg, universeModel) {
         const innerR = Math.max(1, cfg.innerRadius || 32000);
         const outerR = Math.max(innerR + 1, cfg.outerRadius || 44000);
         const count = Math.max(1, Math.min(20000, cfg.count || 1500));
         const seed = (typeof cfg.seed === 'number' ? cfg.seed : (Date.now() % 2147483647)) >>> 0;
-        const center = cfg.center || { x: 0, y: 0 };
+
+        // Ancrage optionnel sur un corps céleste nommé. Si introuvable, log + fallback statique.
+        let host = null;
+        if (cfg.centerName && universeModel && Array.isArray(universeModel.celestialBodies)) {
+            host = universeModel.celestialBodies.find(b => b && b.name === cfg.centerName) || null;
+            if (!host) {
+                console.warn(`[GameSetupController] Ceinture: corps hôte '${cfg.centerName}' introuvable, ancrage ignoré (centre statique).`);
+            }
+        }
+        // Centre de génération : position courante de l'hôte si ancré, sinon center statique.
+        const center = (host && host.position) ? { x: host.position.x, y: host.position.y } : (cfg.center || { x: 0, y: 0 });
+        const centerName = host ? host.name : null;
+
         const sizeMin = (cfg.sizeRange && cfg.sizeRange.min) ? cfg.sizeRange.min : 1;
         const sizeMax = (cfg.sizeRange && cfg.sizeRange.max) ? cfg.sizeRange.max : 3;
         const color = cfg.color || '#9aa3a7';
@@ -381,10 +401,20 @@ class GameSetupController {
             const angle = t * Math.PI * 2 + rand() * 0.02; // léger bruit
             // Rayon biaisé pour remplir l'anneau (racine pour homogénéité visuelle)
             const r = Math.sqrt(innerR * innerR + (outerR * outerR - innerR * innerR) * rand());
-            const x = center.x + Math.cos(angle) * r;
-            const y = center.y + Math.sin(angle) * r;
+            // Offset relatif au centre (= au centre de l'hôte si ancré).
+            const offsetX = Math.cos(angle) * r;
+            const offsetY = Math.sin(angle) * r;
+            const x = center.x + offsetX;
+            const y = center.y + offsetY;
             const size = sizeMin + (sizeMax - sizeMin) * rand();
-            asteroids.push({ x, y, size, color, brightness });
+            const asteroid = { x, y, size, color, brightness };
+            // Si ancré : conserver de quoi recentrer chaque frame sur l'hôte courant (vue).
+            if (centerName) {
+                asteroid.centerName = centerName;
+                asteroid.offsetX = offsetX;
+                asteroid.offsetY = offsetY;
+            }
+            asteroids.push(asteroid);
         }
         return asteroids;
     }

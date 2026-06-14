@@ -75,6 +75,7 @@
   
     "asteroidBelts": [
       {
+        "centerName": "Endor Prime",
         "innerRadius": 2100,
         "outerRadius": 2300,
         "count": 700,

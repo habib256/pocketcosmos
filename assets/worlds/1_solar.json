@@ -261,7 +261,7 @@
     { "id": "m4-mars-terre-crew", "from": "Mars", "to": "Terre", "requiredCargo": [{"type":"🧑‍🚀","quantity":10}], "reward": 520, "description": "Rapatriez un équipage d'exploration martienne." },
     { "id": "m5-terre-venus-fuel", "from": "Terre", "to": "Vénus", "requiredCargo": [{"type":"Fuel","quantity":8}], "reward": 260, "description": "Alimentez une sonde atmosphérique vénusienne." },
     { "id": "m6-terre-mercure-tools", "from": "Terre", "to": "Mercure", "requiredCargo": [{"type":"Wrench","quantity":6}], "reward": 240, "description": "Livrez des outils résistants aux hautes températures." },
-    { "id": "m7-jupiter-europe-fuel", "from": "Jupiter", "to": "Europe", "requiredCargo": [{"type":"Fuel","quantity":12}], "reward": 400, "description": "Ravitaillez un foreur sur la glace d'Europe." },
+    { "id": "m7-jupiter-europe-fuel", "from": "Jupiter", "to": "Europe", "requiredCargo": [{"type":"Fuel","quantity":10}], "reward": 400, "description": "Ravitaillez un foreur sur la glace d'Europe." },
     { "id": "m8-saturne-encelade-tools", "from": "Saturne", "to": "Encelade", "requiredCargo": [{"type":"Wrench","quantity":8}], "reward": 380, "description": "Livrez des pièces pour l'observatoire geysers." }
   ]
 }

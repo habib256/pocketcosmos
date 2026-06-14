@@ -26,7 +26,11 @@ const PHYSICS = {
     COLLISION_DELAY: 2000,      // Délai avant d'activer les collisions (ms)
     REPULSION_STRENGTH: 0.05,   // Force de répulsion lors des collisions
     COLLISION_DAMPING: 0.7,     // Facteur d'amortissement des collisions
-    IMPACT_DAMAGE_FACTOR: 10,   // Facteur de dommages lors des impacts (appliqué sur la vitesse d'impact)
+    IMPACT_DAMAGE_FACTOR: 1.0,  // Dégâts par u/s d'impact (CollisionHandler convertit en u/s : ÷ MATTER_BASE_DELTA).
+                                // Calibré sur l'échelle u/s : ~100 u/s en contact rasant ≈ 100 dmg ≈ destruction
+                                // (MAX_HEALTH=100), ~30 u/s ≈ 30 dmg survivable. Le chemin de dégâts est plafonné
+                                // par le crash instantané (CRASH_SPEED_THRESHOLD=2500 Matter ≈ 150 u/s).
+                                // NE PAS modifier sans test gameplay (valeur exprimée en u/s depuis le fix P3).
     RESTITUTION: 0.2,           // Coefficient de restitution (rebond)
     LANDING_PROXIMITY_THRESHOLD: 15, // Distance (px) à la surface pour considérer un contact (atterrissage/crash)
     CRASH_SINK_DEPTH: 40,            // Enfoncement visuel (px) de l'épave dans le sol lors d'un crash

@@ -15,7 +15,6 @@ class RenderingController {
         this.stationView = new StationView();
         this.vectorsView = new VectorsView(); // Nouvelle vue pour les vecteurs
         this.showVectors = false; // Par défaut désactivé
-        this.showGravityField = false; // Par défaut désactivé
         this.gravityFieldMode = 0; // 0: rien, 1: flèches, 2: lignes
         
         // Initialiser la taille et gérer le redimensionnement

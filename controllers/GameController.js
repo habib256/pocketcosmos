@@ -67,7 +67,10 @@ class GameController {
         this.cameraController = new CameraController(this.eventBus, this.cameraModel, this); // Ajout du CameraController
         
         // État du jeu avec FSM
-        this.currentState = GameStates.LOADING; // État initial
+        // Sentinelle neutre (PAS une valeur de GameStates) au boot : ainsi le garde "même état"
+        // de changeState() laisse passer la TOUTE première transition vers LOADING (déclenchée
+        // depuis init() une fois l'UIView créée), et _onEnterState(LOADING) s'exécute réellement.
+        this.currentState = null; // Sentinelle (sera défini par le premier changeState dans init())
         this.lastTimestamp = 0;
         this.elapsedTime = 0;
         
@@ -334,7 +337,9 @@ class GameController {
      */
     init(canvas, initialConfig) {
         // console.log('[GameController.init] Canvas reçu initialement:', canvas); // SUPPRESSION DE LOG
-        this.changeState(GameStates.LOADING); // Commencer par l'état de chargement
+        // NOTE: la transition vers LOADING est déclenchée plus bas, APRÈS la création de l'UIView
+        // par initializeGameComponents : l'UIView est le seul abonné de SHOW_LOADING_SCREEN, qui
+        // est émis par _onEnterState(LOADING). L'émettre ici (avant l'UIView) serait sans effet.
 
         // 1. Initialiser le CameraModel avec les dimensions du canvas
         if (this.cameraModel && canvas) {
@@ -391,6 +396,11 @@ class GameController {
         this.celestialBodyView = components.celestialBodyView;
         this.traceView = components.traceView;
         this.uiView = components.uiView; // UIView est maintenant initialisé par GameSetupController
+
+        // Entrer dans l'état LOADING maintenant que l'UIView (seul abonné de SHOW_LOADING_SCREEN)
+        // existe et est abonnée. currentState valant la sentinelle null au boot, le garde "même état"
+        // de changeState() laisse passer cette première transition et _onEnterState(LOADING) s'exécute.
+        this.changeState(GameStates.LOADING);
 
         // Important: S'assurer de récupérer l'instance de rocketAI (celle passée ou celle créée)
         this.rocketAI = components.rocketAI || this.rocketAI; // MODIFIÉ: S'assurer d'avoir la bonne instance
@@ -1064,7 +1074,9 @@ class GameController {
         const restoreAfterFailure = () => {
             // Si aucun monde n'a jamais été chargé (modèles absents), on ne peut pas reprendre :
             // on reste dans l'état précédent (typiquement LOADING).
-            const canResume = !!(this.rocketModel && this.universeModel);
+            const canResume = !!(this.rocketModel && this.universeModel
+                && Array.isArray(this.universeModel.celestialBodies)
+                && this.universeModel.celestialBodies.length > 0);
             if (this.physicsController) this.physicsController.resumeSimulation();
             if (canResume) {
                 this.changeState(GameStates.PLAYING);

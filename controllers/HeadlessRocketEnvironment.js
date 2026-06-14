@@ -792,10 +792,13 @@ class HeadlessRocketEnvironment {
         
         // Bonus si la fusée se déplace vers la cible (vitesse radiale positive)
         if (this.rocketModel.velocity) {
-            const radialVelocity = (this.rocketModel.velocity.x * targetDirX + 
-                                   this.rocketModel.velocity.y * targetDirY);
+            // velocity est stockée en échelle Matter (≈ u/s × 1000/60) ; on convertit
+            // en u/s avant usage, comme _rocketSpeedUnitsPerSec().
+            const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+            const radialVelocity = (this.rocketModel.velocity.x * targetDirX +
+                                   this.rocketModel.velocity.y * targetDirY) / k; // u/s
             if (radialVelocity > 0) {
-                // Bonus proportionnel à la vitesse radiale vers la cible
+                // Bonus proportionnel à la vitesse radiale (u/s) vers la cible
                 reward += (radialVelocity / 100) * 0.5; // Normalisé
             }
         }
@@ -864,8 +867,11 @@ class HeadlessRocketEnvironment {
             if (distance > 0) {
                 const targetDirX = dx / distance;
                 const targetDirY = dy / distance;
-                const radialVelocity = this.rocketModel.velocity.x * targetDirX +
-                                      this.rocketModel.velocity.y * targetDirY;
+                // velocity est en échelle Matter (≈ u/s × 1000/60) ; on convertit en u/s
+                // car VELOCITY_TARGET est défini en u/s (cf. _rocketSpeedUnitsPerSec()).
+                const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+                const radialVelocity = (this.rocketModel.velocity.x * targetDirX +
+                                      this.rocketModel.velocity.y * targetDirY) / k; // u/s
                 const ratio = distance / (this._initialDistanceToTarget || 1);
                 // Bonus radial seulement quand on est loin (hors zone de freinage)
                 const brakeZoneR = config.BRAKE_ZONE_RATIO || 0.2;
