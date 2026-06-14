@@ -1220,7 +1220,13 @@ class GameController {
         console.log(`[GameController] Sortie de l'état: ${oldState}`);
         switch (oldState) {
             case GameStates.LOADING:
-                // Cacher l'écran de chargement, etc.
+                // Cacher l'écran de chargement en quittant LOADING (vers PAUSED puis PLAYING au
+                // premier chargement de monde). Sans ça, showLoadingScreen resterait true et
+                // l'overlay de chargement (dessiné par UIView) recouvrirait le jeu indéfiniment :
+                // le chemin nominal LOADING -> PLAYING n'émet jamais SHOW_MAIN_MENU/GAME_OVER, les
+                // seuls événements qui remettaient le flag à false.
+                console.log("Émission de :", EVENTS.UI.HIDE_LOADING_SCREEN);
+                this.eventBus.emit(EVENTS.UI.HIDE_LOADING_SCREEN);
                 break;
             case GameStates.MAIN_MENU:
                 // Cacher le menu principal, libérer les ressources du menu

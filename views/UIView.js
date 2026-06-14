@@ -87,6 +87,14 @@ class UIView {
                 })
             );
         }
+        if (EVENTS.UI.HIDE_LOADING_SCREEN) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.HIDE_LOADING_SCREEN, () => {
+                    this.uiState.showLoadingScreen = false;
+                    console.log("[UIView] Cache: Écran de chargement");
+                })
+            );
+        }
 
         // Menu Principal
         if (EVENTS.UI.SHOW_MAIN_MENU) {
