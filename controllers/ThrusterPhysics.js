@@ -79,6 +79,18 @@ class ThrusterPhysics {
                               * this.ROCKET.THRUSTER_EFFECTIVENESS.LATERAL
                               * this.PHYSICS.THRUST_MULTIPLIER) / 2;
                 fuelConsumption = this.ROCKET.FUEL_CONSUMPTION.LATERAL;
+                // ANTI-SPIN (fusée posée) : une fusée posée est épinglée perpendiculairement à la
+                // surface par SynchronizationManager, qui force l'angle et remet la vitesse angulaire
+                // à 0 chaque frame AVANT l'intégration Matter. Or le couple latéral, lui, est intégré
+                // APRÈS ce reset, et la stabilisation assistée est désactivée au sol (gate !isLanded) :
+                // un propulseur de rotation encore actif au contact (touche maintenue / dérive manette)
+                // faisait donc tourner le vaisseau posé "à toute vitesse, sans raison". On neutralise
+                // le couple latéral tant qu'on est posé. Un vrai décollage passe par la poussée
+                // principale, qui met isLanded=false AVANT cet appel (cf. handleLiftoff) : la rotation
+                // redevient alors disponible en vol. (L'angle au sol est de toute façon imposé par le pin.)
+                if (rocketModel.isLanded) {
+                    thrustForce = 0;
+                }
                 break;
         }
 
