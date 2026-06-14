@@ -55,7 +55,12 @@ const PHYSICS = {
     LANDING_MAX_ANGULAR_VELOCITY: 400,  // Vitesse angulaire max pour atterrir (rad/s)
 
     // Seuils de crash (si l’un est dépassé et proximité surface => crash)
-    CRASH_ANGLE_DEG: 45,                // Différence angulaire max vs normale de surface (degrés)
+    CRASH_ANGLE_DEG: 30,                // Inclinaison vs normale (°) au-delà de laquelle un contact = crash.
+                                        // Égal à LANDING_MAX_ANGLE_DEG : partition propre, AUCUNE zone morte
+                                        // (≤30° atterrit / >30° crashe). Était 45° -> laissait une zone 30-45°
+                                        // où la fusée ne collait ni ne crashait (glissait) depuis l'adoucissement
+                                        // des dégâts d'impact (P3). NE PAS ré-écarter sans rétablir des dégâts
+                                        // d'impact létaux dans cette bande (cf. CollisionHandler).
     CRASH_ANGULAR_VELOCITY: 400,        // Vitesse angulaire de crash (rad/s)
     TAKEOFF_THRUST_THRESHOLD_PERCENT: 10, // Seuil de poussée (en %) pour considérer un décollage actif (était 50)
     // Ajout des catégories de collision

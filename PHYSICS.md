@@ -204,14 +204,17 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 - **Vitesse relative** au corps (via `getCelestialBodyVelocity`, à l'échelle Matter correcte — donc
   réellement relative : co‑mobile sur une lune rapide ⇒ atterrissage doux, pas crash).
 - **CRASH** si proche & collisions actives & au moins un de :
-  `vitesse ≥ CRASH_SPEED_THRESHOLD (2500)` · `|Δangle| ≥ CRASH_ANGLE_DEG (45°)` ·
-  `|ω| ≥ CRASH_ANGULAR_VELOCITY (400)` → `isDestroyed=true`, dégâts fatals, enfoncement visuel.
+  `vitesse ≥ CRASH_SPEED_THRESHOLD (2500)` · `|Δangle| > CRASH_ANGLE_DEG (30°)` ·
+  `|ω| > CRASH_ANGULAR_VELOCITY (400)` → `isDestroyed=true`, dégâts fatals, enfoncement visuel.
 - **ATTERRISSAGE STABLE** si proche & **toutes** :
   `vitesse < LANDING_MAX_SPEED (2500)` · `|Δangle| ≤ LANDING_MAX_ANGLE_DEG (30°)` ·
   `|ω| ≤ LANDING_MAX_ANGULAR_VELOCITY (400)`.
 
-> ⚠️ Les seuils sont en **unités Matter rapportées** (≈ u/s × 16,667). 2500 ↔ ~150 u/s. Les seuils
-> atterrissage et crash étant tous deux à 2500, l'angle/ω départagent les cas limites.
+> ⚠️ Les seuils sont en **unités Matter rapportées** (≈ u/s × 16,667). 2500 ↔ ~150 u/s. Crash et
+> atterrissage utilisent désormais les **mêmes** seuils sur les trois axes (vitesse 2500, angle 30°,
+> ω 400) : tout contact proche est donc soit un atterrissage, soit un crash — **aucune zone morte**.
+> (CRASH_ANGLE_DEG a été ramené 45°→30° le 2026‑06‑14 : la bande 30‑45° laissait la fusée glisser
+> sans coller ni crasher depuis l'adoucissement des dégâts d'impact P3.)
 
 ### 5.2 Grâce de décollage (`RocketModel`)
 
@@ -242,9 +245,9 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 ## 7. Référence des constantes (`constants.js`)
 
 **PHYSICS** : `G=0.001` (source unique : gravité réelle = viz = IA, copiée dans le plugin) · `MAX_SPEED=10000` · `COLLISION_DELAY=2000` ·
-`IMPACT_DAMAGE_FACTOR=10` · `RESTITUTION=0.2` · `CRASH_SPEED_THRESHOLD=2500` ·
+`IMPACT_DAMAGE_FACTOR=1.0` (en u/s, cf. §5) · `RESTITUTION=0.2` · `CRASH_SPEED_THRESHOLD=2500` ·
 `LANDING_MAX_SPEED=2500` · `LANDING_MAX_ANGLE_DEG=30` · `LANDING_MAX_ANGULAR_VELOCITY=400` ·
-`CRASH_ANGLE_DEG=45` · `CRASH_ANGULAR_VELOCITY=400` · `TAKEOFF_THRUST_THRESHOLD_PERCENT=10` ·
+`CRASH_ANGLE_DEG=30` · `CRASH_ANGULAR_VELOCITY=400` · `TAKEOFF_THRUST_THRESHOLD_PERCENT=10` ·
 `THRUST_MULTIPLIER=100` · `COLLISION_CATEGORIES{ROCKET:0x0001, CELESTIAL:0x0002}` ·
 `ASSISTED_CONTROLS{NORMAL_ANGULAR_DAMPING:0, ASSISTED_ANGULAR_DAMPING:2, ROTATION_STABILITY_FACTOR:0.05}`.
 
