@@ -8,6 +8,53 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
+## Entraînement IA — fondations PNJ/adversaires (2026‑07‑03)
+
+> But : entraîner des pilotes IA fiables **et réutilisables** comme futurs PNJ (course, trafic
+> ambiant, poursuite/intercept, coop). Priorité retenue : **qualité d'entraînement d'abord**.
+> Voir [CHANGELOG.md](CHANGELOG.md) (2026‑07‑03), [CLAUDE.md](CLAUDE.md) §AI, [PHYSICS.md §1.5](PHYSICS.md).
+
+### ✅ Phase 1 livrée
+- ✅ **Persistance nommée (model zoo)** : `AIModelStore.js` (IndexedDB + export/import fichiers +
+  fallback `assets/models/`). Fin du modèle unique éphémère en localStorage.
+- ✅ **Saturation d'état corrigée** : échelle vitesse 1000→2500, clamp ±2→±4 ; échelles centralisées
+  dans `AI_TRAINING.STATE`. État porté à **12 dims** (`STATE_VERSION 2`, dims 10‑11 = vitesse cible,
+  = 0 si fixe → prêt pour cibles mobiles). Rupture des modèles v1 assumée (aucun livré).
+- ✅ **Conversion Matter→u/s centralisée** : `PhysicsVectors.matterToGameVelocity` (fin de la
+  duplication de `1000/60` sur 4 sites).
+- ✅ **Métriques** : steps/s, taux de succès glissant (50 ép.), médiane steps→succès + panneau zoo UI.
+
+### ✅ Phase 2 livrée
+- ✅ **Double DQN** (`RocketAI.train`) : argmax via le modèle online, valeur via le target.
+- ✅ **IA = inférence pure en jeu** : `RocketAI.step()` et `RocketAI.calculateReward()` (orbit hardcodé,
+  divergent) supprimés → **une seule définition de récompense** (l'environnement). `makeDecision` utilise
+  le réseau si un modèle est chargé, sinon repli `maintainOrbit`.
+- ✅ **`SAFETY.MAX_SIMULATION_DISTANCE` appliqué** (borne par objectif) → terminaison `out_of_bounds`.
+- ✅ **RNG seedé** (`SeededRandom.js`, `config.seed`) + jeu d'éval fixe → `compareModels(a, b)`.
+- 🟢 **Reste (optionnel)** : replay priorisé léger (flag A/B, tirage O(n) sur |TD‑error|) ; extraction
+  d'un `RewardEngine.js` (le reward est déjà à définition unique, l'extraction est cosmétique — la faire
+  au moment des rewards par rôle de la phase 3).
+
+### ✅ Phase 3 livrée
+- ✅ `AI_TRAINING.ROLES` (race/intercept/lander/orbiter) + résolution rôle→objectif dans l'orchestrateur.
+- ✅ **Cibles mobiles** (`intercept`) : patterns linéaire/circulaire, `getObservation` expose
+  `targetVX/VY` → **dims 10‑11 du vecteur d'état activées**. Succès `proximity` (rester à portée K steps).
+- ✅ **Bonus de course** (`race`) : récompense terminale ∝ steps restants + pénalité par step accrue.
+- ✅ **File de runs séquentiels** (`runCurriculum`) : `config.trainingRuns` + warm‑start (`loadFrom`).
+- ✅ UI : dropdown « Rôle ».
+- ⏳ **Reste manuel** : entraîner et committer les premiers modèles dans `assets/models/<nom>/`
+  (`model.json` + `meta.json`) pour chargement au démarrage par les PNJ.
+
+### Intégration PNJ en jeu (au-delà de l'entraînement) — à faire
+> Faire voler **plusieurs** fusées PNJ en jeu demandera de généraliser `PhysicsController` /
+> `RocketController` / `SynchronizationManager`, qui supposent aujourd'hui **une seule fusée**
+> (`this.rocketModel`/`rocketBody` singuliers ; événements propulseurs sans identité de fusée).
+> `RocketAI` est déjà DI‑friendly (`injectDependencies`) et fait de l'inférence pure — prêt à piloter
+> un PNJ une fois un modèle chargé (`_modelLoaded`). Ajouter aussi des catégories de collision
+> par‑fusée (`BodyFactory`) pour les rôles de combat/poursuite.
+
+---
+
 ## Incohérences d'unités (physique) — ✅ RÉSOLU (2026‑06‑04)
 
 > Racine : `deltaTime` en secondes vs Matter en ms ([PHYSICS.md §1](PHYSICS.md)). Le bon facteur de

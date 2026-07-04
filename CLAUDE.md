@@ -170,18 +170,35 @@ World-specific data (body masses, positions) should come from preset JSON files,
 
 ## AI System
 
-The AI uses Deep Q-Network (DQN) with TensorFlow.js:
+The AI uses a **Double DQN** with TensorFlow.js (online net selects the next action, target net values it — `RocketAI.train`):
 
 - **Agent**: `RocketAI.js` - Makes piloting decisions
 - **Training**: `TrainingOrchestrator.js` - Manages episodes/rewards
 - **Environment**: `HeadlessRocketEnvironment.js` - Fast simulation without rendering, includes imminent crash detection to accelerate training
 - **Visualization**: `TrainingVisualizer.js` - Real-time training metrics with navigation point display
+- **Model zoo**: `AIModelStore.js` - Named model persistence (IndexedDB + downloadable files + shippable `assets/models/`)
+- **Reproducibility**: `SeededRandom.js` - mulberry32 seeded RNG (deterministic training + fixed eval set)
 
-**Training objectives**:
+**In-game AI = pure inference (NPC posture)**: `RocketAI` NEVER learns in-game — `step()` and the hardcoded `calculateReward()` were removed, so there is a SINGLE reward definition (in `HeadlessRocketEnvironment`). In-game, `makeDecision()` runs the trained network's greedy policy **if a model was loaded** (`_modelLoaded`), else falls back to the `maintainOrbit` heuristic. Learning happens ONLY in headless training via `TrainingOrchestrator`.
+
+**Reproducibility**: pass `config.seed` (or the UI "Seed" field) to make the initial angle (per episode) and epsilon exploration deterministic. Evaluation uses a **fixed angle set** derived from the seed, so scores compare across runs and models. `compareModels(a, b)` in `train.js` pits two zoo models on that fixed eval set.
+
+**State vector** (`RocketAI.buildStateVector`, single source of truth): **12 dims, `STATE_VERSION 2`**. Scales live in `AI_TRAINING.STATE` (`constants.js`), NOT hardcoded. Dims 0-9 = rocket-vs-target (position delta, velocity, orientation sin/cos, angular vel, distance, radial velocity, heading alignment); dims **10-11 = target's own velocity** (0 for a fixed target — reserved for moving targets like intercept/escort, avoiding a future compatibility break). Rocket velocity is stored in Matter scale and converted to u/s via the single point `PhysicsVectors.matterToGameVelocity` (see [PHYSICS.md §1.5](PHYSICS.md)). ⚠️ Changing `STATE_SIZE`/`STATE_VERSION` invalidates saved models — `AIModelStore` refuses incompatible ones at load.
+
+**Model persistence** (`AIModelStore`, this is the bridge to future NPCs): models are named per role/objective and stored in **IndexedDB** (`indexeddb://pc-model-<name>`) with a JSON metadata registry in localStorage. `load(name)` falls back to `assets/models/<name>/model.json` (+ `meta.json`) so pretrained pilots can be committed to the repo and loaded at game start. `exportToFile`/`importFromFiles` move models via downloaded files. `RocketAI.saveModel(name)`/`loadModel(name)` delegate here; the old single-key `localstorage://rocket-ai-model` (v1, 10 dims) is obsolete and read-only-detected only to warn.
+
+**Training objectives** (low-level):
 - `navigate` - Point-to-point navigation (default): the rocket must fly from point A `(0,0)` to point B `(90000, 90000)` (~127k units diagonal), then **brake and stabilize** at point B. Success requires distance < 3000 AND speed < 30. Random initial angle forces the AI to learn orientation. Budget: **4000 steps** (~66s @ 1/60s — flight ~5× shorter; cruise target `VELOCITY_TARGET` ≈ 2500 u/s), infinite fuel.
 - `orbit` - Achieve stable orbit at target altitude
 - `land` - Soft landing on a celestial body
 - `crash` - (used for crash avoidance training)
+
+**Roles (NPC pilots)** — `AI_TRAINING.ROLES` in `constants.js`, resolved by `TrainingOrchestrator` into (objective + missionConfig). Pass `config.role` (or the UI "Rôle" dropdown):
+- `race` - navigate + terminal bonus proportional to remaining step budget (fastest wins) + higher step penalty
+- `intercept` - navigate to a **MOVING target** (`missionConfig.movingTarget`, pattern `linear`/`circular`); success = stay within `proximityRadius` for `proximitySteps` consecutive steps (`successMode: 'proximity'`). The moving target's velocity feeds state dims 10-11 (`getObservation` exposes `targetVX/VY`).
+- `lander` - objective `land`; `orbiter` - objective `orbit`
+
+**Curriculum / sequential runs**: `config.trainingRuns: [{ role, episodes, loadFrom?, saveAs }]` runs stages in sequence (`TrainingOrchestrator.runCurriculum`); `loadFrom` warm-starts from a zoo model (transfer, e.g. `race` from `navigate`). Emits `AI.CURRICULUM_STAGE_STARTED/COMPLETED`.
 
 **Navigate reward system** (6 components, configured in `AI_TRAINING.NAVIGATE_REWARDS`):
 1. **Delta Distance** (priority high): reward proportional to distance reduction, normalized by initial distance
@@ -200,10 +217,13 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 2. Console: `train.js` scripts for quick training or benchmarking
 3. Direct programming via `TrainingOrchestrator`
 
+**Train & ship a model (deliver an NPC pilot)**: run `await trainAndDeliver({ role, episodes })` in the browser console (either page) — it trains headless, saves to the zoo, and downloads the 3 files to place under `assets/models/<name>/` (see `assets/models/README.md` for the exact rename steps). `deliverModel('<name>')` exports an already-trained zoo model. Models under `assets/models/` load at game start via `AIModelStore.load()`.
+
 **Training Interface Features** (`training-interface.html`):
-- Configure training parameters (episodes, learning rate, etc.)
+- Configure training parameters (episodes, learning rate, etc.) **and the model name** (saved into the zoo)
+- **Model Zoo panel**: list / load / export / import / delete saved models
 - Real-time performance graphs
-- Live metrics display
+- Live metrics display (incl. **steps/s** and a rolling recent success rate; eval logs **median steps-to-success**)
 - Trajectory visualization with navigation points (A - DEPART, B - ARRIVEE) and dashed connecting line
 - Adaptive trajectory sampling: keeps full trajectory from start to end by dynamically reducing sample rate
 - Start/stop/pause training controls
@@ -262,8 +282,10 @@ Here are the most important events flowing through the `EventBus`:
 - `AudioManager.js` - Sound management
 - `ParticleController.js` - Particle effects management
 - `ControllerContainer.js` - Dependency injection container for controllers
-- `PhysicsVectors.js` - Physics vector calculations for visualization
+- `PhysicsVectors.js` - Physics vector calculations for visualization (also `matterToGameVelocity`, the single Matter→u/s conversion point)
 - `RocketCargo.js` - Rocket cargo management
+- `AIModelStore.js` - AI model zoo: named persistence (IndexedDB), file export/import, `assets/models/` fallback
+- `SeededRandom.js` - Deterministic RNG (mulberry32) for reproducible training and fixed eval sets
 
 ### Views (Rendering)
 - `RocketView.js` - Draws the rocket with thrusters

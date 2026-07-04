@@ -127,8 +127,15 @@ window.EVENTS = {
     // Événements d'évaluation
     EVALUATION_STARTED: 'AI_EVALUATION_STARTED',
     EVALUATION_COMPLETED: 'AI_EVALUATION_COMPLETED',
-    MODEL_SAVED: 'AI_MODEL_SAVED',
-    MODEL_LOADED: 'AI_MODEL_LOADED',
+    MODEL_SAVED: 'AI_MODEL_SAVED',       // payload: { name, metadata }
+    MODEL_LOADED: 'AI_MODEL_LOADED',     // payload: { name, metadata }
+    MODEL_DELETED: 'AI_MODEL_DELETED',   // payload: { name }
+    MODEL_EXPORTED: 'AI_MODEL_EXPORTED', // payload: { name }
+
+    // File de runs séquentiels (curriculum / rôles)
+    CURRICULUM_STAGE_STARTED: 'AI_CURRICULUM_STAGE_STARTED',     // payload: { index, total, stage }
+    CURRICULUM_STAGE_COMPLETED: 'AI_CURRICULUM_STAGE_COMPLETED', // payload: { index, total, stage }
+    CURRICULUM_COMPLETED: 'AI_CURRICULUM_COMPLETED',             // payload: { stages }
     
     // Événements de visualisation
     TRAINING_STEP: 'AI_TRAINING_STEP',

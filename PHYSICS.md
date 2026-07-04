@@ -73,6 +73,24 @@ Toutes les conversions `model.velocity (u/s) → vitesse Matter` utilisent **`PH
 > lune rapide était classée à tort comme crash). Corrigé le 2026‑06‑04, **vérifié en headless** (vrai
 > Matter.js) ; voir [CHANGELOG.md](CHANGELOG.md). `handleLiftoff` (décollage) avait été corrigé en premier.
 
+### 1.5 Conversion inverse (vitesse Matter → u/s) — pour l'IA
+
+Le **sens inverse** (`body/model.velocity` en échelle Matter → **u/s**) est nécessaire côté IA : le
+vecteur d'état du DQN et les récompenses de navigation sont définis en u/s. Il passe par un **point de
+conversion unique** :
+
+```
+PhysicsVectors.matterToGameVelocity(v)  // = v / PHYSICS.MATTER_BASE_DELTA
+```
+
+| Appelant | Rôle |
+|---|---|
+| `RocketAI.buildStateVector` | normalise la vitesse fusée (dims 2/3/8/10/11 du vecteur d'état) |
+| `HeadlessRocketEnvironment._rocketSpeedUnitsPerSec` + rewards navigate | vitesse/vitesse radiale en u/s pour les cibles `NAVIGATE_REWARDS` et les seuils de succès |
+
+> Auparavant la constante `1000/60` était réécrite en dur à chaque site (RocketAI + 3 sites de
+> l'environnement headless) — source de bugs de parité entraînement/jeu. Centralisée le 2026‑07‑03.
+
 ---
 
 ## 2. Gravité

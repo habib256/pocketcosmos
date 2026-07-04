@@ -235,6 +235,8 @@
     <script src="controllers/ControllerContainer.js"></script>
     
     <!-- Composants IA -->
+    <script src="controllers/SeededRandom.js"></script>
+    <script src="controllers/AIModelStore.js"></script>
     <script src="controllers/RocketAI.js"></script>
     <script src="controllers/HeadlessRocketEnvironment.js"></script>
     <script src="controllers/TrainingOrchestrator.js"></script>
@@ -273,7 +275,17 @@
                     <input type="number" id="updateFreq" value="4" min="1" max="100">
                 </div>
                 <div class="control-group">
-                    <label>Objectif d'entraînement:</label>
+                    <label>Rôle (PNJ):</label>
+                    <select id="role">
+                        <option value="" selected>— Aucun (objectif brut ci-dessous) —</option>
+                        <option value="race">Course (navigation + bonus vitesse)</option>
+                        <option value="intercept">Interception (cible mobile)</option>
+                        <option value="lander">Atterrisseur</option>
+                        <option value="orbiter">Orbiteur</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Objectif (si aucun rôle):</label>
                     <select id="objective">
                         <option value="navigate" selected>Navigation point à point (sans planètes)</option>
                         <option value="crash_moon">Crash sur la Lune</option>
@@ -289,8 +301,16 @@
                         <option value="visual">Avec visualisation</option>
                     </select>
                 </div>
+                <div class="control-group">
+                    <label>Nom du modèle (zoo):</label>
+                    <input type="text" id="modelName" value="navigate-default" pattern="[a-zA-Z0-9_-]+" title="Lettres, chiffres, - et _ uniquement">
+                </div>
+                <div class="control-group">
+                    <label>Seed (vide = aléatoire):</label>
+                    <input type="number" id="seed" value="" min="0" step="1" placeholder="ex: 1234 pour reproductibilité">
+                </div>
             </div>
-            
+
             <div class="controls">
                 <button id="startTraining">🎯 Démarrer l'Entraînement</button>
                 <button id="pauseTraining" disabled>⏸️ Pause</button>
@@ -298,6 +318,20 @@
                 <button id="saveModel">💾 Sauvegarder Modèle</button>
                 <button id="loadModel">📂 Charger Modèle</button>
                 <button id="resetTraining">🔄 Reset</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>🗂️ Model Zoo (modèles sauvegardés)</h2>
+            <div class="controls" style="margin-bottom: 10px;">
+                <button id="refreshZoo">🔄 Rafraîchir</button>
+                <label for="importModelFiles" style="cursor: pointer;">
+                    <button onclick="document.getElementById('importModelFiles').click()">📥 Importer (.json + .bin)</button>
+                </label>
+                <input type="file" id="importModelFiles" multiple accept=".json,.bin" style="display: none;">
+            </div>
+            <div id="zooList" style="font-size: 0.9em; max-height: 220px; overflow-y: auto;">
+                <em style="color: #888;">Aucun modèle — lancez un entraînement ou importez des fichiers.</em>
             </div>
         </div>
 
@@ -327,6 +361,10 @@
                 <div class="metric-card">
                     <div class="metric-value" id="trainingLoss">0.0000</div>
                     <div class="metric-label">Perte d'Entraînement</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="stepsPerSecond">0</div>
+                    <div class="metric-label">Steps / s</div>
                 </div>
             </div>
             
@@ -503,7 +541,10 @@
                     this.setupEventListeners();
                     this.setupTrainingEventListeners();
                     this.updateStatus('idle', 'Prêt pour l\'entraînement');
-                    
+
+                    // Afficher les modèles déjà présents dans le zoo (IndexedDB + assets livrés)
+                    this.refreshZoo();
+
                     this.log('Interface d\'entraînement initialisée avec succès', 'success');
                 } catch (error) {
                     this.log(`Erreur lors de l'initialisation: ${error.message}`, 'error');
@@ -654,6 +695,13 @@
                 document.getElementById('saveModel').addEventListener('click', () => this.saveModel());
                 document.getElementById('loadModel').addEventListener('click', () => this.loadModel());
                 document.getElementById('resetTraining').addEventListener('click', () => this.resetTraining());
+
+                // Model zoo
+                document.getElementById('refreshZoo').addEventListener('click', () => this.refreshZoo());
+                document.getElementById('importModelFiles').addEventListener('change', (e) => {
+                    this.importModelFiles(e.target.files);
+                    e.target.value = ''; // permettre de réimporter le même fichier
+                });
                 
                 // Événements de visualisation
                 document.getElementById('toggleVisualization').addEventListener('click', () => this.toggleVisualization());
@@ -691,15 +739,19 @@
                     const totalEpisodes = data.totalEpisodes !== undefined ? data.totalEpisodes : this.getTrainingConfig().episodes;
                     
                     // Calculer les métriques pour l'affichage avec des valeurs par défaut sûres
-                    const avgReward = (metrics.averageRewards && metrics.averageRewards.length > 0) ? 
+                    const avgReward = (metrics.averageRewards && metrics.averageRewards.length > 0) ?
                         metrics.averageRewards.reduce((a, b) => a + b, 0) / metrics.averageRewards.length : 0;
-                    const successRate = (metrics.successfulEpisodes && currentEpisode > 0) ? 
-                        (metrics.successfulEpisodes / currentEpisode) * 100 : 0;
-                    const currentEpsilon = (metrics.explorationRates && metrics.explorationRates.length > 0) ? 
+                    // Taux de succès : préférer la fenêtre glissante récente (50 épisodes) au
+                    // taux cumulé global, qui masque la progression en fin d'entraînement.
+                    const successRate = (metrics.recentSuccessRate !== undefined)
+                        ? metrics.recentSuccessRate * 100
+                        : ((metrics.successfulEpisodes && currentEpisode > 0)
+                            ? (metrics.successfulEpisodes / currentEpisode) * 100 : 0);
+                    const currentEpsilon = (metrics.explorationRates && metrics.explorationRates.length > 0) ?
                         metrics.explorationRates[metrics.explorationRates.length - 1] : 1.0;
-                    const currentLoss = (metrics.losses && metrics.losses.length > 0) ? 
+                    const currentLoss = (metrics.losses && metrics.losses.length > 0) ?
                         metrics.losses[metrics.losses.length - 1] : 0;
-                    
+
                     this.updateMetrics({
                         episode: currentEpisode,
                         totalEpisodes: totalEpisodes,
@@ -707,7 +759,8 @@
                         avgReward: avgReward,
                         successRate: successRate,
                         epsilon: currentEpsilon,
-                        loss: currentLoss
+                        loss: currentLoss,
+                        stepsPerSecond: metrics.stepsPerSecond || 0
                     });
                     
                     // CORRECTION: Mettre à jour les graphiques périodiquement (même si loss est 0)
@@ -732,9 +785,14 @@
                 
                 this.eventBus.subscribe(window.EVENTS.AI.EVALUATION_COMPLETED, (data) => {
                     if (data && data.averageScore !== undefined && data.successRate !== undefined) {
-                        this.log(`Évaluation: Score=${data.averageScore.toFixed(2)}, Succès=${(data.successRate * 100).toFixed(1)}%`, 'success');
+                        const median = (data.medianStepsToSuccess != null)
+                            ? `, médiane steps→succès=${data.medianStepsToSuccess}` : '';
+                        this.log(`Évaluation: Score=${data.averageScore.toFixed(2)}, Succès=${(data.successRate * 100).toFixed(1)}%${median}`, 'success');
                     }
                 });
+
+                // Rafraîchir la liste du zoo dès qu'un modèle est sauvegardé (checkpoint/fin)
+                this.eventBus.subscribe(window.EVENTS.AI.MODEL_SAVED, () => this.refreshZoo());
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_COMPLETED, (stats) => {
                     this.isTraining = false;
@@ -802,7 +860,10 @@
                         batchSize: config.batchSize,
                         headlessMode: config.trainingMode === 'headless',
                         visualSpeed: this.visualSpeed || 1,
-                        objectives: [config.objective]
+                        objectives: [config.objective],
+                        role: config.role,
+                        modelName: config.modelName,
+                        seed: config.seed
                     };
                     
                     // Démarrer l'entraînement réel
@@ -836,6 +897,17 @@
             }
 
             getTrainingConfig() {
+                // Rôle (PNJ) prioritaire sur l'objectif brut. Vide → objectif brut.
+                const role = document.getElementById('role').value || null;
+                const objective = document.getElementById('objective').value || 'navigate';
+                // Nom du modèle : défaut dérivé du rôle sinon de l'objectif si le champ est vide
+                let modelName = (document.getElementById('modelName').value || '').trim();
+                if (!modelName) {
+                    modelName = (role || objective) + '-default';
+                }
+                // Seed : champ vide → null (non déterministe)
+                const seedRaw = (document.getElementById('seed').value || '').trim();
+                const seed = seedRaw === '' ? null : (parseInt(seedRaw, 10) >>> 0);
                 return {
                     episodes: parseInt(document.getElementById('episodes').value) || 1000,
                     learningRate: parseFloat(document.getElementById('learningRate').value) || 0.001,
@@ -843,8 +915,11 @@
                     gamma: parseFloat(document.getElementById('gamma').value) || 0.99,
                     batchSize: parseInt(document.getElementById('batchSize').value) || 32,
                     updateFreq: parseInt(document.getElementById('updateFreq').value) || 4,
-                    objective: document.getElementById('objective').value || 'navigate',
-                    trainingMode: document.getElementById('trainingMode').value || 'headless'
+                    objective: objective,
+                    role: role,
+                    trainingMode: document.getElementById('trainingMode').value || 'headless',
+                    modelName: modelName,
+                    seed: seed
                 };
             }
 
@@ -886,6 +961,8 @@
                 document.getElementById('successRate').textContent = `${(metrics.successRate || 0).toFixed(1)}%`;
                 document.getElementById('explorationRate').textContent = (metrics.epsilon || 0).toFixed(3);
                 document.getElementById('trainingLoss').textContent = (metrics.loss || 0).toFixed(4);
+                const spsEl = document.getElementById('stepsPerSecond');
+                if (spsEl) spsEl.textContent = metrics.stepsPerSecond || 0;
                 
                 // CORRECTION: Utiliser totalEpisodes depuis metrics si disponible, sinon depuis la config
                 const totalEpisodes = metrics.totalEpisodes !== undefined ? metrics.totalEpisodes : this.getTrainingConfig().episodes;
@@ -1023,40 +1100,143 @@
             }
 
             async saveModel() {
-                this.log('Sauvegarde du modèle en cours...', 'info');
+                const name = this.getTrainingConfig().modelName;
+                this.log(`Sauvegarde du modèle "${name}" en cours...`, 'info');
                 try {
                     // Créer un agent temporaire si nécessaire
                     let rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
                         this.log('Création d\'un agent IA temporaire pour la sauvegarde...', 'info');
                         rocketAI = new RocketAI(this.eventBus);
+                        await rocketAI.waitForReady();
                     }
-                    
-                    await rocketAI.saveModel();
-                    this.log('Modèle sauvegardé avec succès', 'success');
+
+                    const ok = await rocketAI.saveModel(name);
+                    if (ok) {
+                        this.log(`Modèle "${name}" sauvegardé dans le zoo`, 'success');
+                        this.refreshZoo();
+                    } else {
+                        this.log('Échec de la sauvegarde (voir console)', 'error');
+                    }
                 } catch (error) {
                     this.log(`Erreur lors de la sauvegarde: ${error.message}`, 'error');
                 }
             }
 
-            async loadModel() {
-                this.log('Chargement du modèle en cours...', 'info');
+            async loadModel(name) {
+                const target = name || this.getTrainingConfig().modelName;
+                this.log(`Chargement du modèle "${target}" en cours...`, 'info');
                 try {
                     // Créer un agent temporaire si nécessaire
                     let rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
                         this.log('Création d\'un agent IA temporaire pour le chargement...', 'info');
                         rocketAI = new RocketAI(this.eventBus);
+                        await rocketAI.waitForReady();
                     }
-                    
-                    const success = await rocketAI.loadModel();
+
+                    const success = await rocketAI.loadModel(target);
                     if (success) {
-                        this.log('Modèle chargé avec succès', 'success');
+                        // Refléter le nom chargé dans le champ pour cohérence
+                        const field = document.getElementById('modelName');
+                        if (field) field.value = target;
+                        this.log(`Modèle "${target}" chargé`, 'success');
                     } else {
-                        this.log('Aucun modèle sauvegardé trouvé', 'info');
+                        this.log(`Modèle "${target}" introuvable ou incompatible (voir console)`, 'warning');
                     }
                 } catch (error) {
                     this.log(`Erreur lors du chargement: ${error.message}`, 'error');
+                }
+            }
+
+            // ---- Model Zoo (liste, charger, exporter, supprimer, importer) ----
+
+            async refreshZoo() {
+                const container = document.getElementById('zooList');
+                if (!container) return;
+                try {
+                    const models = await AIModelStore.list();
+                    if (!models || models.length === 0) {
+                        container.innerHTML = '<em style="color:#888;">Aucun modèle — lancez un entraînement ou importez des fichiers.</em>';
+                        return;
+                    }
+                    container.innerHTML = '';
+                    for (const m of models) {
+                        const row = document.createElement('div');
+                        row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 4px; border-bottom:1px solid rgba(255,255,255,0.08);';
+
+                        const score = (m.bestEvalScore != null) ? Number(m.bestEvalScore).toFixed(1) : '—';
+                        const succ = (m.successRate != null) ? (m.successRate * 100).toFixed(0) + '%' : '—';
+                        const src = (m.source === 'assets') ? ' 📦' : '';
+                        const info = document.createElement('div');
+                        info.style.cssText = 'flex:1; min-width:0;';
+                        info.innerHTML = `<strong>${m.name}</strong>${src}` +
+                            `<br><span style="color:#9aa; font-size:0.85em;">` +
+                            `${m.objective || m.role || 'objectif ?'} · v${m.stateVersion ?? '?'}/${m.stateSize ?? '?'}d · ` +
+                            `ep ${m.episodes ?? '?'} · score ${score} · succès ${succ}</span>`;
+
+                        const actions = document.createElement('div');
+                        actions.style.cssText = 'display:flex; gap:4px; flex-shrink:0;';
+
+                        const btnLoad = document.createElement('button');
+                        btnLoad.textContent = '📂';
+                        btnLoad.title = 'Charger';
+                        btnLoad.onclick = () => this.loadModel(m.name);
+
+                        const btnExport = document.createElement('button');
+                        btnExport.textContent = '⬇️';
+                        btnExport.title = 'Exporter en fichiers';
+                        btnExport.onclick = () => this.exportModel(m.name);
+
+                        const btnDelete = document.createElement('button');
+                        btnDelete.textContent = '🗑️';
+                        btnDelete.title = 'Supprimer';
+                        btnDelete.onclick = () => this.deleteModel(m.name);
+
+                        actions.appendChild(btnLoad);
+                        actions.appendChild(btnExport);
+                        actions.appendChild(btnDelete);
+                        row.appendChild(info);
+                        row.appendChild(actions);
+                        container.appendChild(row);
+                    }
+                } catch (error) {
+                    container.innerHTML = `<span style="color:#f88;">Erreur listing zoo: ${error.message}</span>`;
+                }
+            }
+
+            async exportModel(name) {
+                this.log(`Export de "${name}" (fichiers téléchargés)...`, 'info');
+                try {
+                    await AIModelStore.exportToFile(name);
+                    this.eventBus.emit(window.EVENTS.AI.MODEL_EXPORTED, { name });
+                    this.log(`"${name}" exporté. Copiez les fichiers dans assets/models/${name}/ pour le livrer.`, 'success');
+                } catch (error) {
+                    this.log(`Erreur export: ${error.message}`, 'error');
+                }
+            }
+
+            async deleteModel(name) {
+                try {
+                    await AIModelStore.delete(name);
+                    this.eventBus.emit(window.EVENTS.AI.MODEL_DELETED, { name });
+                    this.log(`Modèle "${name}" supprimé`, 'info');
+                    this.refreshZoo();
+                } catch (error) {
+                    this.log(`Erreur suppression: ${error.message}`, 'error');
+                }
+            }
+
+            async importModelFiles(fileList) {
+                if (!fileList || fileList.length === 0) return;
+                const name = this.getTrainingConfig().modelName;
+                this.log(`Import vers "${name}"...`, 'info');
+                try {
+                    const entry = await AIModelStore.importFromFiles(fileList, name);
+                    this.log(`Modèle importé sous "${entry.name}"`, 'success');
+                    this.refreshZoo();
+                } catch (error) {
+                    this.log(`Erreur import: ${error.message}`, 'error');
                 }
             }
 
