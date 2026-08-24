@@ -25,8 +25,15 @@ class SynchronizationManager {
             // 1. La fusée n'est pas atterrie (en vol)
             // 2. Le délai de grâce est actif (décollage récent)
             // 3. Le propulseur principal est actif (tentative de décollage)
-            const isInGracePeriod = rocketModel._liftoffGracePeriodEnd !== null &&
-                                    Date.now() < rocketModel._liftoffGracePeriodEnd;
+            // Passer par la méthode du modèle plutôt que de dupliquer le test ici : elle applique
+            // la double échéance (temps SIMULÉ ou temps réel, la première atteinte l'emporte).
+            // Cette copie inline ne connaissait que le temps réel : en headless, la grâce y restait
+            // active des milliers de pas après son expiration côté simulation, si bien que le
+            // modèle se déclarait posé pendant que l'épinglage physique restait, lui, désactivé —
+            // les deux moitiés de la machine à états d'atterrissage divergeaient.
+            const isInGracePeriod = (typeof rocketModel.isInLiftoffGracePeriod === 'function')
+                ? rocketModel.isInLiftoffGracePeriod()
+                : (rocketModel._liftoffGracePeriodEnd !== null && Date.now() < rocketModel._liftoffGracePeriodEnd);
             const main = rocketModel.thrusters && rocketModel.thrusters.main ? rocketModel.thrusters.main : null;
             const isThrusterActive = main && main.maxPower > 0 &&
                                      (main.power / main.maxPower) * 100 > this.PHYSICS.TAKEOFF_THRUST_THRESHOLD_PERCENT;
@@ -46,7 +53,18 @@ class SynchronizationManager {
 
         // Synchronisation réactive Physics → Model après chaque update (écouter l'engine, pas le world)
         this._afterUpdateHandler = () => {
-            this.syncModelWithPhysics(this.physicsController.rocketModel);
+            const rocketModel = this.physicsController.rocketModel;
+            // Ne PAS écraser le modèle quand la fusée est épinglée (posée sur un corps mobile ou
+            // sur Terre) : `handleLandedOrAttachedRocket` vient d'y écrire la position dérivée de
+            // `relativePosition` et la vélocité du corps porteur, et termine par sa propre
+            // synchronisation modèle → physique. Ce hook s'exécutant à la FIN de Engine.update,
+            // il passait AVANT le garde équivalent de PhysicsController.update (étape 6), qu'il
+            // rendait donc inopérant, et réécrivait l'état post-solveur par-dessus l'épinglage.
+            // Mesuré : sur Phobos (lune rapide), la position affichée oscillait de ±16 unités,
+            // soit ~40 % du rayon du corps ; sur la Lune, la vitesse du HUD affichait 7,6–8,4 u/s
+            // au lieu des 10 u/s du corps porteur, en clignotant.
+            if (this.isRocketHandledManually(rocketModel)) return;
+            this.syncModelWithPhysics(rocketModel);
         };
         this.Events.on(this.engine, 'afterUpdate', this._afterUpdateHandler);
 
@@ -71,6 +89,48 @@ class SynchronizationManager {
         }
 
         // Détection d'atterrissage gérée périodiquement via checkRocketLandedStatusPeriodically et CollisionHandler
+    }
+
+    /**
+     * La position/vélocité de la fusée est-elle gérée MANUELLEMENT (épinglage) plutôt que par le
+     * solveur physique ? Vrai quand elle est posée sur Terre ou sur un corps en orbite (ou qu'une
+     * épave y est attachée) : dans ces cas `handleLandedOrAttachedRocket` est la source de vérité
+     * et toute synchronisation physique → modèle écraserait son travail.
+     *
+     * Source UNIQUE du prédicat : il était auparavant écrit uniquement dans
+     * `PhysicsController.update` (étape 6) et absent du hook `afterUpdate`, qui s'exécute pourtant
+     * plus tôt — le garde de l'étape 6 ne pouvait donc jamais rien empêcher.
+     *
+     * @param {RocketModel} rocketModel
+     * @returns {boolean}
+     */
+    isRocketHandledManually(rocketModel) {
+        if (!rocketModel) return false;
+        // NOTE: le nom 'Terre' est codé en dur (héritage) et se trouve être REDONDANT avec les
+        // presets actuels : vérifié sur les 6 mondes, le seul corps sans `parentName` est l'étoile
+        // centrale — Terre elle-même a pour parent 'Soleil'. `isOnMobileBody` couvre donc déjà tous
+        // les corps posables, y compris les corps de spawn des mondes 2 à 6 (aucun trou de
+        // couverture). On conserve la clause par sécurité pour un preset qui déclarerait une
+        // « Terre » sans parent.
+        const isLandedOnTerre = rocketModel.isLanded && rocketModel.landedOn === 'Terre';
+        const corps = (this.physicsController && this.physicsController.celestialBodies) || [];
+        const isOnMobileBody = (rocketModel.isLanded || rocketModel.isDestroyed)
+            && (rocketModel.landedOn || rocketModel.attachedTo)
+            && corps.some(cb => cb && cb.model
+                && (cb.model.name === rocketModel.landedOn || cb.model.name === rocketModel.attachedTo)
+                && cb.model.parentBody != null);
+        return !!(isLandedOnTerre || isOnMobileBody);
+    }
+
+    /**
+     * Purge la mémoire d'émission de ROCKET.LANDED.
+     * À appeler sur tout chemin de réinitialisation (reset fusée, rechargement de monde,
+     * épisode d'entraînement) : la fusée respawn généralement posée sur le MÊME corps, et
+     * sans cette purge l'événement d'atterrissage ne serait pas ré-émis (donc pas de
+     * ravitaillement en station ni de vérification de complétion de mission au spawn).
+     */
+    resetLandedEventState() {
+        this._lastLandedEventBody = null;
     }
 
     /**

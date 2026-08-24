@@ -112,6 +112,11 @@ class UniverseModel {
     updateStars(deltaTime) {
         // Mettre à jour la luminosité des étoiles pour l'effet de scintillement
         for (const star of this.stars) {
+            // Garde-fou : une étoile construite ailleurs (presets) peut arriver sans twinkleSpeed,
+            // ce qui donnerait Math.sin(NaN) -> brightness = NaN à chaque frame.
+            if (typeof star.twinkleSpeed !== 'number') {
+                star.twinkleSpeed = Math.random() * PARTICLES.STAR_TWINKLE_FACTOR;
+            }
             // La fonction sinus crée une oscillation douce de la luminosité autour de la valeur de base.
             star.brightness = PARTICLES.STAR_BRIGHTNESS_BASE +
                 Math.sin(this.elapsedTime * star.twinkleSpeed) * PARTICLES.STAR_BRIGHTNESS_RANGE;

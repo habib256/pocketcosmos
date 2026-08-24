@@ -99,11 +99,15 @@ The EventBus is the heart of inter-module communication:
 
 ## Universe System (Presets & Procedural)
 
-The universe can be loaded from JSON presets or generated procedurally:
+The universe is loaded from JSON presets. ⚠️ **`source: 'random'` is NOT implemented**: the loader
+requires `window.ProceduralGenerator.generate`, which is never assigned anywhere in the repo, so a
+random request just logs a warning and restores the previous state. (Asteroid *belts* inside a preset
+are genuinely procedural — that is a different thing.)
 
-- **Preset files**: `assets/worlds/*.json` (6 worlds available)
+- **Preset files**: `assets/worlds/*.json` (6 worlds available). ⚠️ Only `1_solar.json` declares
+  `missions`; in the other five, missions/cargo/credits are inert.
 - **Load flow**:
-  1. Emit `UNIVERSE_LOAD_REQUESTED` with `{ source: 'preset'|'random', url?, seed? }`
+  1. Emit `UNIVERSE_LOAD_REQUESTED` with `{ source: 'preset', url }`
   2. `GameController.handleUniverseLoadRequested` pauses and loads data
   3. `GameSetupController.buildWorldFromData` constructs new `UniverseModel`
   4. Emits `UNIVERSE_STATE_UPDATED` then `UNIVERSE_RELOAD_COMPLETED`
@@ -191,9 +195,39 @@ The AI uses Deep Q-Network (DQN) with TensorFlow.js:
 5. **Progressive Zones** (priority medium): one-time bonuses when crossing distance thresholds (80%, 50%, 20%, 5%)
 6. **Stabilization** (in last 10%, `STABILIZE_ZONE_RATIO`): strong reward for low speed near point B (`max(0, 1 - speed/STABILIZE_SPEED_REF) * DISTANCE_DELTA`)
 
+> ⚠️ **Weights are calibrated on EPISODE SUMS, not per-step values** (rebalanced 2026‑08‑24 after an
+> empirical audit). Delta-distance is a *telescoping* sum: its whole-episode total is mathematically
+> capped by its own weight, so it can only rank "high" if that weight is comparable to the per-step
+> components' episode totals — hence `DISTANCE_DELTA = 3000` against `HEADING_ALIGNMENT = 1`.
+> Measured shares over a perfect approach (3320 steps): delta 35 % · heading 39 % · velocity 15 % ·
+> zones 11 % · potential 0,2 % — i.e. the documented ordering. Before the rebalance the real shares
+> were heading 85,7 % / delta **0,18 %**, because an unweighted leftover term
+> (`(radialVelocity/100)*0.5`, scaled for a long-gone `VELOCITY_TARGET` of 30 u/s) alone accounted
+> for 55 % of the return. **Do not tune one weight without re-measuring the episode-sum shares.**
+
+> ⚠️ **Reaching the goal must beat loitering.** Success ends the episode and therefore forfeits the
+> remaining per-step shaping, which used to exceed the terminal bonus: parking just outside the
+> success radius paid **65 308** against **55 014** for succeeding. Success bonuses now add a
+> `SUCCESS_TIME_CREDIT` (`constants.js`) proportional to the steps NOT used — success is worth
+> ×1,17 the best loiter on `navigate`, ×4,1 on `orbit`. Any new per-step reward must stay below its
+> objective's time credit, or loitering becomes optimal again.
+
 **Other reward configs** (`AI_TRAINING` in `constants.js`):
+- `SUCCESS_TIME_CREDIT`: per-objective credit granted for the steps remaining at success (see above)
 - `REWARDS`: Standard reward values for orbit, landing, and penalties
 - `ORBIT`: Orbital parameters for the `orbit` objective, computed with G=0.001 (consistent with the real gravity since the gravity unification). ⚠️ Absolute speed calibration vs the simulation's velocity units should still be validated by training (see [PHYSICS.md §2](PHYSICS.md))
+
+**Episode termination — `done` vs `truncated`**: the environment distinguishes a genuine terminal
+state (success/crash) from a time-limit truncation. `RocketAI.train()` bootstraps
+(`r + γ·max Q'`) on truncation and only uses `r` alone on a true terminal. Storing a timeout as
+terminal injected a ~2000 discontinuity into the TD targets once per episode.
+
+**State-vector scaling is task-dependent**: `RocketAI.buildStateVector` accepts a `positionScale`
+(`RocketAI.positionScaleForBody(radius)`, or |B−A| for `navigate`). With the old fixed 150 000,
+`orbit`/`land` positional features were pinned in `[0.005, 0.015]` while the angular ones were
+O(1) — a ~200× conditioning imbalance upstream of the first normalisation layer.
+`RocketAI.STATE_SCALE_VERSION` must be bumped whenever this normalisation changes: saved models
+are refused at load, since their weights no longer match the input distribution.
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
@@ -216,26 +250,38 @@ Here are the most important events flowing through the `EventBus`:
 
 | Event                        | Description                                             | Publisher                         | Consumer                            |
 |------------------------------|---------------------------------------------------------|-----------------------------------|--------------------------------------|
-| `INPUT_ROTATE_COMMAND` / `INPUT_ZOOM_COMMAND` | Continuous rotation/zoom inputs               | `InputController`                 | `RocketController`, `CameraController` |
+| `INPUT_ROTATE_COMMAND`       | Continuous rotation input (gamepad axis)                | `InputController`                 | `RocketController`                   |
+| `INPUT_ZOOM_COMMAND`         | Continuous zoom input                                   | `InputController`                 | `CameraController`                   |
 | `RENDER_TOGGLE_VECTORS`      | Show/hide force vectors                                 | `InputController` (V key)         | `RenderingController`                |
 | `RENDER_TOGGLE_TRACES`       | Toggle trajectory trace display                         | `InputController` (T key)         | `RenderingController`                |
 | `RENDER_TOGGLE_GRAVITY_FIELD`| Cycle gravity field mode (off/arrows/lines)            | `InputController` (G key)         | `RenderingController`                |
-| `ROCKET_LANDED` / `ROCKET_CRASHED` | Rocket has landed or crashed                      | `CollisionHandler`                | `GameController`, `AudioManager`     |
-| `ROCKET_LIFTOFF`             | Rocket has lifted off                                   | `SynchronizationManager`          | `AudioManager`                       |
-| `ROCKET_SET_THRUSTER_POWER`  | Set thruster power (idempotent)                        | `InputController`, `RocketAI`     | `RocketController`                   |
-| `AI_START_TRAINING`          | Start an AI training session                           | `training-interface.html` (UI)    | `TrainingOrchestrator`               |
-| `AI_EPISODE_ENDED`           | A training episode has ended                           | `TrainingOrchestrator`            | `TrainingVisualizer`, UI             |
-| `AI_CONTROL_ACTION`          | AI action trace/diagnostic                             | `RocketAI`                        | UI / Logs                            |
-| `SIMULATION_UPDATED`         | Aggregated global simulation state                     | `GameController`                  | `RenderingController`, UI            |
-| `GAME_STATE_CHANGED`         | Game state change (FSM)                                | `GameController`                  | UI                                   |
+| `ROCKET_LANDED`              | Rocket has landed                                       | `SynchronizationManager`          | `GameController`                     |
+| `ROCKET_DESTROYED`           | Rocket destroyed (crash) — the real crash event         | `CollisionHandler`                | `GameController`, `ParticleController`, `RocketAI` |
+| `ROCKET_SET_THRUSTER_POWER`  | Set thruster power (idempotent)                        | `RocketController`, `RocketAI`, `HeadlessRocketEnvironment` | `RocketController` |
+| `AI_EPISODE_ENDED`           | A training episode has ended                           | `TrainingOrchestrator`, `HeadlessRocketEnvironment` | `TrainingVisualizer`   |
+| `SIMULATION_UPDATED`         | Aggregated global simulation state                     | `GameController`                  | `RenderingController`, `ParticleController` |
 | `UI_SHOW_*` / `UI_HIDE_*`    | UI screens (Loading, Pause, Game Over)                 | `GameController`                  | `UIView`                             |
-| `UNIVERSE_LOAD_REQUESTED`    | Request universe load (preset/procedural)              | UI/Debug/AI                       | `GameController`                     |
-| `UNIVERSE_STATE_UPDATED`     | New universe state ready                               | `GameController`/Setup            | Views/Controllers                    |
-| `UNIVERSE_RELOAD_COMPLETED`  | Reload finished and synchronized                       | `GameController`                  | All                                  |
-| `MISSION_COMPLETED` / `MISSION_FAILED` | Mission success or failure                    | `MissionManager`                  | `GameController`, UI                 |
-| `STATION_DOCKED` / `STATION_REFUELED` | Docking and refueling at a station             | `GameController`                  | UI/Audio                             |
+| `UNIVERSE_LOAD_REQUESTED`    | Request universe load (preset)                          | Startup screen (`main.js`)        | `GameController`                     |
+| `UNIVERSE_STATE_UPDATED`     | New universe state ready                               | `GameController`                  | `CameraController`, `SynchronizationManager`, `RenderingController`, `RocketAI` |
+| `MISSION_COMPLETED`          | Mission success                                         | `GameController`                  | `ParticleController`, `RocketAI`     |
+| `MISSION_FAILED`             | Mission failure                                         | `GameController`                  | `MissionManager`                     |
 | `system:canvasResized`       | Canvas resize                                          | `RenderingController`             | Camera/Controllers                   |
 | `particles:explosionCompleted`| Explosion animation finished                           | `ParticleController`              | `GameController`                     |
+
+> ⚠️ **Événements émis SANS aucun consommateur** (vérifié par balayage complet, 2026‑08‑24) :
+> `STATION_DOCKED` / `STATION_REFUELED` (ravitaillement totalement silencieux), `GAME_STATE_CHANGED`,
+> `GAME_OVER_STATE`, `UNIVERSE_RELOAD_COMPLETED`, `AI_CONTROL_CHANGED`, `AI_TRAINING_CHANGED`,
+> `AI_CONTROL_ACTION`, `INPUT_KEYMAP_CHANGED` / `KEYMAP_RESET`, `UI_ASSISTED_CONTROLS_STATE_CHANGED`.
+>
+> ⚠️ **Handlers abonnés à des événements JAMAIS émis** (code mort) : `PHYSICS_TOGGLE_FORCES`,
+> `AI_TOGGLE_TRAINING` (⇒ l'entraînement en jeu ne peut pas être activé), `PARTICLES_CREATE_EXPLOSION`,
+> et `AI_START/STOP/PAUSE/RESUME_TRAINING` + `AI_UPDATE_CONFIG` (`training-interface.html` appelle
+> directement les méthodes de `TrainingOrchestrator`). `ROCKET_CRASHED` et `ROCKET_LIFTOFF` ne sont
+> ni émis ni écoutés — `ROCKET_LIFTOFF` n'existe même pas dans `EventTypes.js`.
+>
+> ⚠️ L'exemple de joker `eventBus.subscribe('PHYSICS.*', …)` plus haut ne peut rien matcher : les
+> valeurs d'événements utilisent des underscores (`PHYSICS_UPDATED`), la regex générée est
+> `/^PHYSICS\..*$/`. Aucun code n'utilise de joker aujourd'hui.
 
 ## Key Files Reference
 
@@ -287,7 +333,10 @@ Since the project doesn't use ES6 modules:
 - All components are exposed on `window` object
 - Event keys: `window.EVENTS`
 - EventBus instance: `window.eventBus`
-- Controllers: `window.gameController`, etc.
+- Globals actually exposed: `window.EVENTS`, `window.eventBus`, `window.controllerContainer`,
+  `window.audioManager`, `window.UI_STATE`, `window.HeadlessRocketEnvironment` (+ the `train.js`
+  helpers). Note: **`window.gameController` is NOT assigned** — `main.js` keeps it in a module-local
+  `let`, so it is not reachable from the console.
 
 ### Code Conventions
 
@@ -309,7 +358,8 @@ Since the project doesn't use ES6 modules:
 
 - **Toggle vectors**: Press `V` to show force vectors
 - **Toggle gravity field**: Press `G` to cycle through visualization modes
-- **Console access**: All major objects available on `window` for inspection
+- **Console access**: only the globals listed under "Global Scope Pattern" are on `window`
+  (the controllers themselves are not)
 
 ## Common Pitfalls
 

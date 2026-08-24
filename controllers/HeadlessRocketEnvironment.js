@@ -34,13 +34,26 @@ class HeadlessRocketEnvironment {
         this.PHYSICS_CONSTS = (config.constants && config.constants.PHYSICS) || PHYSICS;
         this.EVENT_TYPES = (config.constants && config.constants.EVENTS) || EVENTS;
 
-        // EventBus peut être partagé ou une nouvelle instance
-        this.eventBus = new EventBus();
+        // EventBus partagé si fourni, sinon instance privée.
+        // Auparavant `config.eventBus` était silencieusement ignoré alors que ce commentaire
+        // annonçait l'inverse : tout appelant souhaitant partager le bus devait réassigner
+        // `env.eventBus` ET celui de chaque sous-contrôleur APRÈS coup, puis re-souscrire
+        // (cf. TrainingOrchestrator.initializeEnvironments). Un appelant qui l'ignorait se
+        // retrouvait avec un environnement isolé dont les événements AI.* n'atteignaient personne.
+        this.eventBus = config.eventBus || new EventBus();
 
         // Initialisation des modèles de base
         this.rocketModel = new RocketModel(); // Pas d'args pour RocketModel
         this.universeModel = new UniverseModel(); // Pas d'args pour UniverseModel
-        
+
+        // PERFORMANCE : les étoiles d'arrière-plan (PARTICLES.STAR_COUNT = 800) ne servent QU'AU
+        // rendu du jeu ; en headless personne ne les dessine, mais UniverseModel.update() appelle
+        // updateStars() à CHAQUE pas de simulation (800 Math.sin par pas, des millions par
+        // entraînement). On vide le champ d'étoiles et on met starCount à 0 pour que
+        // universeModel.reset() (appelé à chaque épisode) n'en régénère aucune.
+        this.universeModel.starCount = 0;
+        this.universeModel.stars = [];
+
         // Initialisation des contrôleurs essentiels
         // Le constructeur de PhysicsController attend (eventBus, options)
         this.physicsController = new PhysicsController(this.eventBus, { isHeadless: true });
@@ -110,6 +123,14 @@ class HeadlessRocketEnvironment {
                     }
                 }
             });
+        }
+
+        // CORRECTION: angle initial ré-tiré à CHAQUE épisode si demandé. Auparavant l'angle
+        // aléatoire n'était tiré qu'une fois (dans TrainingOrchestrator.initializeEnvironments)
+        // puis figé dans rocketInitialState : tous les épisodes d'un run partaient du MÊME angle,
+        // ce qui supprimait la variété d'orientation que l'objectif 'navigate' est censé apprendre.
+        if (this.config.randomizeInitialAngle) {
+            this.rocketModel.angle = Math.random() * Math.PI * 2;
         }
 
         this.universeModel.reset(this.config.universeConfig || {}); // UniverseModel.reset accepte une config
@@ -202,6 +223,21 @@ class HeadlessRocketEnvironment {
         // Réinitialiser le monde physique avec les modèles mis à jour
         this.physicsController.initPhysics(this.rocketModel, this.universeModel);
 
+        // CORRECTION (collisions mortes en headless) : initPhysics() remet collisionsEnabled=false
+        // et initTime=Date.now(). CollisionHandler ignore alors tout contact tant que
+        // PHYSICS.COLLISION_DELAY (2000 ms) ne s'est pas écoulé en temps RÉEL (horloge murale).
+        // Cette garde n'a de sens que pour le jeu interactif (éviter un "crash" parasite pendant
+        // le chargement/spawn) : un épisode headless enchaîne des milliers de pas de simulation en
+        // bien moins de 2 s de temps réel, donc isLanded/isDestroyed n'étaient JAMAIS positionnés
+        // par les collisions -> checkLandingSuccess() et checkCrashMoonSuccess() ne pouvaient pas
+        // se déclencher (objectifs 'land' et 'crash_moon' inapprenables). On active donc les
+        // collisions immédiatement et on antidate initTime pour que la garde soit déjà expirée.
+        if (this.physicsController && this.physicsController.collisionHandler) {
+            const collisionDelay = (this.PHYSICS_CONSTS && this.PHYSICS_CONSTS.COLLISION_DELAY) || 2000;
+            this.physicsController.collisionHandler.initTime = Date.now() - collisionDelay - 1;
+            this.physicsController.collisionHandler.collisionsEnabled = true;
+        }
+
         this.currentStep = 0;
         this.totalRewardInEpisode = 0;
         this._missionAlreadyRewardedThisEpisode = false;
@@ -210,6 +246,14 @@ class HeadlessRocketEnvironment {
         // Réinitialiser les compteurs de succès spécifiques
         this.orbitSuccessCounter = 0;
         this.visitedBodies = new Set();
+        // Corps percuté par le raccourci de crash imminent (diagnostic ; posé par applyImminentCrash)
+        this._imminentCrashBody = null;
+
+        // Tick de simulation : sert de clé de cache pour les vérifications à effet de bord
+        // (checkOrbitSuccess), afin qu'elles ne s'exécutent qu'une fois par pas de physique.
+        this._simTick = 0;
+        this._orbitCheckTick = -1;
+        this._orbitCheckResult = false;
         
         // Émettre événement de début d'épisode
         this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_STARTED, {
@@ -224,6 +268,14 @@ class HeadlessRocketEnvironment {
      * Émettre les données pour la visualisation
      */
     emitVisualizationData() {
+        // PERFORMANCE : en mode purement headless (aucun visualiseur branché), ce payload — copies
+        // de position/vélocité + copie profonde de TOUS les corps célestes, tous les 2 pas — est
+        // du travail pur perte. On le coupe dès que la configuration annonce headlessMode.
+        // (Par défaut, si le drapeau n'est pas fourni, on continue d'émettre : le chemin
+        //  interactif/visuel, qui a besoin de targetPoint/startPoint pour cadrer la caméra, reste
+        //  fonctionnel sans changement.)
+        if (this.config.headlessMode === true) return;
+
         // Émettre seulement si nécessaire (éviter le spam)
         if (this.currentStep % 2 === 0) { // Émettre tous les 2 pas pour réduire la charge
             const visualizationData = {
@@ -277,16 +329,21 @@ class HeadlessRocketEnvironment {
         if (this.isDone()) {
             // Si l'épisode était déjà terminé, ne rien faire et retourner l'état final.
             // console.warn("HeadlessRocketEnvironment: step() appelé sur un épisode terminé.");
-            return { 
-                observation: this.getObservation(), 
-                reward: 0, 
-                done: true, 
-                info: { status: 'Episode already ended' } 
+            return {
+                observation: this.getObservation(),
+                reward: 0,
+                done: true,
+                truncated: false,
+                info: { status: 'Episode already ended', truncated: false }
             };
         }
 
         // 1. Traduire l'action de l'agent en commandes pour RocketController (via EventBus)
-        // Exemple: Si action = { mainThruster: 0.5, rotationInput: -0.1 (pour tourner à droite) }
+        // ⚠️ SÉMANTIQUE : seuls les propulseurs PRÉSENTS dans l'objet action sont modifiés ; ceux
+        // qui sont absents conservent leur puissance précédente. L'espace d'action canonique
+        // (RocketAI.ACTION_THRUSTERS, appliqué par
+        // TrainingOrchestrator.convertActionIndexToEnvironmentAction) spécifie donc TOUJOURS les
+        // quatre propulseurs — sans quoi un propulseur restait "collé" jusqu'à la fin de l'épisode.
         if (action.hasOwnProperty('mainThruster')) {
             this.eventBus.emit(this.EVENT_TYPES.ROCKET.SET_THRUSTER_POWER, { 
                 thrusterId: 'main', 
@@ -324,26 +381,60 @@ class HeadlessRocketEnvironment {
 
         // 2. Mettre à jour les composants de la simulation (ordre inspiré de GameController.update)
         this.universeModel.update(deltaTime); // Mouvements orbitaux, etc.
+
+        // CORRECTION (détection d'atterrissage étranglée par une HORLOGE MURALE) :
+        // SynchronizationManager.checkRocketLandedStatusPeriodically ne s'exécute qu'une fois
+        // toutes les 150 ms de temps RÉEL. En headless on enchaîne des dizaines de milliers de pas
+        // de simulation par seconde : mesuré, la vérification ne tournait qu'une fois tous les
+        // ~3578 pas (≈60 s simulées) — à 150 u/s la fusée parcourt 8945 unités entre deux contrôles
+        // alors que la fenêtre de contact ne fait que ~15 unités, donc isLanded n'était jamais posé
+        // et les objectifs 'land'/'explore' étaient inapprenables. (Même classe de bug que la garde
+        // COLLISION_DELAY neutralisée dans reset().)
+        // La garde vit dans SynchronizationManager ; on la rend inopérante depuis l'environnement en
+        // réarmant son jalon AVANT chaque pas : la détection s'exécute alors une fois par pas de
+        // simulation, ce qui est la cadence attendue par la boucle headless.
+        const syncManager = this.physicsController && this.physicsController.synchronizationManager;
+        if (syncManager) {
+            syncManager._lastLandedCheck = null;
+        }
+
         // this.rocketController.update(deltaTime); // Normalement gère les réponses aux événements, pas de logique continue ici.
         this.physicsController.update(deltaTime);  // Cœur de la simulation physique
+        // CORRECTION: la consommation de carburant vit UNIQUEMENT dans RocketModel.update()
+        // (source unique, cf. PHYSICS.md §3.1). Sans cet appel le carburant ne baissait jamais
+        // en headless : la terminaison `fuel <= 0` et le statut 'out_of_fuel' étaient morts.
+        // RocketModel.update() respecte lui-même _infiniteFuel (posé depuis config.infiniteFuel
+        // dans reset()), donc 'navigate' conserve son carburant infini.
+        this.rocketModel.update(deltaTime);
         this.missionManager.update(deltaTime, this.rocketModel, this.universeModel); // Logique des missions
+
+        // Un pas de physique vient d'être intégré : invalide les caches de vérification
+        // à effet de bord (checkOrbitSuccess), appelées plusieurs fois par pas.
+        this._simTick = (this._simTick || 0) + 1;
 
         // 3. Obtenir les résultats pour ce pas
         const observation = this.getObservation();
-        let reward = this.calculateReward();
 
         // CORRECTION: Incrémenter le compteur de délai de grâce au démarrage
         this._startupGracePeriod++;
 
         this.currentStep++;
 
+        // CORRECTION (pénalité de crash morte) : la terminaison est évaluée AVANT la récompense.
+        // isDone() est le SEUL endroit qui pose isDestroyed en headless (raccourci de crash
+        // imminent) ; avec l'ordre inverse, calculateReward() ne voyait JAMAIS isDestroyed=true et
+        // ses branches -100 étaient du code mort. Mesuré avant correction (objectif 'orbit') :
+        // se crasher au pas 30 rapportait -0,45 contre -20,00 pour survivre 2000 pas, soit une
+        // incitation 44× en faveur de l'auto-destruction.
+        const objective = this.config.missionConfig?.objective;
         const done = this.isDone();
+        let reward = this.calculateReward();
 
         // CORRECTION (bug timeout): intégrer la pénalité de timeout DANS la récompense
         // retournée par step() (et pas seulement dans totalRewardInEpisode), sinon elle
         // n'est jamais apprise par l'agent. On l'ajoute au dernier step (done=true par
         // atteinte du budget de steps, sans succès) pour l'objectif 'navigate'.
-        if (done && this.config.missionConfig?.objective === 'navigate' &&
+        if (done && objective === 'navigate' &&
             this.currentStep >= this.maxStepsPerEpisode &&
             !this.checkNavigateSuccess()) {
             const timeoutPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
@@ -358,30 +449,53 @@ class HeadlessRocketEnvironment {
         // Émettre les données pour la visualisation (si activée)
         this.emitVisualizationData();
 
-        const info = { 
-            currentStep: this.currentStep, 
+        // CORRECTION (item 8) : distinguer une terminaison VRAIE (état absorbant : crash, panne
+        // sèche, objectif atteint) d'une simple TRONCATURE par le budget de pas. RocketAI.train()
+        // pose qTarget = récompense (sans γ·maxQ') sur `done` : sur une troncature cela enseigne
+        // une valeur de fin du monde à un état parfaitement ordinaire (mesuré : Q stationnaire
+        // ≈ 2000 contre une cible enseignée ≈ -53, soit une discontinuité de ~2000 injectée une
+        // fois par épisode dans une MSE sans clipping). Le drapeau `truncated` permet à l'agent de
+        // continuer à bootstrapper dans ce cas.
+        const objectiveSuccess = done ? this.checkObjectiveSuccess() : false;
+        const terminalState = this.rocketModel.isDestroyed ||
+                              (objective !== 'navigate' && this.rocketModel.fuel <= 0) ||
+                              objectiveSuccess;
+        const truncated = done && !terminalState;
+
+        const info = {
+            currentStep: this.currentStep,
             totalReward: this.totalRewardInEpisode,
             fuel: this.rocketModel.fuel,
             health: this.rocketModel.health,
             isLanded: this.rocketModel.isLanded,
             landedOn: this.rocketModel.landedOn,
+            truncated,
             missionStatus: this.missionManager.getCurrentMissionStatus() // Supposer une telle méthode
         };
         if (done) {
-            info.status = this.rocketModel.isDestroyed ? 'crashed' : 
+            // CORRECTION (item 10) : le succès était déduit de missionManager.isCurrentMissionSuccessful(),
+            // jamais vrai pour les missions "jeton" de l'entraînement (NavigateToken & co, cargo
+            // impossible à obtenir) — un vrai succès 'navigate' était donc rapporté
+            // 'unknown_done_reason'. On interroge d'abord le critère de succès de l'OBJECTIF
+            // (checkObjectiveSuccess), en gardant la mission cargo comme repli. Le succès est testé
+            // avant 'crashed' car pour 'crash_moon' l'impact EST le succès.
+            info.objectiveSuccess = objectiveSuccess;
+            const missionSuccess = objectiveSuccess || this.missionManager.isCurrentMissionSuccessful();
+            info.status = missionSuccess ? 'mission_success' :
+                          this.rocketModel.isDestroyed ? 'crashed' :
                           this.rocketModel.fuel <= 0 ? 'out_of_fuel' :
-                          this.missionManager.isCurrentMissionSuccessful() ? 'mission_success' :
                           this.currentStep >= this.maxStepsPerEpisode ? 'max_steps_reached' : 'unknown_done_reason';
-            
+
             // Émettre événement de fin d'épisode
             this.eventBus.emit(this.EVENT_TYPES.AI.EPISODE_ENDED, {
                 reason: info.status,
+                truncated,
                 totalReward: this.totalRewardInEpisode,
                 steps: this.currentStep
             });
         }
 
-        return { observation, reward, done, info };
+        return { observation, reward, done, truncated, info };
     }
 
     /**
@@ -446,8 +560,14 @@ class HeadlessRocketEnvironment {
 
         // CORRECTION: Pénalité pour crash seulement si ce n'est PAS l'objectif
         // Si l'objectif est 'crash_moon', le crash sur la Lune est récompensé ailleurs
+        // CORRECTION (item 5) : ces branches étaient MORTES car step() appelait calculateReward()
+        // avant isDone() (seul endroit qui pose isDestroyed). L'ordre est désormais inversé dans
+        // step(), la pénalité est donc réellement appliquée au dernier pas de l'épisode.
         if (this.rocketModel.isDestroyed) {
-            const objective = this.config.missionConfig?.objective;
+            const crashPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.REWARDS &&
+                                  typeof AI_TRAINING.REWARDS.CRASH_PENALTY === 'number')
+                ? AI_TRAINING.REWARDS.CRASH_PENALTY
+                : -100;
             // Ne pas pénaliser si l'objectif est de se crasher sur la Lune ET que c'est sur la Lune
             if (objective === 'crash_moon') {
                 const moon = this.universeModel.celestialBodies.find(body => body.name === 'Lune');
@@ -456,11 +576,11 @@ class HeadlessRocketEnvironment {
                     // La récompense sera donnée dans le case 'crash_moon'
                 } else {
                     // Crash ailleurs = pénalité
-                    reward -= 100;
+                    reward += crashPenalty;
                 }
             } else {
                 // Pour les autres objectifs, crash = pénalité
-                reward -= 100;
+                reward += crashPenalty;
             }
         }
         
@@ -481,8 +601,9 @@ class HeadlessRocketEnvironment {
                         const dy = this.rocketModel.position.y - earth.position.y;
                         const distance = Math.sqrt(dx * dx + dy * dy);
                         const altitude = distance - earth.radius;
-                        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
-                        
+                        // u/s : AI_TRAINING.ORBIT.*_ORBITAL_SPEED sont exprimées en unités/seconde
+                        const speed = this._rocketSpeedUnitsPerSec();
+
                         // Utiliser les constantes AI_TRAINING au lieu de valeurs hardcodées
                         const orbitConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ORBIT : {
                             MIN_ALTITUDE: 100, MAX_ALTITUDE: 1500,
@@ -503,7 +624,7 @@ class HeadlessRocketEnvironment {
                         
                         // Grosse récompense pour succès d'orbite
                         if (this.checkOrbitSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                            reward += rewardConfig.ORBIT_SUCCESS;
+                            reward += rewardConfig.ORBIT_SUCCESS + this.successTimeCredit();
                             this._missionAlreadyRewardedThisEpisode = true;
                         }
                     }
@@ -531,7 +652,7 @@ class HeadlessRocketEnvironment {
                         
                         // Grosse récompense pour atterrissage réussi
                         if (this.checkLandingSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                            reward += 100;
+                            reward += 100 + this.successTimeCredit();
                             this._missionAlreadyRewardedThisEpisode = true;
                         }
                     }
@@ -543,10 +664,10 @@ class HeadlessRocketEnvironment {
                     
                     // Récompense de terminaison (succès)
                     if (this.checkNavigateSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                        const successReward = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
-                            ? AI_TRAINING.NAVIGATE_REWARDS.SUCCESS_REWARD 
+                        const successReward = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
+                            ? AI_TRAINING.NAVIGATE_REWARDS.SUCCESS_REWARD
                             : 1000;
-                        reward += successReward;
+                        reward += successReward + this.successTimeCredit();
                         this._missionAlreadyRewardedThisEpisode = true;
                     }
                     break;
@@ -574,15 +695,15 @@ class HeadlessRocketEnvironment {
                         
                         // GROSSE récompense pour crash sur la Lune (objectif atteint !)
                         if (this.checkCrashMoonSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                            reward += 200; // Récompense massive pour crash réussi sur la Lune
+                            reward += 200 + this.successTimeCredit(); // Récompense massive pour crash réussi sur la Lune
                             this._missionAlreadyRewardedThisEpisode = true;
                         }
                     }
                     break;
                     
                 case 'explore':
-                    // Récompense pour mouvement et exploration
-                    const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+                    // Récompense pour mouvement et exploration (seuils en u/s)
+                    const speed = this._rocketSpeedUnitsPerSec();
                     if (speed > 5 && speed < 100) {
                         reward += 0.02; // Encourager le mouvement
                     }
@@ -596,7 +717,7 @@ class HeadlessRocketEnvironment {
                     
                     // Grosse récompense pour exploration complète
                     if (this.checkExplorationSuccess() && !this._missionAlreadyRewardedThisEpisode) {
-                        reward += 100;
+                        reward += 100 + this.successTimeCredit();
                         this._missionAlreadyRewardedThisEpisode = true;
                     }
                     break;
@@ -604,6 +725,33 @@ class HeadlessRocketEnvironment {
         }
 
         return reward;
+    }
+
+    /**
+     * CORRECTION (item 6 : « atteindre le but est puni, flâner rapporte plus ») :
+     * un succès TERMINE l'épisode, donc l'agent renonce à tout le shaping des pas restants —
+     * shaping qui écrasait le bonus terminal. Mesuré avant correction (navigate, budget 4000) :
+     * réussir au pas 3320 rapportait 55 014, alors que stationner à 3100 u (juste hors du rayon de
+     * succès de 3000) pendant 4000 pas rapportait 65 308, soit ×1,19 en faveur de l'ÉCHEC ; idem
+     * pour 'orbit' (orbite parfaite +249 contre +980 en flânant hors fenêtre de vitesse).
+     *
+     * On crédite donc, au moment du succès, les pas restants du budget au tarif du MEILLEUR
+     * shaping atteignable par pas (AI_TRAINING.SUCCESS_TIME_CREDIT[objectif]). C'est l'équivalent
+     * d'un état absorbant qui continuerait de verser la récompense maximale : atteindre le but tôt
+     * devient au moins aussi rentable que flâner jusqu'au bout, et le bonus terminal (SUCCESS_REWARD)
+     * fait strictement pencher la balance.
+     *
+     * @return {number} Crédit à ajouter au bonus terminal de succès.
+     */
+    successTimeCredit() {
+        const objective = this.config.missionConfig?.objective;
+        const table = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.SUCCESS_TIME_CREDIT)
+            ? AI_TRAINING.SUCCESS_TIME_CREDIT
+            : {};
+        const perStep = (typeof table[objective] === 'number') ? table[objective] : 0;
+        if (perStep <= 0) return 0;
+        const remainingSteps = Math.max(0, this.maxStepsPerEpisode - this.currentStep);
+        return remainingSteps * perStep;
     }
 
     /**
@@ -778,32 +926,29 @@ class HeadlessRocketEnvironment {
         const targetDirX = dx / distanceToTarget;
         const targetDirY = dy / distanceToTarget;
         
-        // Direction de la fusée (basée sur son angle)
+        // Direction de la fusée : le nez / l'axe de poussée principale est à (angle - π/2)
+        // (cf. ROCKET.THRUSTER_POSITIONS.MAIN et ThrusterPhysics), PAS à `angle`.
+        // cos(angle - π/2) = sin(angle) ; sin(angle - π/2) = -cos(angle).
         const rocketAngle = this.rocketModel.angle || 0;
-        const rocketDirX = Math.cos(rocketAngle);
-        const rocketDirY = Math.sin(rocketAngle);
+        const rocketDirX = Math.sin(rocketAngle);
+        const rocketDirY = -Math.cos(rocketAngle);
         
         // Produit scalaire = cos(angle entre les deux directions)
         const alignment = targetDirX * rocketDirX + targetDirY * rocketDirY;
         // alignment = 1 si parfaitement aligné, -1 si opposé
         
-        // Récompense basée sur l'alignement
-        let reward = alignment * config.HEADING_ALIGNMENT;
-        
-        // Bonus si la fusée se déplace vers la cible (vitesse radiale positive)
-        if (this.rocketModel.velocity) {
-            // velocity est stockée en échelle Matter (≈ u/s × 1000/60) ; on convertit
-            // en u/s avant usage, comme _rocketSpeedUnitsPerSec().
-            const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
-            const radialVelocity = (this.rocketModel.velocity.x * targetDirX +
-                                   this.rocketModel.velocity.y * targetDirY) / k; // u/s
-            if (radialVelocity > 0) {
-                // Bonus proportionnel à la vitesse radiale (u/s) vers la cible
-                reward += (radialVelocity / 100) * 0.5; // Normalisé
-            }
-        }
-        
-        return reward;
+        // Récompense basée sur l'alignement PUR (produit scalaire cap/direction cible).
+        //
+        // CORRECTION (item 7 : composante fantôme dominante) : on avait ici un SECOND bonus de
+        // vitesse radiale, `reward += (radialVelocity / 100) * 0.5`, dont le /100 datait de l'époque
+        // où VELOCITY_TARGET valait 30 u/s (elle vaut 2500 aujourd'hui). Mesuré sur une approche
+        // parfaite, ce seul terme totalisait 30 551 — 64,8 % de la composante « heading » et 55,5 %
+        // du retour d'épisode — alors que la composante « réduction de distance » OFFICIELLE est
+        // mathématiquement bornée à DISTANCE_DELTA pour tout l'épisode (somme télescopique).
+        // Le bonus radial existe DÉJÀ, correctement calibré, dans calculateVelocityReward
+        // ((v_rad / VELOCITY_TARGET) × 0,2) : ce doublon est donc supprimé, et « heading » ne
+        // récompense plus que l'orientation, conformément à sa documentation.
+        return alignment * config.HEADING_ALIGNMENT;
     }
     
     /**
@@ -998,8 +1143,8 @@ class HeadlessRocketEnvironment {
             reward += 0.05; // Altitude acceptable
         }
         
-        // Récompense pour vitesse orbitale appropriée
-        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+        // Récompense pour vitesse orbitale appropriée (u/s : TARGET_ORBITAL_SPEED est en u/s)
+        const speed = this._rocketSpeedUnitsPerSec();
         const speedDiff = Math.abs(speed - orbitConfig.TARGET_ORBITAL_SPEED);
         
         if (speedDiff < orbitConfig.SPEED_TOLERANCE / 3) {
@@ -1095,57 +1240,108 @@ class HeadlessRocketEnvironment {
         // CONDITION DE CRASH ANTICIPÉ : Terminer immédiatement si crash imminent sur une planète
         // Cela accélère l'entraînement en évitant d'attendre la détection de collision par Matter.js
         // CORRECTION: Ne pas détecter de crash pour 'navigate' (pas de planètes)
-        if (objective !== 'navigate' && this.checkImminentCrash()) {
-            // Marquer comme détruite pour cohérence
-            this.rocketModel.isDestroyed = true;
-            return true;
-        }
-        
-        // Vérifier les conditions de succès spécifiques selon l'objectif
-        if (this.config.missionConfig && this.config.missionConfig.objective) {
-            switch (this.config.missionConfig.objective) {
-                case 'navigate':
-                    // CORRECTION: Mission de navigation réussie si le point cible est atteint
-                    return this.checkNavigateSuccess();
-                case 'orbit':
-                    // Mission d'orbite réussie si altitude et vitesse appropriées pendant plusieurs pas
-                    return this.checkOrbitSuccess();
-                case 'land':
-                    // Mission d'atterrissage réussie si atterri sur la cible
-                    return this.checkLandingSuccess();
-                case 'crash_moon':
-                    // CORRECTION: Mission de crash réussie si crash sur la Lune
-                    return this.checkCrashMoonSuccess();
-                case 'explore':
-                    // Mission d'exploration réussie si certaines zones visitées
-                    return this.checkExplorationSuccess();
+        if (objective !== 'navigate') {
+            const crashBody = this.findImminentCrashBody();
+            if (crashBody) {
+                this.applyImminentCrash(crashBody);
+                return true;
             }
         }
-        
+
+        // Vérifier les conditions de succès spécifiques selon l'objectif
+        if (this.config.missionConfig && this.config.missionConfig.objective) {
+            return this.checkObjectiveSuccess();
+        }
+
         // Autres conditions (ex: sortie des limites de simulation si pertinent)
         return false;
     }
-    
+
+    /**
+     * Critère de succès de l'OBJECTIF courant (source unique, utilisée par isDone(), par le
+     * statut de fin d'épisode et par la distinction terminaison/troncature de step()).
+     * @return {boolean} True si l'objectif courant est atteint.
+     */
+    checkObjectiveSuccess() {
+        switch (this.config.missionConfig && this.config.missionConfig.objective) {
+            case 'navigate':
+                // Mission de navigation réussie si le point cible est atteint (et stabilisé)
+                return this.checkNavigateSuccess();
+            case 'orbit':
+                // Mission d'orbite réussie si altitude et vitesse appropriées pendant plusieurs pas
+                return this.checkOrbitSuccess();
+            case 'land':
+                // Mission d'atterrissage réussie si atterri en douceur sur la cible
+                return this.checkLandingSuccess();
+            case 'crash_moon':
+                // Mission de crash réussie si crash sur la Lune
+                return this.checkCrashMoonSuccess();
+            case 'explore':
+                // Mission d'exploration réussie si certaines zones visitées
+                return this.checkExplorationSuccess();
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Applique un état de fusée DÉTRUITE cohérent lors du raccourci de crash imminent.
+     *
+     * CORRECTION (item 1) : isDone() se contentait de `isDestroyed = true`, sans toucher à
+     * `health` ni dire QUEL corps allait être percuté. On observait donc des états incohérents
+     * (`isDestroyed=true, health=100, landedOn=null`) et surtout checkCrashMoonSuccess(), qui exige
+     * `landedOn === 'Lune' || attachedTo === 'Lune'`, ne pouvait JAMAIS être vrai : l'objectif
+     * 'crash_moon' était inatteignable (balayage de vitesses d'impact 100→3000 u/s : succès
+     * toujours faux, altitude finale ≈ 48). On reproduit ici l'état posé par CollisionHandler lors
+     * d'un vrai crash (landedOn/attachedTo = corps percuté, relativePosition purgée, isLanded=false,
+     * dégâts fatals), sans rien changer à la vocation du raccourci : terminer l'épisode tout de suite.
+     *
+     * @param {object} body - Le corps céleste sur le point d'être percuté.
+     */
+    applyImminentCrash(body) {
+        this.rocketModel.landedOn = body.name;
+        this.rocketModel.attachedTo = body.name;
+        this.rocketModel.relativePosition = null;
+        this.rocketModel.isLanded = false;
+        if (typeof this.rocketModel.applyDamage === 'function') {
+            // Dégâts fatals : pose health=0, isDestroyed=true et coupe les propulseurs.
+            this.rocketModel.applyDamage((this.ROCKET_CONSTS?.MAX_HEALTH || 100) + 1);
+        } else {
+            this.rocketModel.health = 0;
+            this.rocketModel.isDestroyed = true;
+        }
+        this._imminentCrashBody = body.name;
+    }
+
     /**
      * Vérifie si un crash est imminent (fusée trop proche de la surface avec vitesse trop élevée)
      * @return {boolean} True si un crash est imminent, false sinon
      */
     checkImminentCrash() {
+        return this.findImminentCrashBody() !== null;
+    }
+
+    /**
+     * Cherche le corps céleste sur lequel un crash est imminent (fusée trop proche de la surface,
+     * en approche et trop rapide).
+     * @return {object|null} Le corps céleste percuté sous peu, ou null.
+     */
+    findImminentCrashBody() {
         if (!this.rocketModel || !this.universeModel || this.rocketModel.isDestroyed) {
-            return false;
+            return null;
         }
-        
+
         // CORRECTION: Ne pas détecter de crash au démarrage (délai de grâce de 30 pas)
         // La fusée peut être proche de la surface au démarrage sans être en crash
         if (this._startupGracePeriod < 30) {
-            return false;
+            return null;
         }
-        
+
         // CORRECTION: Ne pas détecter de crash si la fusée est atterrie (elle est censée être au repos)
         if (this.rocketModel.isLanded) {
-            return false;
+            return null;
         }
-        
+
         // Vérifier chaque corps céleste
         for (const body of this.universeModel.celestialBodies) {
             if (!body.position || !body.radius) continue;
@@ -1165,8 +1361,13 @@ class HeadlessRocketEnvironment {
             );
             
             // CORRECTION: Ne pas détecter de crash si la vitesse est très faible (au repos)
+            // CORRECTION (item 2) : c'était un `return false` — placé DANS la boucle sur les corps
+            // célestes, il abandonnait la vérification pour TOUS les corps suivants dès qu'un seul
+            // corps était approché lentement. La bonne sémantique est de passer au corps suivant.
+            // (La vitesse ici ne dépend pas du corps, mais le `continue` garde le test local et
+            //  correct si la vitesse devenait relative au corps.)
             if (speed < 1.0) {
-                return false;
+                continue;
             }
             
             // Utiliser les seuils de crash depuis PHYSICS (ou valeurs par défaut)
@@ -1187,12 +1388,12 @@ class HeadlessRocketEnvironment {
                 
                 // Si vitesse radiale négative (vers le corps) et vitesse totale élevée = crash imminent
                 if (radialVelocity < 0 && speed > CRASH_SPEED_THRESHOLD) {
-                    return true;
+                    return body;
                 }
             }
         }
-        
-        return false;
+
+        return null;
     }
 
     /**
@@ -1201,17 +1402,30 @@ class HeadlessRocketEnvironment {
      */
     checkOrbitSuccess() {
         if (!this.orbitSuccessCounter) this.orbitSuccessCounter = 0;
-        
+
+        // CORRECTION: cette méthode a un EFFET DE BORD (orbitSuccessCounter) et elle est appelée
+        // plusieurs fois par pas (récompense 'orbit' + isDone() en début ET fin de step). Sans
+        // mémoïsation par tick de simulation, le compteur avançait 2-3× par pas et STABILITY_STEPS
+        // était atteint bien trop tôt. On ne recalcule donc qu'une fois par pas de physique.
+        if (this._orbitCheckTick === this._simTick) {
+            return this._orbitCheckResult;
+        }
+        this._orbitCheckTick = this._simTick;
+
         const earth = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
-        if (!earth) return false;
-        
+        if (!earth) {
+            this._orbitCheckResult = false;
+            return false;
+        }
+
         const dx = this.rocketModel.position.x - earth.position.x;
         const dy = this.rocketModel.position.y - earth.position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         const altitude = distance - earth.radius;
-        
-        const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
-        
+
+        // u/s : MIN/MAX_ORBITAL_SPEED sont exprimées en unités/seconde
+        const speed = this._rocketSpeedUnitsPerSec();
+
         // Utiliser les constantes AI_TRAINING
         const orbitConfig = (typeof AI_TRAINING !== 'undefined') ? AI_TRAINING.ORBIT : {
             MIN_ALTITUDE: 100, MAX_ALTITUDE: 1500,
@@ -1226,11 +1440,12 @@ class HeadlessRocketEnvironment {
         if (inOrbit) {
             this.orbitSuccessCounter++;
             // Succès si maintenu en orbite pendant STABILITY_STEPS pas
-            return this.orbitSuccessCounter >= orbitConfig.STABILITY_STEPS;
+            this._orbitCheckResult = this.orbitSuccessCounter >= orbitConfig.STABILITY_STEPS;
         } else {
             this.orbitSuccessCounter = 0; // Reset si sort de l'orbite
-            return false;
+            this._orbitCheckResult = false;
         }
+        return this._orbitCheckResult;
     }
 
     /**
@@ -1245,7 +1460,8 @@ class HeadlessRocketEnvironment {
         
         // Succès si atterri sur la Lune avec vitesse faible
         if (this.rocketModel.isLanded && this.rocketModel.landedOn === 'Lune') {
-            const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+            // u/s : MAX_LANDING_SPEED est exprimée en unités/seconde
+            const speed = this._rocketSpeedUnitsPerSec();
             return speed < landingConfig.MAX_LANDING_SPEED; // Atterrissage en douceur
         }
         return false;

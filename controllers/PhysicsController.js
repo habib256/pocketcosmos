@@ -121,6 +121,11 @@ class PhysicsController {
         this.celestialBodies = [];
         this.collisionHandler.initTime = Date.now(); // Réinitialiser le délai de collision
         this.collisionHandler.collisionsEnabled = false;
+        // Même esprit : purger la mémoire d'émission d'atterrissage, sinon un reset (touche R)
+        // qui fait respawn la fusée posée sur le même corps n'émet plus ROCKET.LANDED.
+        if (this.synchronizationManager && typeof this.synchronizationManager.resetLandedEventState === 'function') {
+            this.synchronizationManager.resetLandedEventState();
+        }
 
         try {
             // Créer le corps de la fusée
@@ -129,10 +134,9 @@ class PhysicsController {
                 throw new Error("Échec de la création du corps physique de la fusée");
             }
 
-            // Définir l'amortissement angulaire initial basé sur l'état actuel des contrôles assistés
-            this.rocketBody.angularDamping = this.assistedControls
-                ? this.thrusterPhysics.assistedAngularDamping
-                : this.thrusterPhysics.angularDamping;
+            // NOTE: aucune propriété `angularDamping` n'est posée ici : elle n'existe pas dans
+            // Matter.js 0.19 et n'avait donc aucun effet. L'amortissement angulaire des contrôles
+            // assistés est assuré par ThrusterPhysics.applyRotationStabilization().
 
             // Ajouter la fusée au monde
             this.Composite.add(this.engine.world, this.rocketBody);
@@ -190,13 +194,22 @@ class PhysicsController {
                 // Mettre à jour la position du corps physique Matter.js
                 this.Body.setPosition(celestialInfo.body, celestialInfo.model.position);
                 // Mettre à jour la vélocité du corps physique Matter.js (calculée dans updateOrbit).
-                // model.velocity est en unités/SECONDE (orbital). rocketBody.velocity — et donc le
-                // solveur de collision — raisonne à l'échelle Matter ≈ u/s × (1000/60). On convertit
-                // avec MATTER_BASE_DELTA pour que le corps mobile présente au solveur sa vraie vitesse
-                // (collision/friction correctes), cohérent avec la fusée. Voir PHYSICS.md §1.
+                // model.velocity est en unités/SECONDE (orbital).
+                //
+                // ⚠️ Le facteur de conversion N'EST PAS le même que pour la fusée. `Body.setVelocity`
+                // écrit `positionPrev = position - v × timeScale` avec `timeScale = body.deltaTime /
+                // _baseDelta`, et `body.deltaTime` n'est mis à jour que par `Body.update` — que
+                // `Engine._bodiesUpdate` NE FAIT PAS sur les corps statiques. Les corps célestes
+                // conservent donc `deltaTime = _baseDelta`, soit `timeScale = 1`, là où la fusée
+                // (dynamique) obtient `timeScale = deltaTime / _baseDelta ≈ 0,001`.
+                // Multiplier par MATTER_BASE_DELTA ici présentait au solveur une vitesse 1000× trop
+                // grande : la fusée était éjectée de tout corps en orbite dès qu'elle n'était plus
+                // épinglée (décollage, contact rasant). Le bon facteur est le deltaTime en secondes,
+                // qui donne exactement le déplacement réel par pas. Voir PHYSICS.md §1.
+                const dtCorpsStatique = this.lastDeltaTime || 0;
                 this.Body.setVelocity(celestialInfo.body, {
-                    x: (celestialInfo.model.velocity.x || 0) * this.PHYSICS.MATTER_BASE_DELTA,
-                    y: (celestialInfo.model.velocity.y || 0) * this.PHYSICS.MATTER_BASE_DELTA
+                    x: (celestialInfo.model.velocity.x || 0) * dtCorpsStatique,
+                    y: (celestialInfo.model.velocity.y || 0) * dtCorpsStatique
                 });
                 // Assurer que le corps ne s'endort pas
                 celestialInfo.body.isSleeping = false;
@@ -217,16 +230,10 @@ class PhysicsController {
 
         // 6. Synchroniser le modèle de la fusée avec le résultat de la physique
         //    (Sauf si elle est gérée manuellement car posée/attachée sur un corps mobile ou sur la Terre)
-        const isLandedOnTerre = this.rocketModel.isLanded && this.rocketModel.landedOn === 'Terre';
-
-        const isOnMobileBody = (this.rocketModel.isLanded || this.rocketModel.isDestroyed) &&
-                               (this.rocketModel.landedOn || this.rocketModel.attachedTo) &&
-                               this.celestialBodies.some(cb =>
-                                   (cb.model.name === this.rocketModel.landedOn || cb.model.name === this.rocketModel.attachedTo) &&
-                                   cb.model.parentBody != null // un corps orbite ssi il a un parent (updateOrbit, méthode de prototype, est toujours défini)
-                               );
-
-        const isHandledManually = isLandedOnTerre || isOnMobileBody;
+        // Prédicat factorisé dans SynchronizationManager : le hook `afterUpdate` doit appliquer
+        // EXACTEMENT le même test (il s'exécute avant ce point, à la fin de Engine.update).
+        // La logique était auparavant dupliquée ici et absente du hook.
+        const isHandledManually = this.synchronizationManager.isRocketHandledManually(this.rocketModel);
 
         if (!isHandledManually) {
             this.synchronizationManager.syncModelWithPhysics(this.rocketModel);

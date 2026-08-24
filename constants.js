@@ -52,7 +52,12 @@ const PHYSICS = {
     // Seuils d'atterrissage (tous doivent être respectés)
     LANDING_MAX_SPEED: 2500,            // Vitesse scalaire max pour atterrir (utilisation actuelle: vitesse totale, pas verticale)
     LANDING_MAX_ANGLE_DEG: 30,          // Différence angulaire max vs normale de surface (degrés)
-    LANDING_MAX_ANGULAR_VELOCITY: 400,  // Vitesse angulaire max pour atterrir (rad/s)
+    // ⚠️ UNITÉS : comme les vitesses linéaires, `angularVelocity` est en ÉCHELLE MATTER
+    // (≈ rad/s × MATTER_BASE_DELTA). Mesuré : le rapport vaut ~16,7. Ces seuils de 400
+    // correspondent donc à ~24 rad/s réels (≈ 3,8 tours/s), et NON à 400 rad/s comme
+    // l'annotation historique le laissait croire. Ils sont calibrés dans cette échelle :
+    // ne pas les « corriger » vers des rad/s sans recalibrer le gameplay.
+    LANDING_MAX_ANGULAR_VELOCITY: 400,  // Vitesse angulaire max pour atterrir (échelle Matter)
 
     // Seuils de crash (si l’un est dépassé et proximité surface => crash)
     CRASH_ANGLE_DEG: 30,                // Inclinaison vs normale (°) au-delà de laquelle un contact = crash.
@@ -61,7 +66,7 @@ const PHYSICS = {
                                         // où la fusée ne collait ni ne crashait (glissait) depuis l'adoucissement
                                         // des dégâts d'impact (P3). NE PAS ré-écarter sans rétablir des dégâts
                                         // d'impact létaux dans cette bande (cf. CollisionHandler).
-    CRASH_ANGULAR_VELOCITY: 400,        // Vitesse angulaire de crash (rad/s)
+    CRASH_ANGULAR_VELOCITY: 400,        // Vitesse angulaire de crash (échelle Matter, cf. note ci-dessus)
     TAKEOFF_THRUST_THRESHOLD_PERCENT: 10, // Seuil de poussée (en %) pour considérer un décollage actif (était 50)
     // Ajout des catégories de collision
     COLLISION_CATEGORIES: {
@@ -396,16 +401,18 @@ const AI_TRAINING = {
         
         // Vitesse orbitale théorique : v = sqrt(G * M / (R + altitude))
         // Pour altitude=500 : v = sqrt(0.001 * 2e11 / 1220) ≈ 405
-        // ⚠️ Calibrage absolu à valider par entraînement : la vitesse "vue" par l'IA est en unités
-        //    Matter (≈ u/s × 1000/60, cf. PHYSICS.md §1) ; ces cibles (×√10 vs l'ancien G) peuvent
-        //    devoir être re-calibrées empiriquement pour l'objectif 'orbit'.
-        MIN_ORBITAL_SPEED: 316,      // Vitesse minimale pour orbite stable
-        MAX_ORBITAL_SPEED: 506,      // Vitesse maximale pour orbite stable
-        TARGET_ORBITAL_SPEED: 405,   // Vitesse orbitale cible (calculée)
-        
+        // ⚠️ UNITÉS : ces vitesses sont en unités/seconde (u/s). HeadlessRocketEnvironment
+        //    convertit désormais la vélocité du modèle (échelle Matter ≈ u/s × 1000/60,
+        //    cf. PHYSICS.md §1) via _rocketSpeedUnitsPerSec() AVANT de comparer à ces seuils
+        //    (checkOrbitSuccess, calculateOrbitReward et le shaping 'orbit' inline). Avant cette
+        //    correction la comparaison se faisait en échelle Matter -> seuils ~16,7× trop bas.
+        MIN_ORBITAL_SPEED: 316,      // Vitesse minimale pour orbite stable (u/s)
+        MAX_ORBITAL_SPEED: 506,      // Vitesse maximale pour orbite stable (u/s)
+        TARGET_ORBITAL_SPEED: 405,   // Vitesse orbitale cible (calculée, u/s)
+
         // Tolérance pour considérer l'orbite réussie
         ALTITUDE_TOLERANCE: 200,     // ±200 autour de la cible
-        SPEED_TOLERANCE: 95,         // ±95 autour de la vitesse cible (≈ ±30 × √10)
+        SPEED_TOLERANCE: 95,         // ±95 u/s autour de la vitesse cible (≈ ±30 × √10)
         
         // Nombre de pas pour confirmer une orbite stable
         STABILITY_STEPS: 100,        // ~1.67 secondes à 60 FPS
@@ -413,7 +420,7 @@ const AI_TRAINING = {
     
     // Paramètres d'atterrissage
     LANDING: {
-        MAX_LANDING_SPEED: 10,       // Vitesse max pour atterrissage en douceur
+        MAX_LANDING_SPEED: 10,       // Vitesse max (u/s) pour atterrissage en douceur (comparée via _rocketSpeedUnitsPerSec)
         APPROACH_ALTITUDE: 100,      // Altitude pour commencer l'approche finale
     },
     
@@ -436,13 +443,21 @@ const AI_TRAINING = {
     
     // CORRECTION: Configuration avancée des récompenses pour navigation point à point
     // Poids ajustés selon les priorités : Haute > Moyenne > Basse
+    // CORRECTION (équilibrage des composantes) : les poids ci-dessous sont calibrés sur la SOMME
+    // d'épisode de chaque composante, seule grandeur comparable — un terme « par pas » se cumule
+    // sur ~3300 pas alors que la réduction de distance est une somme TÉLESCOPIQUE bornée par son
+    // propre poids. Avant ce ré-étalonnage la répartition mesurée était : heading 85,7 %,
+    // vitesse 10,6 %, zones 1,7 %, delta-distance 0,18 % — l'inverse des priorités documentées.
     NAVIGATE_REWARDS: {
         // PRIORITÉ HAUTE - Guidance immédiate et orientation correcte
-        DISTANCE_DELTA: 100.0,       // Delta Distance Reward (priorité haute) - Poids augmenté car normalisé par distance initiale (~141km)
-        HEADING_ALIGNMENT: 5.0,      // Heading Alignment Reward (priorité haute) - Alignement directionnel vers la cible
+        // Delta Distance : somme d'épisode bornée par ce poids (télescopique) -> le poids EST le
+        // budget total de la composante « progression », d'où sa valeur élevée.
+        DISTANCE_DELTA: 3000.0,      // Delta Distance Reward (priorité haute)
+        // Heading : ≤ ce poids par pas -> somme d'épisode ≈ poids × nb de pas (~3300).
+        HEADING_ALIGNMENT: 1.0,      // Heading Alignment Reward (priorité haute) - Alignement directionnel vers la cible
 
         // PRIORITÉ MOYENNE - Efficacité et motivation
-        VELOCITY_OPTIMAL: 2.0,       // Velocity Control Reward (priorité moyenne) - Vitesse optimale
+        VELOCITY_OPTIMAL: 0.3,       // Velocity Control Reward (priorité moyenne) - Vitesse optimale
         ZONE: 5.0,                   // Progressive Zone Rewards (priorité moyenne) - Récompenses progressives par zones
 
         // PRIORITÉ BASSE - Optimisation théorique
@@ -462,7 +477,10 @@ const AI_TRAINING = {
         BRAKE_ZONE_RATIO: 0.2,      // En dessous de 20% de distance, réduire la vitesse cible
         STABILIZE_ZONE_RATIO: 0.1,  // En dessous de 10%, forte récompense pour vitesse quasi nulle
         STABILIZE_SPEED_REF: 100,   // Vitesse de référence (u/s) pour le calcul de stabilisation
-        STABILIZE_REWARD_WEIGHT: 10, // Poids dédié du bonus de stabilisation (avant: DISTANCE_DELTA=100 réutilisé à tort)
+        // Poids dédié du bonus de stabilisation. Ramené de 10 à 1 : c'est une récompense PAR PAS,
+        // versée dans toute la zone des 10 % restants — à 10/pas, faire du surplace près du point B
+        // rapportait plus que d'y arriver vraiment (cf. SUCCESS_TIME_CREDIT).
+        STABILIZE_REWARD_WEIGHT: 1,
 
         // Récompenses de terminaison
         SUCCESS_REWARD: 1000,        // Récompense finale pour succès (proche ET stabilisé)
@@ -473,6 +491,24 @@ const AI_TRAINING = {
         POTENTIAL_GAMMA: 0.99,       // Facteur de discount pour potential
     },
     
+    // CORRECTION (item 6) : crédit temporel de succès, en récompense PAR PAS RESTANT du budget.
+    // Un succès termine l'épisode : sans ce crédit l'agent renonce à tout le shaping des pas
+    // restants et « flâner » rapporte davantage que réussir (mesuré : navigate 65 308 en flânant
+    // contre 55 014 en réussissant ; orbit +980 en flânant contre +249 en réussissant).
+    // Chaque valeur doit MAJORER le meilleur shaping atteignable par pas de l'objectif :
+    //   navigate : heading 1,0 + vitesse 0,3 + bonus radial 0,2 + stabilisation 1,0 ≈ 2,5
+    //   orbit    : ORBIT_GOOD 0,5 + ORBIT_PERFECT 1,0 = 1,5
+    //   land     : 0,05+0,1+0,2 (approche) + 0,2+0,1+1,0 (calculateLandingReward) ≈ 1,65
+    //   crash_moon : 0,1+0,5+1,0 = 1,6
+    //   explore  : 0,02 (mouvement) + visites ponctuelles
+    SUCCESS_TIME_CREDIT: {
+        navigate: 3.0,
+        orbit: 2.0,
+        land: 2.0,
+        crash_moon: 2.0,
+        explore: 1.0
+    },
+
     // Limites de sécurité
     SAFETY: {
         MIN_SAFE_ALTITUDE: 50,       // Altitude minimale avant alerte crash

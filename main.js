@@ -129,12 +129,14 @@ function init() {
     // Initialiser le GameController (ne prend plus le canvas).
     // Le canvas est maintenant passé à RenderingController et GameSetupController s'en occupe.
     // GameController reçoit le canvas via sa méthode init(), qui le transmettra à GameSetupController.
+    // Les missions ne viennent PAS d'ici : elles sont déclarées par le monde chargé
+    // (`missions[]` dans assets/worlds/*.json) et lues par GameSetupController.buildWorldFromData
+    // -> MissionManager.loadFromData. Un tableau `missions` codé en dur figurait ici ; il n'était
+    // lu par personne (init/_setupModels ignorent ce paramètre) et son schéma
+    // (origin/destination/itemName) ne correspondait pas à celui attendu (from/to/requiredCargo) :
+    // il aurait été intégralement rejeté. Supprimé pour ne pas induire en erreur.
     const config = {
-        missions: [
-            { id: 'deliverMoon', type: 'DELIVERY', itemName: 'Moonrocks', quantity: 5, origin: 'Earth', destination: 'Moon', reward: 100, description: 'Livrer 5 unités de roches lunaires de la Terre à la Lune.' },
-            { id: 'collectMars', type: 'COLLECTION', itemName: 'MarsSoil', quantity: 10, origin: 'Mars', reward: 150, description: 'Collecter 10 unités de sol martien sur Mars.' }
-        ]
-        // ... autres configurations ...
+        // ... configurations éventuelles (aucune n'est consommée pour l'instant) ...
     };
     gameController.init(canvas, config); // Passer le canvas et la config ici
 
@@ -143,36 +145,12 @@ function init() {
     // Afficher les instructions initiales à l'utilisateur
     showInstructions();
 
-    // Gérer la fermeture de la modal des instructions
-    const instructionsModal = document.getElementById('instructionsModal');
-    const closeButton = document.querySelector('.close-button');
-    const understoodButton = document.getElementById('understoodButton');
-
-    function closeModal() {
-        if (instructionsModal) {
-            instructionsModal.style.display = 'none';
-        }
-        // Reprendre le jeu si nécessaire (par exemple, s'il était en pause à cause de la modale)
-        eventBus.emit(EVENTS.GAME.RESUME_IF_PAUSED); 
-        // Demander à CameraController de centrer sur la fusée après la fermeture des instructions
-        if (gameController && gameController.cameraModel && gameController.rocketModel) {
-            console.log("[main.js] Réglage de la caméra pour suivre la fusée après fermeture des instructions.");
-            gameController.cameraModel.setTarget(gameController.rocketModel, 'rocket');
-        }
-    }
-
-    if (closeButton) {
-        closeButton.onclick = closeModal;
-    }
-    if (understoodButton) {
-        understoodButton.onclick = closeModal;
-    }
-
-    // Afficher la modal au démarrage (si elle n'a pas été cachée par CSS initialement)
-    // if (instructionsModal) {
-    //     instructionsModal.style.display = 'block';
-    //     eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE); // Mettre en pause pendant que les instructions sont visibles
-    // }
+    // NOTE: le code de fermeture d'une « modale d'instructions » (#instructionsModal,
+    // .close-button, #understoodButton) a été supprimé : aucun de ces éléments n'existe dans
+    // index.html, les trois lookups renvoyaient null et la fonction closeModal n'était jamais
+    // appelée. L'écran de démarrage réel est le panneau construit dynamiquement par
+    // showInstructions() ci-dessus, dont le bouton « Prêt ! » gère lui-même la fermeture,
+    // le chargement du monde choisi et le recentrage caméra.
 
     // Gestionnaire global d'erreurs pour l'interface utilisateur
     const errorOverlay = document.getElementById('errorOverlay');
@@ -291,7 +269,7 @@ function showInstructions() {
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>G</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher Champ Gravité/Équipotentielles</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>+ / -</b></td><td style="border:1px solid #666; padding: 3px 6px;">Zoom Avant / Arrière (Molette aussi)</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>P / Échap</b></td><td style="border:1px solid #666; padding: 3px 6px;">Mettre en Pause / Reprendre</td></tr>
-                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Vue fusée / Vue libre</td></tr>            
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Centrer la caméra sur la fusée</td></tr>            
                     </tbody>
                 </table>
             </div>
@@ -314,7 +292,8 @@ function showInstructions() {
     
     // Action lors du clic sur le bouton : supprimer le panneau et jouer le son.
     const startBtn = instructions.querySelector('#startButton');
-    startBtn.onclick = () => {
+    let sansEventBus = false;   // voir le repli plus bas
+    const onStart = () => {
         // Verrou anti double-clic : un second clic avant le retrait du panneau
         // émettrait deux UNIVERSE_LOAD_REQUESTED concurrents.
         startBtn.onclick = null;
@@ -333,7 +312,10 @@ function showInstructions() {
         } catch (e) {
             console.warn('[start] Échec de l\'émission UNIVERSE_LOAD_REQUESTED via écran de démarrage:', e);
         }
-        if (instructions.parentNode) { // Vérifier si le panneau est toujours dans le DOM
+        // NOTE: les abonnements RELOAD_COMPLETED / LOAD_FAILED sont posés UNE SEULE FOIS, en
+        // dehors de ce handler (voir plus bas) : les enregistrer ici en rajoutait une paire à
+        // chaque nouvelle tentative après un échec.
+        if (sansEventBus && instructions.parentNode) {
             instructions.parentNode.removeChild(instructions);
         }
         // Jouer le son de compte à rebours après fermeture.
@@ -352,7 +334,46 @@ function showInstructions() {
             }
         }
     };
-    
+    startBtn.onclick = onStart;
+
+    // Le panneau de démarrage n'est retiré qu'au chargement EFFECTIF du monde, et se réarme si le
+    // chargement échoue. `handleUniverseLoadRequested` est asynchrone : le retirer dès le clic
+    // laissait le jeu figé sur « Chargement… » sans aucun moyen de réessayer quand le fetch
+    // échouait (404, JSON invalide, ou ouverture du fichier en file://).
+    const retirerPanneau = () => {
+        if (instructions.parentNode) instructions.parentNode.removeChild(instructions);
+    };
+    if (window.eventBus && window.EVENTS && window.EVENTS.UNIVERSE) {
+        const suivre = (unsub) => {
+            if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
+                window.controllerContainer.track(unsub);
+            }
+        };
+        if (window.EVENTS.UNIVERSE.RELOAD_COMPLETED) {
+            suivre(window.eventBus.subscribe(window.EVENTS.UNIVERSE.RELOAD_COMPLETED, retirerPanneau));
+        }
+        if (window.EVENTS.UNIVERSE.LOAD_FAILED) {
+            suivre(window.eventBus.subscribe(window.EVENTS.UNIVERSE.LOAD_FAILED, () => {
+                if (!instructions.parentNode) return;   // monde déjà chargé : rien à réarmer
+                let msg = instructions.querySelector('#startError');
+                if (!msg) {
+                    msg = document.createElement('div');
+                    msg.id = 'startError';
+                    msg.style.cssText = 'color:#ff8080; font-size:0.8em; margin-top:6px;';
+                    instructions.appendChild(msg);
+                }
+                msg.textContent = "Échec du chargement du monde. Vérifiez que le jeu est servi par un serveur local (python -m http.server), puis réessayez.";
+                startBtn.disabled = false;
+                startBtn.onclick = onStart;
+            }));
+        }
+    } else {
+        // Pas d'EventBus (échec de chargement d'un script) : impossible de savoir quand le monde
+        // est prêt. On revient au comportement historique — retrait au clic — en le faisant DANS
+        // le handler. L'appeler ici serait un no-op : le panneau n'est ajouté au DOM que plus bas.
+        sansEventBus = true;
+    }
+
     // Ajouter le panneau d'instructions complet au corps du document.
     document.body.appendChild(instructions);
 }

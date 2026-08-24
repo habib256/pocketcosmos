@@ -71,12 +71,16 @@ class RocketCargo {
         }
 
         if (quantityToAdd < quantity) {
-            console.log(`%c[RocketCargo] Ajout partiel de ${type}: ${quantityToAdd}/${quantity} ajouté(s). Capacité atteinte (${this.getCurrentLoad()}/${this.maxCapacity}).`, 'color: orange;');
-        } else {
-             console.log(`%c[RocketCargo] Ajout de ${type}: ${quantityToAdd} unité(s). Charge actuelle: ${this.getCurrentLoad()}/${this.maxCapacity}.`, 'color: green;');
+            console.warn(`[RocketCargo] Ajout PARTIEL de ${type}: ${quantityToAdd}/${quantity} ajouté(s). Capacité atteinte (${this.getCurrentLoad()}/${this.maxCapacity}).`);
+            // Retourner false sur un chargement partiel : l'appelant (MissionManager) teste cette
+            // valeur pour avertir. En retournant `true` ici, un chargement incomplet passait
+            // inaperçu — la mission devenait alors impossible à valider (checkMissionCompletion
+            // exige la quantité EXACTE) sans aucun signal, un blocage silencieux.
+            return false;
         }
-        
-        return true; // Ajout (au moins partiel) réussi
+
+        console.log(`%c[RocketCargo] Ajout de ${type}: ${quantityToAdd} unité(s). Charge actuelle: ${this.getCurrentLoad()}/${this.maxCapacity}.`, 'color: green;');
+        return true; // Ajout complet réussi
     }
 
     /**

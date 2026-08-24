@@ -43,6 +43,17 @@ Avec `delta = 1/60` et `_baseDelta = 1000/60`, le facteur vaut **1000**.
 > masse de 1500 donne, à `delta=1/60`, `body.velocity ≈ 152.8` mais un déplacement réel de `0.1528`
 > par pas (rapport 1000). Voir CHANGELOG (fix `35352c8`).
 
+> ⚠️ **La vitesse ANGULAIRE suit exactement le même piège.** `body.angularVelocity` (donc
+> `rocketModel.angularVelocity`) est elle aussi en échelle Matter : **≈ rad/s × MATTER_BASE_DELTA**
+> (rapport ~16,7 mesuré en headless). Conséquences pratiques :
+> - `PHYSICS.LANDING_MAX_ANGULAR_VELOCITY` et `CRASH_ANGULAR_VELOCITY` (400) sont calibrées dans
+>   CETTE échelle — elles valent ~24 rad/s réels (≈ 3,8 tours/s), pas 400 rad/s comme l'annotation
+>   historique le laissait croire. Ne pas les « corriger » en rad/s sans recalibrer le gameplay.
+> - Toute comparaison d'une vitesse angulaire à un seuil exprimé en rad/s doit d'abord diviser par
+>   `MATTER_BASE_DELTA` (c'est ce que fait désormais `RocketAI`).
+> - La feature d'état angulaire de l'IA est calibrée sur `CRASH_ANGULAR_VELOCITY`, dans l'échelle
+>   Matter, pour couvrir toute la plage « rotation sûre → rotation fatale ».
+
 ### 1.3 Convertir une vitesse modèle (u/s) en vitesse Matter
 
 `model.velocity` des corps célestes est en **unités/seconde** (orbital ; voir §5).
@@ -63,10 +74,19 @@ Toutes les conversions `model.velocity (u/s) → vitesse Matter` utilisent **`PH
 | Endroit | Rôle |
 |---|---|
 | `ThrusterPhysics.handleLiftoff` | vélocité héritée au décollage (co‑mouvement avec le corps quitté) |
-| `PhysicsController.update` étape 1 | vélocité Matter du corps mobile (vue par le solveur de collision) |
 | `SynchronizationManager` (posé / débris) | stabilisation : la fusée posée co‑bouge avec le corps |
 | `CollisionHandler.getCelestialBodyVelocity` | vitesse **relative** pour atterrissage/crash |
 | `GameSetupController` (spawn) | vélocité héritée du corps hôte au spawn |
+
+> ⚠️ **EXCEPTION — `PhysicsController.update` étape 1 (corps célestes) : `× deltaTime`, PAS
+> `× MATTER_BASE_DELTA`.** `Body.setVelocity` écrit `positionPrev = position − v × timeScale`, avec
+> `timeScale = body.deltaTime / _baseDelta`. Or `body.deltaTime` n'est mis à jour que par
+> `Body.update`, que `Engine._bodiesUpdate` **saute pour les corps statiques** : les corps célestes
+> gardent `deltaTime = _baseDelta` ⇒ `timeScale = 1`, alors que la fusée (dynamique) obtient
+> `timeScale ≈ 0,001`. Le même facteur ne convient donc pas aux deux. Avec `MATTER_BASE_DELTA` le
+> corps mobile présentait au solveur une vitesse **1000× trop grande** et éjectait la fusée dès
+> qu'elle n'était plus épinglée (décollage depuis une lune en orbite, contact rasant). Corrigé le
+> 2026‑08‑24, vérifié en headless contre le vrai Matter.js 0.19.
 
 > Historique : ces conversions utilisaient `× deltaTime` (~1000× trop petit), ce qui rendait la
 > détection atterrissage/crash **de fait absolue** sur les corps mobiles (une fusée co‑mobile sur une
@@ -169,7 +189,10 @@ Appelé quand `main` est actif et la fusée posée. Une seule fois par décollag
 5. **`Engine.update(engine, deltaTime)`** → gravité (plugin), collisions, intégration. **C'est ici
    que la gravité réelle (G=0,001) agit.**
 6. `synchronizationManager.syncModelWithPhysics` **sauf** si `isHandledManually` (posé/attaché sur
-   un corps mobile, ou posé sur 'Terre').
+   un corps mobile, ou posé sur 'Terre'). ⚠️ En pratique cette étape est un **no-op** : le crochet
+   `afterUpdate` (§4.2) a déjà fait la synchro à la fin de `Engine.update`, donc *avant* ce point.
+   C'est pour cela que le même prédicat est désormais appliqué DANS le crochet
+   (`SynchronizationManager.isRocketHandledManually`, source unique).
 7. `checkRocketLandedStatusPeriodically` (~toutes les 150 ms).
 
 ### 4.2 Crochets Matter (enregistrés par `SynchronizationManager`)
@@ -178,10 +201,20 @@ Appelé quand `main` est actif et la fusée posée. Une seule fois par décollag
 événements du moteur :
 - `beforeUpdate` : `syncMovingBodyPositions()` + (si posé/détruit **et** pas en grâce **et** pas de
   poussée) `handleLandedOrAttachedRocket` + `syncPhysicsWithModel` (modèle → physique).
-- `afterUpdate` : `syncModelWithPhysics` (physique → modèle).
+- `afterUpdate` : `syncModelWithPhysics` (physique → modèle), **sauf si la fusée est épinglée**
+  (`isRocketHandledManually` : posée sur un corps en orbite, ou sur 'Terre').
 
 > La synchro est donc **bidirectionnelle** : `physique → modèle` en vol (`afterUpdate`), mais
 > `modèle → physique` quand la fusée est posée/attachée (pour la coller à la surface).
+
+> ⚠️ **Historique (corrigé le 2026‑08‑24).** Le crochet `afterUpdate` synchronisait sans condition.
+> Comme il s'exécute à la FIN de `Engine.update`, il passait avant le garde de l'étape 6 — qui
+> était donc mort — et réécrivait chaque frame l'épinglage par l'état post‑solveur. Mesuré en
+> headless : sur Phobos (`orbitSpeed` 0,8), la position du modèle oscillait de **±16 unités**, soit
+> ~40 % du rayon du corps ; sur la Lune, la vitesse affichée valait 7,6–8,4 u/s au lieu des 10 u/s
+> du corps porteur, en clignotant (les frames où l'étape 7 réépinglait rétablissaient la bonne
+> valeur). Après correction : écrasement 0,000 u, vitesse exacte, et aucune régression mesurée sur
+> l'atterrissage, le ré‑atterrissage après un saut, ni le décollage.
 
 ### 4.3 Fusée posée sur un corps mobile (épinglage)
 
@@ -232,13 +265,26 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 | type | `rectangle(WIDTH=30, HEIGHT=60)`, dynamique | `circle(radius)`, `isStatic: true` |
 | `mass` | `ROCKET.MASS = 1500` | `bodyModel.mass` (du JSON) |
 | `inertia` | `MASS × 1.5` | — |
-| `friction` | `0` | `0.05` |
-| `frictionAir` | `0.1` | — |
-| `restitution` | `0.05` | `PHYSICS.RESTITUTION = 0.2` |
+| `friction` | `0` | `0.05` demandé → **forcé à `1` par `Body.setStatic`** |
+| `frictionAir` | `0.1` (effet réel ~1000× plus faible, cf. note) | — |
+| `restitution` | `0.05` | `PHYSICS.RESTITUTION = 0.2` demandé → **forcé à `0`** |
 | `sleepThreshold` | `-1` (jamais endormi) | — |
 | `collisionFilter` | cat `ROCKET (0x0001)`, masque `0xFFFFFFFF` | cat `CELESTIAL (0x0002)`, masque `ROCKET` |
 | `plugin.attractors` | `[Attractors.gravity]` | `[Attractors.gravity]` |
-| `angularDamping` | dynamique (assisté : 2.0 / normal : 0.0) | — |
+
+> ⚠️ **Pièges de cette table**
+> - **`Body.setStatic(body, true)` écrase `restitution` (→ 0) et `friction` (→ 1)** après
+>   `Body.create` ; seuls `mass`/`inertia` sont restaurés. `PHYSICS.RESTITUTION = 0.2` est donc un
+>   réglage **mort** : le rebond effectif vient du `restitution: 0.05` de la fusée (`Pair.update`
+>   prend `max(restitution)` et `min(friction)`).
+> - **`angularDamping` n'existe pas dans Matter.js.** La ligne qui figurait ici (« assisté 2.0 /
+>   normal 0.0 ») décrivait une propriété fantôme, sans effet : les constantes
+>   `ASSISTED_ANGULAR_DAMPING` / `NORMAL_ANGULAR_DAMPING` ne sont lues par aucun moteur. Les
+>   écritures ont été supprimées le 2026‑08‑24 ; l'assistance réelle est
+>   `ThrusterPhysics.applyRotationStabilization()` (désormais indépendante du framerate).
+> - **`frictionAir`** est appliqué par Matter comme `1 − frictionAir × (delta/_baseDelta)` ; avec un
+>   `delta` en secondes le facteur vaut ~0,9999 par pas, soit ~0,6 %/s de perte au lieu des 10 %
+>   que la valeur laisse supposer.
 
 ---
 

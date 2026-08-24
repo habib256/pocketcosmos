@@ -101,6 +101,11 @@ class CameraController {
             window.controllerContainer.track(
                 this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, (payload) => {
                     try {
+                        // Annuler tout panoramique en cours : ses ancres (dragStartCameraX/Y)
+                        // référencent la caméra de l'ANCIEN monde. Sans cela, un rechargement
+                        // survenant bouton enfoncé faisait, au mouvement suivant, sauter la vue
+                        // d'une distance arbitraire dans le vide du nouveau monde.
+                        this.isDragging = false;
                         if (this.cameraModel && this.gameController && this.gameController.rocketModel) {
                             this.cameraModel.setTarget(this.gameController.rocketModel, 'rocket');
                             if (this.gameController.rocketModel.position) {
@@ -196,19 +201,17 @@ class CameraController {
     handleCenterCamera() {
         if (this.isSystemPaused) return;
 
-        if (this.cameraModel && this.gameController.rocketModel) {
-            // Vérifier si la caméra suit actuellement la fusée.
-            // Comparer par mode plutôt que par identité d'objet : la référence rocketModel
-            // peut diverger après un reload d'univers (fresh references).
-            if (this.cameraModel.mode === 'rocket') {
-                // Si oui, la détacher et passer en mode libre
-                this.cameraModel.setTarget(null, 'free');
-            } else {
-                // Sinon, la centrer sur la fusée et activer le suivi
-                this.cameraModel.setTarget(this.gameController.rocketModel, 'rocket');
-                // Optionnel: Forcer la position pour un recentrage immédiat.
-                // Actuellement, le lissage dans CameraModel.update() s'en charge progressivement.
-                // this.cameraModel.setPosition(this.gameController.rocketModel.position.x, this.gameController.rocketModel.position.y);
+        const rocketModel = this.gameController && this.gameController.rocketModel;
+        if (this.cameraModel && rocketModel) {
+            // « Centrer sur la fusée » CENTRE, toujours. Ce n'était pas une bascule utile :
+            // le mode par défaut étant déjà 'rocket', l'ancien code détachait la caméra dans le
+            // cas le plus courant — appuyer sur C en vol faisait fuir la fusée hors de l'écran,
+            // et il fallait appuyer une seconde fois pour rétablir le suivi.
+            this.cameraModel.setTarget(rocketModel, 'rocket');
+            // Recentrage IMMÉDIAT : après un panoramique loin de la fusée, le lissage seul
+            // aurait fait dériver la vue lentement à travers tout le monde.
+            if (rocketModel.position) {
+                this.cameraModel.setPosition(rocketModel.position.x, rocketModel.position.y);
             }
         }
     }

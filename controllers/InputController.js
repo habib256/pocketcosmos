@@ -62,6 +62,10 @@ class InputController {
         'Escape': 'pauseGame',
         'KeyM': 'decreaseThrustMultiplier',
         'KeyN': 'increaseThrustMultiplier', // Nouvelle touche pour augmenter
+        // Aide au pilotage (stabilisation automatique de la rotation). La fonctionnalité était
+        // annoncée dans le README mais INATTEIGNABLE : son seul déclencheur était un test sur
+        // `gameController.shouldToggleAssistedControlsOnClick`, propriété jamais affectée.
+        'KeyH': 'toggleAssistedControls',
     };
 
     /**
@@ -236,6 +240,58 @@ class InputController {
      * @param {Function} listener - La fonction à appeler lorsque l'événement se produit.
      * @param {(Object|boolean)} [options={}] - Options pour l'écouteur d'événement (ex: { passive: false }).
      */
+    /**
+     * La cible d'un événement pointeur appartient-elle à la zone de jeu (canvas) ?
+     * Les écouteurs de panoramique sont posés sur `window` afin de continuer à recevoir les
+     * mousemove/mouseup même lorsque le pointeur sort du canvas ; ce filtre garantit qu'un
+     * panoramique ne DÉMARRE que depuis le canvas, et pas depuis les contrôles HTML de la page.
+     * @param {EventTarget} cible
+     * @returns {boolean}
+     * @private
+     */
+    /**
+     * Le jeu doit-il laisser CETTE touche à l'élément qui a le focus ?
+     *
+     * Deux familles de contrôles, à traiter différemment :
+     *  - Saisie/liste (`input` texte, `textarea`, `select`, zone éditable) : ils consomment
+     *    réellement le clavier (lettres, flèches). On leur laisse TOUTES les touches, sinon le
+     *    sélecteur de monde de l'écran de démarrage ne peut pas être piloté au clavier.
+     *  - Activation (`button`, case à cocher, radio) : ils ne consomment qu'Espace et Entrée.
+     *    Tout bloquer pour eux était une RÉGRESSION : un bouton garde le focus après un clic,
+     *    donc cliquer sur ⚙️, sur le bouton son ou sur une case à cocher rendait ensuite le
+     *    clavier du jeu totalement inopérant jusqu'à un clic sur le canvas.
+     * @param {EventTarget} cible - `event.target`
+     * @param {KeyboardEvent} evenement
+     * @returns {boolean} true si la touche appartient à l'élément focalisé, pas au jeu.
+     * @private
+     */
+    _estSaisieUtilisateur(cible, evenement) {
+        if (!cible) return false;
+        if (cible.isContentEditable === true) return true;
+        if (!cible.tagName) return false;
+
+        const tag = String(cible.tagName).toUpperCase();
+        const type = cible.type ? String(cible.type).toLowerCase() : '';
+
+        // Contrôles d'ACTIVATION : seules Espace/Entrée leur reviennent.
+        const estActivation = (tag === 'BUTTON')
+            || (tag === 'INPUT' && ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file'].includes(type));
+        if (estActivation) {
+            const code = evenement && (evenement.code || evenement.key);
+            return code === 'Space' || code === ' ' || code === 'Enter' || code === 'NumpadEnter';
+        }
+
+        // Contrôles de SAISIE / LISTE : tout leur revient.
+        return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'OPTION';
+    }
+
+    _estCibleCanvas(cible) {
+        if (!cible) return false;
+        if (typeof HTMLCanvasElement !== 'undefined' && cible instanceof HTMLCanvasElement) return true;
+        // Repli sans dépendre du constructeur (contextes de test / DOM partiels)
+        return !!(cible.tagName && String(cible.tagName).toUpperCase() === 'CANVAS');
+    }
+
     _addTrackedEventListener(target, type, listener, options = {}) {
         target.addEventListener(type, listener, options);
         // Assure la suppression de l'écouteur lors du nettoyage du contrôleur
@@ -268,6 +324,18 @@ class InputController {
     }
 
     _releaseAllActiveActions() {
+        // Annuler aussi un panoramique en cours : les écouteurs vivent sur `window`, donc un
+        // alt-tab (ou un relâchement au-dessus de l'interface du navigateur) ne produit aucun
+        // mouseup/touchend. Sans cela, au retour dans l'onglet, bouger la souris continuait à
+        // faire glisser la caméra comme si le bouton était toujours enfoncé.
+        if (this.isMouseDragging || this.isTouchDragging) {
+            this.isMouseDragging = false;
+            this.isTouchDragging = false;
+            if (this.eventBus && EVENTS.CAMERA && EVENTS.CAMERA.STOP_DRAG) {
+                this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+            }
+        }
+
         if (this.activeKeyActions && this.activeKeyActions.size > 0) {
             const stopEventByAction = {
                 thrustForward: EVENTS.ROCKET.THRUST_FORWARD_STOP,
@@ -326,8 +394,14 @@ class InputController {
      */
     initMouseEvents() {
         const mouseDownHandler = (e) => {
+            // Le panoramique ne doit démarrer QUE sur la zone de jeu. L'écouteur est posé sur
+            // `window` (pour continuer à recevoir mousemove/mouseup hors canvas), mais sans ce
+            // filtre un clic sur le bouton ⚙️, le bouton son ou une case à cocher déclenchait un
+            // panoramique et faisait sortir la caméra du mode suivi : le joueur cochait une
+            // option et la fusée disparaissait de l'écran.
+            if (!this._estCibleCanvas(e.target)) return;
             // Permettre le drag uniquement avec le bouton gauche ou le bouton du milieu
-            if (e.button === 0 || e.button === 1) { 
+            if (e.button === 0 || e.button === 1) {
                 this.isMouseDragging = true;
                 this.eventBus.emit(EVENTS.CAMERA.START_DRAG, { x: e.clientX, y: e.clientY });
                 // e.preventDefault(); // Peut-être nécessaire si le canvas est dans un élément scrollable
@@ -368,6 +442,9 @@ class InputController {
      */
     initTouchEvents() {
         const touchStartHandler = (event) => {
+            // Même règle qu'à la souris : ne pas démarrer un panoramique depuis les contrôles
+            // de la page (et ne pas leur voler leur comportement via preventDefault).
+            if (!this._estCibleCanvas(event.target)) return;
             if (event.touches.length === 1) { // Gérer le drag avec un seul doigt
                 const touch = event.touches[0];
                 this.isTouchDragging = true;
@@ -379,6 +456,16 @@ class InputController {
         this._addTrackedEventListener(window, 'touchstart', touchStartHandler, { passive: false });
 
         const touchMoveHandler = (event) => {
+            // Un second doigt met fin au panoramique : sinon `isTouchDragging` restait vrai alors
+            // que plus aucun preventDefault n'était appelé — la page se mettait à défiler/zoomer
+            // derrière le canvas, et lever un seul doigt émettait STOP_DRAG doigt encore posé.
+            if (this.isTouchDragging && event.touches.length !== 1) {
+                this.isTouchDragging = false;
+                if (this.eventBus && EVENTS.CAMERA && EVENTS.CAMERA.STOP_DRAG) {
+                    this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+                }
+                return;
+            }
             if (this.isTouchDragging && event.touches.length === 1) {
                 const touch = event.touches[0];
                 this.eventBus.emit(EVENTS.CAMERA.DRAG, { x: touch.clientX, y: touch.clientY });
@@ -476,8 +563,30 @@ class InputController {
             // Vider les axes maintenus et arrêter toute rotation en cours pour éviter une rotation bloquée.
             this.heldAxes = {};
             this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 });
+            // Relâcher uniquement les actions issues de la MANETTE : une manette débranchée
+            // bouton enfoncé laisse sinon 'thrustForward_gamepad_boost' dans activeKeyActions.
+            // Comme _hasActiveSourceFor() y verrait toujours une source active, plus aucun
+            // relâchement clavier ne pourrait couper le propulseur.
+            // On ne touche pas aux touches clavier encore physiquement enfoncées (les relâcher
+            // couperait la poussée d'un joueur qui maintient W au moment du débranchement).
+            this._releaseGamepadActions();
             this.eventBus.emit(EVENTS.INPUT.GAMEPAD_DISCONNECTED, { id: disconnectedId });
             this.noGamepadLogged = false; // Réinitialiser lors de la déconnexion
+
+            // Ré-adopter une autre manette encore branchée. Le scan initial n'a lieu que dans le
+            // constructeur et `gamepadconnected` ne sera pas réémis pour une manette déjà là :
+            // avec deux manettes, débrancher l'active laissait le jeu SANS manette jusqu'à ce que
+            // le joueur débranche/rebranche la seconde.
+            try {
+                const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : [];
+                for (let i = 0; i < pads.length; i++) {
+                    // Exclure explicitement la manette qu'on vient de débrancher : certains
+                    // navigateurs laissent son entrée dans le tableau au moment de l'événement.
+                    // L'adopter à nouveau serait sans retour : update() sortirait aussitôt
+                    // (slot devenu null) et connectGamepad refuserait toute manette suivante.
+                    if (pads[i] && pads[i].index !== gamepad.index) { this.connectGamepad(pads[i]); break; }
+                }
+            } catch (e) { /* API indisponible : on reste sans manette */ }
         }
     }
     
@@ -490,6 +599,19 @@ class InputController {
      * @param {KeyboardEvent} event - L'objet événement keydown.
      */
     handleKeyDown(event) {
+        // Ne pas capter le clavier quand la saisie appartient à un contrôle HTML de la page.
+        // L'écouteur vit sur `window` : sans ce filtre, une flèche pressée sur le sélecteur de
+        // monde de l'écran de démarrage était AVALÉE par preventDefault() (impossible de changer
+        // de monde au clavier) tout en émettant une commande de poussée à la fusée. Idem pour
+        // Espace/Échap sur un bouton ou une case à cocher ayant le focus.
+        if (this._estSaisieUtilisateur(event.target, event)) return;
+
+        // Ne pas détourner les raccourcis système/navigateur. Les modificateurs n'étaient testés
+        // que pour décider du preventDefault : le `switch` s'exécutait quand même, si bien que
+        // Cmd/Ctrl+C recentrait la caméra, Cmd/Ctrl+V basculait les vecteurs, Ctrl+R
+        // réinitialisait la fusée et Cmd+A allumait un propulseur latéral.
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+
         const actionName = this.keyMap[event.code] || this.keyMap[event.key];
         if (!actionName) return;
 
@@ -541,6 +663,71 @@ class InputController {
     }
     
     /**
+     * Relâche les seules actions provenant de la manette (entrées `${action}_gamepad...`),
+     * en n'émettant un _STOP que si plus aucune autre source (clavier) ne maintient l'action.
+     * Utilisé au débranchement de la manette : ses boutons ne produiront plus jamais de front
+     * descendant, leurs entrées resteraient donc actives à vie.
+     * @private
+     */
+    _releaseGamepadActions() {
+        if (!this.activeKeyActions || this.activeKeyActions.size === 0) return;
+
+        const groupesParAction = {
+            thrustForward: ['thrustForward', 'boost'],
+            boost: ['thrustForward', 'boost'],
+            thrustBackward: ['thrustBackward'],
+            rotateLeft: ['rotateLeft'],
+            rotateRight: ['rotateRight'],
+        };
+        const stopEventByAction = {
+            thrustForward: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+            boost: EVENTS.ROCKET.THRUST_FORWARD_STOP,
+            thrustBackward: EVENTS.ROCKET.THRUST_BACKWARD_STOP,
+            rotateLeft: EVENTS.ROCKET.ROTATE_LEFT_STOP,
+            rotateRight: EVENTS.ROCKET.ROTATE_RIGHT_STOP,
+        };
+
+        // Collecter d'abord (on ne modifie pas le Set pendant l'itération).
+        const entreesGamepad = [];
+        for (const entry of this.activeKeyActions) {
+            const idx = entry.indexOf('_gamepad');
+            if (idx > 0) entreesGamepad.push({ entry, action: entry.slice(0, idx) });
+        }
+        for (const { entry, action } of entreesGamepad) {
+            this.activeKeyActions.delete(entry);
+            const groupe = groupesParAction[action];
+            const stopEvent = stopEventByAction[action];
+            if (stopEvent && (!groupe || !this._hasActiveSourceFor(groupe))) {
+                this.eventBus.emit(stopEvent);
+            }
+        }
+    }
+
+    /**
+     * Indique si au moins une source (touche clavier ou bouton gamepad) est encore active
+     * pour l'une des actions données.
+     * Plusieurs touches sont des alias de la même action (ArrowUp / KeyW / Space -> poussée
+     * principale, ArrowRight / KeyA -> rotation gauche, etc.). Sans ce comptage, relâcher
+     * une seule des touches maintenues coupait le propulseur alors qu'une autre était
+     * toujours enfoncée — et la répétition clavier ne pouvait pas le réarmer, la touche
+     * restant présente dans `activeKeyActions`.
+     * @param {string[]} actionNames - Noms d'actions formant le même groupe logique.
+     * @returns {boolean} true si une source du groupe est encore active.
+     * @private
+     */
+    _hasActiveSourceFor(actionNames) {
+        for (const entry of this.activeKeyActions) {
+            for (const name of actionNames) {
+                // Entrées clavier: `${action}-${code}` ; entrées gamepad: `${action}_gamepad...`
+                if (entry === name || entry.startsWith(`${name}-`) || entry.startsWith(`${name}_`)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Gère les événements de relâchement d'une touche du clavier (`keyup`).
      * Identifie l'action associée à la touche. Pour les actions continues (ex: propulsion),
      * émet un événement `_STOP` via l'EventBus et met à jour `activeKeyActions`.
@@ -548,9 +735,28 @@ class InputController {
      * @param {KeyboardEvent} event - L'objet événement keyup.
      */
     handleKeyUp(event) {
+        // Symétrique de handleKeyDown pour les raccourcis système. On NE filtre pas les
+        // relâchements d'actions continues : si une touche a été enfoncée sans modificateur puis
+        // relâchée avec (l'utilisateur presse Cmd entre-temps), l'arrêt doit passer quand même,
+        // sans quoi le propulseur resterait allumé.
+        const actionNamePeutEtreContinu = this.keyMap[event.code] || this.keyMap[event.key];
+        const estContinu = ['thrustForward', 'boost', 'thrustBackward', 'rotateLeft', 'rotateRight']
+            .includes(actionNamePeutEtreContinu);
+        if (!estContinu && (event.ctrlKey || event.metaKey || event.altKey)) return;
+
         const actionName = this.keyMap[event.code] || this.keyMap[event.key];
         if (!actionName) return;
-        
+
+        // Le RELÂCHEMENT d'une action continue est toujours traité, quel que soit l'élément
+        // focalisé : il ne peut qu'ARRÊTER quelque chose. Le focus peut changer touche enfoncée
+        // (maintenir W puis cliquer sur un contrôle de la page) ; filtrer ce keyup comme le
+        // keydown laisserait le propulseur allumé indéfiniment, sans aucun moyen de le couper.
+        // Les actions "coup unique" (R, P, T, V, I, H, zoom…), elles, sont bien filtrées :
+        // elles déclenchent une commande de jeu et ne doivent pas partir pendant une saisie.
+        const estRelachementContinu = (actionName === 'thrustForward' || actionName === 'boost'
+            || actionName === 'thrustBackward' || actionName === 'rotateLeft' || actionName === 'rotateRight');
+        if (!estRelachementContinu && this._estSaisieUtilisateur(event.target, event)) return;
+
         const actionKey = `${actionName}-${event.code || event.key}`;
 
         switch (actionName) {
@@ -558,25 +764,33 @@ class InputController {
             case 'boost':
                 if (this.activeKeyActions.has(actionKey)) {
                     this.activeKeyActions.delete(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                    if (!this._hasActiveSourceFor(['thrustForward', 'boost'])) {
+                        this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                    }
                 }
                 break;
             case 'thrustBackward':
                 if (this.activeKeyActions.has(actionKey)) {
                     this.activeKeyActions.delete(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                    if (!this._hasActiveSourceFor(['thrustBackward'])) {
+                        this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                    }
                 }
                 break;
             case 'rotateLeft':
                 if (this.activeKeyActions.has(actionKey)) {
                     this.activeKeyActions.delete(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_STOP);
+                    if (!this._hasActiveSourceFor(['rotateLeft'])) {
+                        this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_STOP);
+                    }
                 }
                 break;
             case 'rotateRight':
                 if (this.activeKeyActions.has(actionKey)) {
                     this.activeKeyActions.delete(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_STOP);
+                    if (!this._hasActiveSourceFor(['rotateRight'])) {
+                        this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_STOP);
+                    }
                 }
                 break;
             // Actions "coup unique"
@@ -598,6 +812,11 @@ class InputController {
             case 'toggleAI':
                 console.log("[InputController] Émission de EVENTS.AI.TOGGLE_CONTROL due à KeyI (keyup)");
                 this.eventBus.emit(EVENTS.AI.TOGGLE_CONTROL);
+                break;
+            case 'toggleAssistedControls':
+                if (EVENTS.UI && EVENTS.UI.TOGGLE_ASSISTED_CONTROLS) {
+                    this.eventBus.emit(EVENTS.UI.TOGGLE_ASSISTED_CONTROLS);
+                }
                 break;
             case 'pauseGame':
                 this.eventBus.emit(EVENTS.GAME.TOGGLE_PAUSE);
@@ -653,6 +872,21 @@ class InputController {
                 // L'axe vient d'être relâché
                 if (action === 'rotate') {
                     this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: 0 }); // Arrêter la rotation
+                    // Le zéro ci-dessus coupe les DEUX propulseurs latéraux. Si une touche de
+                    // rotation est encore physiquement maintenue au clavier, il faut la réarmer :
+                    // sans cela, relâcher le stick tuait définitivement la rotation clavier
+                    // (aucun nouveau _START n'est émis, la touche étant déjà dans activeKeyActions).
+                    //
+                    // ⚠️ On réémet un ROTATE_COMMAND, PAS un ROTATE_LEFT/RIGHT_START : ces derniers
+                    // demandent la reprise du jeu (RESUME_IF_PAUSED). Or ce code s'exécute dans
+                    // update(), désormais appelé aussi en pause — un stick qui revient au neutre
+                    // aurait donc RELANCÉ la partie tout seul, propulseur latéral à pleine
+                    // puissance. ROTATE_COMMAND, lui, est ignoré en pause (cf. handleRotateCommand).
+                    const gauche = this._hasActiveSourceFor(['rotateLeft']);
+                    const droite = this._hasActiveSourceFor(['rotateRight']);
+                    if (gauche !== droite) {   // une seule direction tenue : les deux s'annulent
+                        this.eventBus.emit(EVENTS.INPUT.ROTATE_COMMAND, { value: gauche ? 1 : -1 });
+                    }
                 } else if (action === 'zoomAxis') {
                     // Pour le zoom, un événement ZOOM_COMMAND avec valeur 0 peut être émis si nécessaire,
                     // ou la logique consommatrice peut simplement arrêter le zoom en l'absence de nouvelles commandes.
@@ -722,12 +956,18 @@ class InputController {
                     // Gérer le relâchement si nécessaire (par exemple, pour arrêter une action continue)
                     switch (action) {
                         case 'boost':
-                            this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                            // Même règle qu'au clavier : ne couper que si plus aucune source
+                            // (touche ou bouton) ne demande la poussée avant.
                             this.activeKeyActions.delete('thrustForward_gamepad_boost');
+                            if (!this._hasActiveSourceFor(['thrustForward', 'boost'])) {
+                                this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
+                            }
                             break;
                         case 'thrustBackward':
-                            this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
                             this.activeKeyActions.delete('thrustBackward_gamepad');
+                            if (!this._hasActiveSourceFor(['thrustBackward'])) {
+                                this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
+                            }
                             break;
                         // Les autres actions sont des "toggles" ou des actions uniques, pas besoin de _STOP
                     }

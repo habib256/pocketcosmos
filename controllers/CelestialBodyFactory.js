@@ -346,78 +346,276 @@ class CelestialBodyFactory {
     }
 
     /**
+     * Vrai si `valeur` est un nombre FINI. `typeof x === 'number'` ne suffit PAS :
+     * NaN et Infinity le satisfont, et une seule de ces valeurs injectée dans un corps
+     * Matter empoisonne tout le monde physique (fusée NaN en une frame, irrécupérable
+     * même après un reset). Les chaînes numériques ("1e3") sont volontairement rejetées :
+     * elles se propagent en CONCATÉNATIONS de chaînes dans Matter (positions qui grossissent
+     * à chaque frame) au lieu d'additions.
+     * @param {*} valeur
+     * @returns {boolean}
+     */
+    static estNombreFini(valeur) {
+        return typeof valeur === 'number' && isFinite(valeur);
+    }
+
+    /**
+     * Décrit une valeur pour un message d'erreur. `JSON.stringify` transforme NaN et
+     * Infinity en `null` (le message deviendrait mensonger) : on passe donc par String()
+     * pour les nombres.
+     * @private
+     */
+    static _decrire(valeur) {
+        if (typeof valeur === 'number') return String(valeur);
+        try { return JSON.stringify(valeur); } catch (e) { return String(valeur); }
+    }
+
+    /**
+     * Lit un champ numérique de configuration en garantissant un nombre FINI.
+     * Absent (undefined/null) => valeur par défaut sans bruit. Présent mais invalide
+     * (chaîne, NaN, Infinity, objet) => avertissement nommant le corps ET le champ,
+     * puis valeur par défaut : on préfère un monde cohérent et bruyant à un monde NaN.
+     * @private
+     */
+    static _lireNombre(valeur, defaut, nomCorps, champ) {
+        if (valeur === undefined || valeur === null) return defaut;
+        if (CelestialBodyFactory.estNombreFini(valeur)) return valeur;
+        console.warn(`[CelestialBodyFactory] Corps '${nomCorps}': champ '${champ}' invalide (${typeof valeur} ${CelestialBodyFactory._decrire(valeur)}), il doit être un nombre fini. Valeur ${defaut} utilisée.`);
+        return defaut;
+    }
+
+    /**
+     * Lit un point {x, y} de configuration en garantissant deux nombres FINIS.
+     * Rejette explicitement les tableaux ([10,20]) et les chaînes ("0,0") qui passaient
+     * la simple vérification de véracité et produisaient des positions Matter NaN — ou pire,
+     * des positions devenant des chaînes concaténées de plus en plus longues.
+     * @private
+     */
+    static _lirePoint(valeur, defaut, nomCorps, champ) {
+        if (valeur === undefined || valeur === null) return { x: defaut.x, y: defaut.y };
+        if (typeof valeur !== 'object' || Array.isArray(valeur)) {
+            console.warn(`[CelestialBodyFactory] Corps '${nomCorps}': champ '${champ}' invalide (${Array.isArray(valeur) ? 'tableau' : typeof valeur} ${CelestialBodyFactory._decrire(valeur)}), un objet {x, y} est attendu. Valeur (${defaut.x}, ${defaut.y}) utilisée.`);
+            return { x: defaut.x, y: defaut.y };
+        }
+        if (!CelestialBodyFactory.estNombreFini(valeur.x) || !CelestialBodyFactory.estNombreFini(valeur.y)) {
+            console.warn(`[CelestialBodyFactory] Corps '${nomCorps}': champ '${champ}' non fini (x=${CelestialBodyFactory._decrire(valeur.x)}, y=${CelestialBodyFactory._decrire(valeur.y)}). Valeur (${defaut.x}, ${defaut.y}) utilisée.`);
+            return { x: defaut.x, y: defaut.y };
+        }
+        return { x: valeur.x, y: valeur.y };
+    }
+
+    /**
+     * Normalise un nom de corps en CHAÎNE non vide.
+     * Un nom numérique laissait `rocketModel.landedOn` valoir un nombre : missions et
+     * ravitaillement (qui comparent des chaînes) ne se déclenchaient jamais, sans le moindre
+     * message. On convertit donc, bruyamment, plutôt que de laisser un monde à moitié muet.
+     * @private
+     */
+    static _normaliserNom(nom, index) {
+        if (typeof nom === 'string' && nom.length > 0) return nom;
+        if (CelestialBodyFactory.estNombreFini(nom) || typeof nom === 'boolean') {
+            const converti = String(nom);
+            console.warn(`[CelestialBodyFactory] bodies[${index}]: 'name' n'est pas une chaîne (${typeof nom} ${converti}). Converti en "${converti}" — sinon les missions et le ravitaillement ne se déclenchent jamais sur ce corps.`);
+            return converti;
+        }
+        const genere = `Corps#${index}`;
+        console.warn(`[CelestialBodyFactory] bodies[${index}]: 'name' absent ou invalide (${CelestialBodyFactory._decrire(nom)}). Nom de repli "${genere}" attribué.`);
+        return genere;
+    }
+
+    /**
      * Crée des CelestialBodyModel à partir d'un tableau de configurations.
      * Chaque config peut référencer un parent par name via parentName.
+     *
+     * TOUT champ numérique est validé comme nombre FINI avant usage (voir estNombreFini) :
+     * une seule valeur NaN/Infinity/chaîne suffisait à rendre le monde injouable en silence.
      * @param {Array<{id?:string,name:string,mass:number,radius:number,position?:{x:number,y:number},color?:string,parentName?:string,orbitDistance?:number,initialOrbitAngle?:number,orbitSpeed?:number}>} configs
      * @returns {CelestialBodyModel[]}
      */
     createCelestialBodiesFromConfigs(configs) {
         const created = [];
-        const nameToBody = {};
+        // Table nom -> corps SANS prototype. Avec un objet littéral, un corps nommé
+        // "__proto__" remplaçait le prototype de la table : ensuite des parentName tout à
+        // fait ordinaires ('position', 'mass', 'name', 'constructor', 'toString') résolvaient
+        // vers des membres HÉRITÉS, `parentBody` devenait un non-corps, updateOrbit levait une
+        // TypeError et le monde entier était rejeté. Object.create(null) supprime la chaîne.
+        const nameToBody = Object.create(null);
+
+        if (!Array.isArray(configs)) {
+            console.warn('[CelestialBodyFactory] createCelestialBodiesFromConfigs: configs n\'est pas un tableau, aucun corps créé.');
+            return created;
+        }
+
+        // Garde-fou de VOLUME. Le plugin matter-attractors est QUADRATIQUE : mesuré à 60 FPS,
+        // 203 corps = 3 à 4 ms/frame, 1003 corps = 80 à 95 ms/frame (~10 FPS), 3003 corps =
+        // 718 ms/frame (le jeu est figé). Le budget d'une frame est de 16,7 ms, atteint vers
+        // ~450 corps. On tronque là où la simulation reste réactive, même si elle est lente.
+        // Les 6 mondes livrés comptent au plus 20 corps.
+        const SEUIL_ALERTE_CORPS = 200;   // au-delà : encore jouable, mais on prévient
+        const MAX_CORPS = 1000;           // au-delà : ~13 FPS ou pire, on tronque
+        let listeConfigs = configs;
+        if (listeConfigs.length > MAX_CORPS) {
+            console.error(`[CelestialBodyFactory] ${listeConfigs.length} corps célestes demandés : TRONQUÉ à ${MAX_CORPS}. Au-delà, le coût gravitationnel quadratique dépasse 78 ms/frame et le jeu est injouable.`);
+            listeConfigs = listeConfigs.slice(0, MAX_CORPS);
+        } else if (listeConfigs.length > SEUIL_ALERTE_CORPS) {
+            console.warn(`[CelestialBodyFactory] ${listeConfigs.length} corps célestes : au-delà de ~450 corps le budget de 16,7 ms/frame est dépassé (gravité quadratique). Baisses de FPS attendues.`);
+        }
 
         // Première passe: créer les corps sans parent assigné
-        for (const cfg of configs) {
+        for (let index = 0; index < listeConfigs.length; index++) {
+            const cfg = listeConfigs[index];
+            // Une entrée non-objet (null, chaîne, nombre) faisait lever une TypeError qui
+            // annulait le CHARGEMENT COMPLET du monde. On l'ignore désormais, bruyamment.
+            if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+                console.warn(`[CelestialBodyFactory] bodies[${index}] ignoré : ce n'est pas un objet de configuration (${CelestialBodyFactory._decrire(cfg)}).`);
+                continue;
+            }
+
+            const nom = CelestialBodyFactory._normaliserNom(cfg.name, index);
+
             // Validation masse/rayon : un corps avec mass<=0 ou radius<=0 est dégénéré
-            // (gravité nulle, rendu invalide). On l'ignore avec un avertissement plutôt
+            // (gravité nulle, rendu invalide). NON FINI est encore pire : une masse Infinity
+            // (JSON `1e400` se parse en Infinity) donne un corps Matter de masse infinie qui
+            // rend la fusée NaN en une frame. On l'ignore avec un avertissement plutôt
             // que de casser la simulation.
-            if (!(typeof cfg.mass === 'number' && cfg.mass > 0) ||
-                !(typeof cfg.radius === 'number' && cfg.radius > 0)) {
-                console.warn(`[CelestialBodyFactory] Corps céleste ignoré (masse ou rayon invalide): name="${cfg.name}", mass=${cfg.mass}, radius=${cfg.radius}`);
+            // Bornes hautes : un rayon de 1e300 est FINI mais l'aire calculée par
+            // Matter.Bodies.circle (∝ r²) déborde à Infinity, ce qui rend là encore la fusée
+            // NaN. Les mondes livrés culminent à mass=1e13 et radius=1400 ; ces plafonds
+            // laissent 6 ordres de grandeur de marge tout en gardant l'arithmétique de Matter
+            // très loin des limites du double.
+            const MASSE_MAX = 1e20;
+            const RAYON_MAX = 1e9;
+            if (!(CelestialBodyFactory.estNombreFini(cfg.mass) && cfg.mass > 0) ||
+                !(CelestialBodyFactory.estNombreFini(cfg.radius) && cfg.radius > 0)) {
+                console.warn(`[CelestialBodyFactory] Corps céleste ignoré (masse ou rayon invalide : nombre fini strictement positif attendu): name="${nom}", mass=${CelestialBodyFactory._decrire(cfg.mass)}, radius=${CelestialBodyFactory._decrire(cfg.radius)}`);
+                continue;
+            }
+            if (cfg.mass > MASSE_MAX || cfg.radius > RAYON_MAX) {
+                console.warn(`[CelestialBodyFactory] Corps céleste ignoré (démesuré : mass=${CelestialBodyFactory._decrire(cfg.mass)} > ${MASSE_MAX} ou radius=${CelestialBodyFactory._decrire(cfg.radius)} > ${RAYON_MAX}): name="${nom}". Les calculs de Matter déborderaient et empoisonneraient tout le monde en NaN.`);
                 continue;
             }
 
             // hasAtmosphere : piloté par cfg.atmosphere.exists si fourni, sinon défaut du modèle (nom).
             const options = {};
-            if (cfg.atmosphere && typeof cfg.atmosphere.exists === 'boolean') {
+            const atmoValide = !!cfg.atmosphere && typeof cfg.atmosphere === 'object' && !Array.isArray(cfg.atmosphere);
+            if (cfg.atmosphere && !atmoValide) {
+                console.warn(`[CelestialBodyFactory] Corps '${nom}': 'atmosphere' n'est pas un objet (${CelestialBodyFactory._decrire(cfg.atmosphere)}), ignorée.`);
+            }
+            if (atmoValide && typeof cfg.atmosphere.exists === 'boolean') {
                 options.hasAtmosphere = cfg.atmosphere.exists;
             }
 
             const body = new CelestialBodyModel(
-                cfg.name,
+                nom,
                 cfg.mass,
                 cfg.radius,
-                cfg.position || { x: 0, y: 0 },
-                cfg.color || '#FFFFFF',
+                CelestialBodyFactory._lirePoint(cfg.position, { x: 0, y: 0 }, nom, 'position'),
+                typeof cfg.color === 'string' ? cfg.color : '#FFFFFF',
                 null,
-                cfg.orbitDistance || 0,
-                typeof cfg.initialOrbitAngle === 'number' ? cfg.initialOrbitAngle : 0,
-                cfg.orbitSpeed || 0,
+                CelestialBodyFactory._lireNombre(cfg.orbitDistance, 0, nom, 'orbitDistance'),
+                CelestialBodyFactory._lireNombre(cfg.initialOrbitAngle, 0, nom, 'initialOrbitAngle'),
+                CelestialBodyFactory._lireNombre(cfg.orbitSpeed, 0, nom, 'orbitSpeed'),
                 options
             );
+            if (cfg.color !== undefined && typeof cfg.color !== 'string') {
+                console.warn(`[CelestialBodyFactory] Corps '${nom}': 'color' n'est pas une chaîne (${CelestialBodyFactory._decrire(cfg.color)}), couleur par défaut #FFFFFF utilisée.`);
+            }
             // Propriétés additionnelles optionnelles
             if (cfg.hasRings) {
                 body.hasRings = !!cfg.hasRings;
             }
-            if (cfg.atmosphere) {
+            if (atmoValide) {
                 // cfg.atmosphere: { exists?:boolean, height?:number, color?:string }
                 body.atmosphere = body.atmosphere || {};
                 if (typeof cfg.atmosphere.exists === 'boolean') {
                     body.atmosphere.exists = cfg.atmosphere.exists;
+                } else if (cfg.atmosphere.exists !== undefined) {
+                    console.warn(`[CelestialBodyFactory] Corps '${nom}': atmosphere.exists n'est pas un booléen (${typeof cfg.atmosphere.exists} ${CelestialBodyFactory._decrire(cfg.atmosphere.exists)}), ignoré (valeur par défaut conservée).`);
                 }
-                if (typeof cfg.atmosphere.height === 'number') {
-                    // height est exprimée en proportion du rayon si <=1, sinon valeur monde
-                    body.atmosphere.height = cfg.atmosphere.height <= 1 ? (cfg.radius * cfg.atmosphere.height) : cfg.atmosphere.height;
+                if (CelestialBodyFactory.estNombreFini(cfg.atmosphere.height)) {
+                    // height est exprimée en proportion du rayon si <=1, sinon valeur monde.
+                    // Une valeur NÉGATIVE passait par la branche "proportion" et pouvait donner
+                    // un rayon d'atmosphère négatif : ctx.arc() lève alors IndexSizeError, ce qui
+                    // interrompt le rendu de CHAQUE frame -> écran définitivement figé.
+                    const hauteur = cfg.atmosphere.height <= 1
+                        ? (cfg.radius * cfg.atmosphere.height)
+                        : cfg.atmosphere.height;
+                    if (hauteur >= 0) {
+                        body.atmosphere.height = hauteur;
+                    } else {
+                        console.warn(`[CelestialBodyFactory] Corps '${nom}': atmosphere.height négative (${cfg.atmosphere.height}) ignorée.`);
+                    }
+                } else if (cfg.atmosphere.height !== undefined && cfg.atmosphere.height !== null) {
+                    console.warn(`[CelestialBodyFactory] Corps '${nom}': atmosphere.height invalide (${typeof cfg.atmosphere.height} ${CelestialBodyFactory._decrire(cfg.atmosphere.height)}), un nombre fini est attendu. Hauteur par défaut conservée.`);
                 }
                 if (typeof cfg.atmosphere.color === 'string') {
                     body.atmosphere.color = cfg.atmosphere.color;
+                } else if (cfg.atmosphere.color !== undefined) {
+                    console.warn(`[CelestialBodyFactory] Corps '${nom}': atmosphere.color n'est pas une chaîne (${CelestialBodyFactory._decrire(cfg.atmosphere.color)}), ignorée.`);
                 }
             }
             created.push(body);
             // Conserver le lien config<->body pour les passes suivantes, car des corps
             // peuvent avoir été ignorés (les index de `configs` et `created` ne sont plus alignés).
             body._sourceConfig = cfg;
-            nameToBody[cfg.name] = body;
+            // NOMS DUPLIQUÉS : `universeModel.celestialBodies.find` (spawn, ceintures, missions)
+            // renvoie le PREMIER corps portant le nom, alors que cette table conservait le DERNIER.
+            // Une lune pouvait donc orbiter une autre "Terre" que celle où la fusée apparaît.
+            // Règle retenue : le PREMIER corps gagne, pour coïncider avec tous les `.find` du jeu.
+            if (nameToBody[nom] !== undefined) {
+                console.warn(`[CelestialBodyFactory] Nom de corps DUPLIQUÉ : "${nom}" (bodies[${index}]). Le premier corps portant ce nom reste la référence pour parentName, le spawn, les ceintures et les missions ; le doublon existe toujours mais n'est plus adressable par son nom.`);
+            } else {
+                nameToBody[nom] = body;
+            }
         }
 
         // Deuxième passe: lier les parents (par name) pour tous les corps valides.
         for (const body of created) {
             const cfg = body._sourceConfig;
-            if (cfg.parentName) {
-                if (nameToBody[cfg.parentName]) {
-                    body.parentBody = nameToBody[cfg.parentName];
+            let parentNom = null;
+            if (cfg.parentName !== undefined && cfg.parentName !== null && cfg.parentName !== '') {
+                if (typeof cfg.parentName === 'string') {
+                    parentNom = cfg.parentName;
+                } else if (CelestialBodyFactory.estNombreFini(cfg.parentName) || typeof cfg.parentName === 'boolean') {
+                    // Cohérent avec _normaliserNom, qui convertit aussi les noms numériques.
+                    parentNom = String(cfg.parentName);
                 } else {
-                    console.warn(`[CelestialBodyFactory] Corps '${cfg.name}': parentName '${cfg.parentName}' introuvable (typo ou parent ignoré). Le corps restera statique à sa position initiale (${cfg.position ? `${cfg.position.x},${cfg.position.y}` : '0,0'}).`);
+                    console.warn(`[CelestialBodyFactory] Corps '${body.name}': 'parentName' invalide (${typeof cfg.parentName} ${CelestialBodyFactory._decrire(cfg.parentName)}), lien ignoré.`);
                 }
+            }
+            if (parentNom !== null) {
+                if (parentNom === body.name) {
+                    // Un corps parent de LUI-MÊME diverge irrémédiablement : updateOrbit ajoute sa
+                    // propre position/vélocité à elle-même à chaque frame, la vélocité DOUBLE par
+                    // frame et atteint l'infini en ~1100 frames, ce qui empoisonne définitivement
+                    // le monde Matter. Une simple faute de frappe dans un preset suffisait.
+                    console.error(`[CelestialBodyFactory] Corps '${body.name}': parentName identique au nom du corps (auto-parent). Lien ignoré — le corps restera statique.`);
+                } else if (Object.prototype.hasOwnProperty.call(nameToBody, parentNom)) {
+                    body.parentBody = nameToBody[parentNom];
+                } else {
+                    console.warn(`[CelestialBodyFactory] Corps '${body.name}': parentName '${parentNom}' introuvable (typo ou parent ignoré). Le corps restera statique à sa position initiale (${body.position.x},${body.position.y}).`);
+                }
+            }
+        }
+
+        // Deuxième passe bis: BRISER LES CYCLES d'orbite (A->B->A, A->B->C->A, ...).
+        // Seul l'auto-parent (cycle de longueur 1) était détecté. Sur un cycle plus long,
+        // updateOrbit ajoute à chaque frame la position ET la vélocité de chaque parent à son
+        // enfant : le système entier s'emballe (~20 000 unités/frame mesurées, corps à 6e6 après
+        // 5 s) sans le moindre message. On remonte la chaîne avec un ensemble de corps déjà vus
+        // et on coupe le lien qui referme la boucle : le corps concerné devient statique, tous
+        // les autres liens de la chaîne restent valides.
+        for (const body of created) {
+            const vus = new Set();
+            let courant = body;
+            while (courant && courant.parentBody) {
+                vus.add(courant);
+                if (vus.has(courant.parentBody)) {
+                    console.error(`[CelestialBodyFactory] CYCLE d'orbite détecté : '${courant.name}' -> '${courant.parentBody.name}' referme une boucle (parentName circulaire). Lien rompu — '${courant.name}' restera statique.`);
+                    courant.parentBody = null;
+                    break;
+                }
+                courant = courant.parentBody;
             }
         }
 

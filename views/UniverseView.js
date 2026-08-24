@@ -135,11 +135,13 @@ class UniverseView {
      * @returns {number} La luminosité scintillante, bornée dans [0, 1].
      */
     computeStarTwinkle(star, time) {
-        // Vitesse de scintillement, potentiellement basée sur une constante ou dynamique
-        const twinkleSpeed = RENDER.ZOOM_SPEED * 0.02; // Exemple: lié à ZOOM_SPEED
+        // Vitesse de scintillement, en radians par SECONDE : `time` est le temps de jeu
+        // écoulé en secondes (GameController.elapsedTime), pas un timestamp en ms.
+        // 4 rad/s => période ≈ 1.6 s, l'effet visé à l'origine.
+        const TWINKLE_SPEED = 4; // rad/s
 
         // Calcul simple basé sur sin() pour un effet périodique
-        const twinkling = Math.sin(time * twinkleSpeed + star.x * 0.01 + star.y * 0.01);
+        const twinkling = Math.sin(time * TWINKLE_SPEED + star.x * 0.01 + star.y * 0.01);
         // Applique le scintillement à la luminosité de base, en utilisant
         // STAR_BRIGHTNESS_RANGE comme amplitude du scintillement (et non comme offset).
         const brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * RENDER.STAR_BRIGHTNESS_RANGE;
@@ -226,16 +228,16 @@ class UniverseView {
 
     /**
      * Met à jour la vue de la trace avec la nouvelle position de la fusée.
-     * La position est convertie en coordonnées écran avant d'être passée à `TraceView`.
+     * La position est transmise en coordonnées MONDE : `TraceView` stocke des points monde
+     * et les reprojette lui-même à chaque rendu via `camera.worldToScreen`.
      * @param {{x: number, y: number}} rocketPosition - Position de la fusée dans le monde.
-     * @param {CameraModel} camera - L'objet caméra actuel.
+     * @param {CameraModel} [camera] - Non utilisé (conservé pour compatibilité d'appel).
      */
     updateTrace(rocketPosition, camera) {
         if (!this.traceView) return;
 
-        // Convertit la position monde de la fusée en coordonnées écran
-        const screenPos = this.worldToScreen(rocketPosition.x, rocketPosition.y, camera);
-        this.traceView.update(screenPos); // TraceView travaille en coordonnées écran
+        // Coordonnées monde : ne PAS convertir en écran ici (double projection au rendu).
+        this.traceView.update({ x: rocketPosition.x, y: rocketPosition.y });
     }
 
     /**

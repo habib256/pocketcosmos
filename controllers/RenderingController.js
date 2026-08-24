@@ -176,7 +176,9 @@ class RenderingController {
     }
     
     // Méthode principale de rendu
-    render(time, /*ctx, canvas,*/ rocketModel, universeModel, particleSystemModel, camera, activeMissions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
+    // Note: `missions` est la liste COMPLÈTE (pending + completed + failed) ; UIView filtre par statut.
+    render(time, /*ctx, canvas,*/ rocketModel, universeModel, particleSystemModel, camera, missions = [], totalCreditsEarned = 0, missionJustSucceeded = false) {
+        const activeMissions = missions; // conservé pour ne pas renommer les usages internes ci-dessous
         // Le paramètre isPaused est retiré, on utilise this.isSystemPaused à la place.
         
         // Utiliser this.ctx et this.canvas internes
@@ -199,16 +201,13 @@ class RenderingController {
         // Effacer le canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Si le jeu est en pause (géré par RenderingController lui-même)
-        if (this.isSystemPaused) {
-            if (this.uiView) {
-                // UIView gère l'affichage du message de PAUSE
-                this.uiView.render(ctx, canvas, rocketModel, universeModel, this.isSystemPaused, activeMissions, totalCreditsEarned, null, missionJustSucceeded);
-            }
-            // Ne pas rendre le reste de la scène si en pause
-            return; 
-        }
-        
+        // NOTE: la scène est désormais rendue AUSSI en pause (voile de pause par-dessus).
+        // Auparavant, en pause, seul uiView.render() était appelé puis on sortait : le voile
+        // semi-transparent du menu de pause (rgba(0,0,0,0.5)) était peint sur un canvas VIDE.
+        // Résultat : appuyer sur P/Échap faisait disparaître tout l'univers (fond noir + HUD
+        // flottant) au lieu d'assombrir l'image figée. Le rendu en pause reste peu coûteux
+        // (aucune mise à jour de simulation, seulement le dessin).
+
         // Rendu unifié de l'univers (fond + étoiles + corps)
         if (this.universeView) {
             const starsSource = universeModel && Array.isArray(universeModel.stars)
@@ -291,8 +290,12 @@ class RenderingController {
         // Vecteurs de mission (départ et arrivée)
         let missionStartVector = null;
         let missionTargetVector = null;
-        if (activeMissions && activeMissions.length > 0 && rocketModel && universeModel && rocketModel.position) {
-            const mission = activeMissions[0];
+        // `missions` contient TOUTES les missions (y compris terminées) : il faut donc filtrer
+        // sur "pending" ici, sinon les flèches Orig/Dest resteraient pointées sur la première
+        // mission de la liste une fois celle-ci accomplie.
+        const pendingMissions = Array.isArray(missions) ? missions.filter(m => m && m.status === 'pending') : [];
+        if (pendingMissions.length > 0 && rocketModel && universeModel && rocketModel.position) {
+            const mission = pendingMissions[0];
             const rocketPos = rocketModel.position;
             const startBody = universeModel.celestialBodies.find(b => b.name === mission.from);
             if (startBody && startBody.position) {

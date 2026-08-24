@@ -260,6 +260,29 @@ class MissionManager {
     }
 
     /**
+     * Remet en "pending" les seules missions ayant échoué, sans toucher aux missions déjà
+     * accomplies.
+     * Utilisé au respawn de la fusée : la destruction marque toutes les missions en cours comme
+     * "failed" ; sans réactivation la session devenait définitivement sans mission. Contrairement
+     * à `resetMissions()` (qui reconstruit tout en "pending" depuis le preset), cette méthode
+     * préserve la progression du joueur.
+     * @returns {number} Nombre de missions réactivées.
+     */
+    reactivateFailedMissions() {
+        let reactivated = 0;
+        for (const mission of this.missions) {
+            if (mission && mission.status === 'failed') {
+                mission.status = 'pending';
+                reactivated++;
+            }
+        }
+        if (reactivated > 0) {
+            console.log(`[MissionManager] ${reactivated} mission(s) échouée(s) réactivée(s) après respawn.`);
+        }
+        return reactivated;
+    }
+
+    /**
      * Gère l'échec d'une mission, généralement suite à un événement reçu via l'EventBus.
      * Met à jour le statut de la mission à "failed".
      * @param {{mission: MissionObjet}} data - Données de l'événement contenant l'objet mission concerné.
@@ -316,10 +339,19 @@ class MissionManager {
         const activeMissions = this.getActiveMissions();
         const nextMission = activeMissions.find(m => m.from === location);
 
-        // Vider le cargo actuel de la fusée avant tout, qu'une mission soit trouvée ou non pour ce lieu.
-        rocketModel.cargo.clearCargo(); // Supposant que RocketCargo a une méthode clearCargo() ou on réassigne cargoItems
+        if (!nextMission) {
+            // AUCUNE mission ne part d'ici : on ne touche PAS au cargo.
+            // Auparavant le cargo était vidé inconditionnellement, y compris quand aucune mission
+            // ne démarrait à cet endroit : se poser en route (ex. escale sur la Lune pour faire le
+            // plein) DÉTRUISAIT silencieusement la cargaison de la mission en cours, qu'il fallait
+            // alors retourner rechercher à son point de départ. Or le ravitaillement impose
+            // justement de se poser sur une station.
+            return;
+        }
 
-        if (nextMission) {
+        {
+            // Une mission part d'ici : on repart d'un cargo propre avant de la charger.
+            rocketModel.cargo.clearCargo();
             // Tenter de charger chaque item requis pour la mission.
             // La méthode addCargo de RocketCargo devrait retourner un booléen indiquant le succès.
             nextMission.requiredCargo.forEach(item => {
@@ -333,9 +365,6 @@ class MissionManager {
             // Log optionnel si tout s'est bien passé (ou partiellement)
             // const cargoString = nextMission.requiredCargo.map(item => `${item.type} x${item.quantity}`).join(', ');
             // console.log(`%c[MissionManager] Cargaison pour mission ${nextMission.id} (${cargoString}) traitée. Vérifiez le cargo de la fusée.`, 'color: lightblue;');
-        } else {
-            // Aucune mission active trouvée partant de cette localisation. Le cargo a déjà été vidé.
-            // console.log(`%c[MissionManager] Aucune mission active au départ de ${location} trouvée. Cargo de la fusée vidé.`, 'color: gray;');
         }
     }
 

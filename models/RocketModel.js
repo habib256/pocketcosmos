@@ -14,7 +14,14 @@ class RocketModel {
     constructor() {
         // Identité
         this.name = 'Rocket';
-        
+
+        // Cargaison : créée ici pour que l'invariant "rocketModel.cargo existe toujours"
+        // tienne dès la construction. Auparavant le cargo n'était créé que dans
+        // GameController.resetRocket(), donc au démarrage normal (sans appui sur R)
+        // il valait undefined et tout le système de missions restait inerte.
+        /** @type {RocketCargo|null} */
+        this.cargo = (typeof RocketCargo !== 'undefined') ? new RocketCargo() : null;
+
         // Position et mouvement
         /** @type {{x: number, y: number}} Position actuelle (centre de masse) */
         this.position = { x: 0, y: 0 };
@@ -99,8 +106,12 @@ class RocketModel {
         this.isLanded = false;
         /** @type {string|null} Nom du corps céleste sur lequel la fusée est posée (ex: 'Terre', 'Lune'). Null si non posée. */
         this.landedOn = null;
-        /** @type {number|null} Timestamp de fin du délai de grâce après décollage (ms). Null si pas de délai actif. */
+        /** @type {number|null} Timestamp réel de fin du délai de grâce après décollage (ms). Null si inactif. */
         this._liftoffGracePeriodEnd = null;
+        /** @type {number|null} Échéance du même délai en temps SIMULÉ (s). Null si inactif. */
+        this._liftoffGraceSimEnd = null;
+        /** @type {number} Temps simulé écoulé (s), cumulé par update(deltaTime). Base des délais de simulation. */
+        this._simTime = 0;
         // this.crashedOn a été supprimé car non utilisé.
         
         /**
@@ -145,8 +156,10 @@ class RocketModel {
         this.acceleration = { x: 0, y: 0 };
         this.angle = 0;
         this.angularVelocity = 0;
-        // Réinitialiser le délai de grâce
+        // Réinitialiser le délai de grâce (temps réel ET temps simulé) et l'horloge de simulation
         this._liftoffGracePeriodEnd = null;
+        this._liftoffGraceSimEnd = null;
+        this._simTime = 0;
 
         // Réinitialiser l'état (santé, carburant)
         this.fuel = ROCKET.FUEL_MAX;
@@ -170,7 +183,13 @@ class RocketModel {
             this.setThrusterPower(thrusterName, 0);
         }
 
-        // Note: Le cargo est géré et réinitialisé séparément, probablement dans GameController.
+        // Réinitialiser la cargaison ici (et non plus uniquement dans GameController) :
+        // reset() est aussi appelé au chargement d'un monde et par l'environnement IA.
+        if (this.cargo && typeof this.cargo.clearCargo === 'function') {
+            this.cargo.clearCargo();
+        } else if (typeof RocketCargo !== 'undefined') {
+            this.cargo = new RocketCargo();
+        }
     }
     
     /**
@@ -236,7 +255,25 @@ class RocketModel {
      * @param {number} durationMs - Durée du délai en millisecondes (défaut: 500ms)
      */
     startLiftoffGracePeriod(durationMs = 500) {
+        // Double échéance : temps SIMULÉ et temps réel, la première atteinte l'emporte.
+        // Le délai était purement en temps réel (Date.now()), ce qui n'a aucun sens en
+        // entraînement headless où 500 ms de temps réel couvrent des milliers de pas simulés :
+        // après un décollage, canSetLanded() restait faux pendant une éternité simulée et
+        // l'objectif 'land' devenait inapprenable. Le temps simulé pilote donc désormais le
+        // délai ; l'échéance en temps réel reste un garde-fou si update() n'était pas appelé.
+        this._liftoffGraceSimEnd = this._simTime + (durationMs / 1000);
         this._liftoffGracePeriodEnd = Date.now() + durationMs;
+    }
+
+    /**
+     * Le délai de grâce est-il expiré (temps simulé OU temps réel écoulé) ?
+     * @returns {boolean}
+     * @private
+     */
+    _liftoffGraceExpired() {
+        if (this._liftoffGracePeriodEnd === null) return true;
+        const simExpiree = (typeof this._liftoffGraceSimEnd === 'number') && (this._simTime >= this._liftoffGraceSimEnd);
+        return simExpiree || (Date.now() >= this._liftoffGracePeriodEnd);
     }
 
     /**
@@ -246,7 +283,7 @@ class RocketModel {
      * @returns {boolean}
      */
     isInLiftoffGracePeriod() {
-        return this._liftoffGracePeriodEnd !== null && Date.now() < this._liftoffGracePeriodEnd;
+        return this._liftoffGracePeriodEnd !== null && !this._liftoffGraceExpired();
     }
     
     /**
@@ -261,10 +298,10 @@ class RocketModel {
         if (this._liftoffGracePeriodEnd === null) {
             return true; // Pas de délai actif
         }
-        const now = Date.now();
-        if (now >= this._liftoffGracePeriodEnd) {
+        if (this._liftoffGraceExpired()) {
             // Le délai est expiré, on peut le réinitialiser
             this._liftoffGracePeriodEnd = null;
+            this._liftoffGraceSimEnd = null;
             return true;
         }
         // Le délai est encore actif - pas de log pour éviter le spam (appelé ~60x/sec)
@@ -401,9 +438,21 @@ class RocketModel {
         // --- Gérer les corps mobiles (en orbite) --- //
         //console.log(`[Debug Orbit Follow] Updating for ${this.attachedTo || this.landedOn} (${celestialBody?.name}). Body Angle: ${celestialBody?.currentOrbitAngle}, Relative Orbital Angle: ${this.relativePosition?.angleRelatifOrbital}`);
 
-        if (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number') {
-            // Recalculer l'angle absolu basé sur l'orbite actuelle du corps et l'angle relatif enregistré
-            const angleAbsolu = celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital;
+        if (typeof this.relativePosition.angleToBody === 'number'
+            || (typeof celestialBody.currentOrbitAngle === 'number' && typeof this.relativePosition.angleRelatifOrbital === 'number')) {
+            // Point d'attache exprimé en angle MONDE, figé au moment de l'atterrissage.
+            //
+            // Auparavant : `currentOrbitAngle + angleRelatifOrbital`, ce qui revenait à supposer
+            // le corps en rotation synchrone avec son orbite. Or aucun corps ne tourne sur
+            // lui-même dans ce jeu : le rendu n'applique aucune rotation de surface et les
+            // stations sont posées à un angle monde FIXE (`RenderingController`). La fusée posée
+            // dérivait donc le long de la surface — elle quittait la tolérance d'amarrage d'une
+            // station en ~52 s sur la Lune, et faisait un tour complet de Phobos en ~8 s.
+            // `angleToBody` est l'angle monde relevé à l'attache : il garde la fusée au même
+            // endroit de la surface, cohérent avec les stations et l'affichage.
+            const angleAbsolu = (typeof this.relativePosition.angleToBody === 'number')
+                ? this.relativePosition.angleToBody
+                : (celestialBody.currentOrbitAngle + this.relativePosition.angleRelatifOrbital);
 
             // Mettre à jour la position absolue de la fusée
             this.position.x = celestialBody.position.x + Math.cos(angleAbsolu) * this.relativePosition.distance;
@@ -424,8 +473,15 @@ class RocketModel {
                 // this.angle = angleAbsolu + Math.PI / 2;
 
                 // Option préservant l'orientation relative initiale (plus logique) :
-                // Différence angulaire entre l'angle actuel du point d'attache et l'angle au moment de l'attache
-                const deltaAngle = angleAbsolu - this.relativePosition.angleToBody;
+                // différence angulaire entre l'angle actuel du point d'attache et celui relevé
+                // à l'attache. Depuis que le point d'attache est figé en angle monde, ce delta
+                // vaut 0 : la fusée conserve exactement l'orientation qu'elle avait en se posant,
+                // ce qui est cohérent avec le fait qu'elle ne glisse plus le long de la surface.
+                // Le `typeof` protège la branche de repli (relativePosition sans angleToBody),
+                // qui produirait sinon un angle NaN.
+                const deltaAngle = (typeof this.relativePosition.angleToBody === 'number')
+                    ? (angleAbsolu - this.relativePosition.angleToBody)
+                    : 0;
                 this.angle = this.relativePosition.angle + deltaAngle;
             }
 
@@ -453,6 +509,12 @@ class RocketModel {
      * @param {number} deltaTime - Le temps écoulé depuis la dernière mise à jour, en secondes.
      */
     update(deltaTime) {
+        // Horloge de temps SIMULÉ (secondes). Avance même si la fusée est détruite, pour que les
+        // délais exprimés en temps de simulation (grâce de décollage) restent cohérents.
+        if (typeof deltaTime === 'number' && deltaTime > 0) {
+            this._simTime += deltaTime;
+        }
+
         if (this.isDestroyed) {
             // Si la fusée est détruite, s'assurer que tous les propulseurs sont à 0
             for (const thrusterName in this.thrusters) {
