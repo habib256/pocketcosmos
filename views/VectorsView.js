@@ -145,12 +145,12 @@ class VectorsView {
             }
         }
 
-        // 2. Se positionner relativement à la fusée pour les autres vecteurs
-        ctx.translate(camera.offsetX, camera.offsetY);
-        ctx.scale(camera.zoom, camera.zoom);
-        ctx.translate(-camera.x, -camera.y);
-        // Le point (0,0) du contexte est maintenant le centre de la fusée dans le monde
-        ctx.translate(rocketState.position.x, rocketState.position.y);
+        // 2. Vecteurs relatifs à la fusée : dessinés en COORDONNÉES ÉCRAN (comme le champ
+        // de gravité ci-dessus). Leurs longueurs, épaisseurs de trait et polices sont
+        // exprimées en pixels : les dessiner sous la transformation caméra (avec
+        // ctx.scale(zoom)) les rendrait sous-pixel au zoom mini (0.0025) et démesurés au
+        // zoom maxi (6). On projette donc uniquement les origines via camera.worldToScreen.
+        const rocketScreen = camera.worldToScreen(rocketState.position.x, rocketState.position.y);
 
         // --- Affichage des vecteurs relatifs à la fusée ---
         // Note: Les échelles et longueurs max sont souvent définies ici pour la lisibilité à l'écran,
@@ -164,13 +164,13 @@ class VectorsView {
             let length = mag * scale;
             // Limiter la longueur pour éviter des vecteurs trop grands/petits
             length = Math.max(20, Math.min(length, 100));
-            this.drawVector(ctx, rocketState.totalThrustVector, '#FF0000', 'Poussée', length);
+            this.drawVector(ctx, rocketState.totalThrustVector, '#FF0000', 'Poussée', length, null, rocketScreen);
         }
 
         // Vecteur de vitesse
         if (options.showVelocityVector && rocketState.velocity) {
             // Utilise une longueur max fixe pour ce vecteur (100 pixels)
-            this.drawVector(ctx, rocketState.velocity, 'rgba(255,100,100,0.5)', 'V', 100);
+            this.drawVector(ctx, rocketState.velocity, 'rgba(255,100,100,0.5)', 'V', 100, null, rocketScreen);
         }
 
         // Vecteur d'accélération totale (somme des forces F/m)
@@ -182,7 +182,7 @@ class VectorsView {
             const scale = 1000;
             let length = mag * scale;
             length = Math.max(20, Math.min(length, 100)); // Limiter la longueur
-            this.drawVector(ctx, rocketState.accelerationVector, '#FFA500', 'a=F/m', length);
+            this.drawVector(ctx, rocketState.accelerationVector, '#FFA500', 'a=F/m', length, null, rocketScreen);
         }
 
         // // Vecteur d'attraction lunaire (supprimé à la demande)
@@ -193,7 +193,7 @@ class VectorsView {
         // Vecteur d'attraction terrestre (si calculé et fourni)
         if (options.showEarthAttractionVector && !options.showMissionStartVector && rocketState.earthAttractionVector) {
             // Affiche aussi la distance dans le label
-            this.drawVector(ctx, rocketState.earthAttractionVector, '#00FF00', 'Terre', 80, rocketState.earthDistance);
+            this.drawVector(ctx, rocketState.earthAttractionVector, '#00FF00', 'Terre', 80, rocketState.earthDistance, rocketScreen);
         }
 
         // Vecteurs de mission (pointant de la fusée vers départ/destination)
@@ -205,9 +205,9 @@ class VectorsView {
                 const fixedLength = 80; // Longueur fixe pour l'affichage
                 const dir = { x: v.x / norm, y: v.y / norm };
                 // Le vecteur 'v' pointe de la fusée vers le point de départ. On dessine donc dans cette direction.
-                // L'origine est la fusée (0,0 dans ce contexte transformé)
+                // L'origine est la fusée (projetée en coordonnées écran)
                 // Changé en "Origin", couleur bleu clair, et ajout de la distance
-                this.drawVector(ctx, dir, '#ADD8E6', 'Orig', fixedLength, rocketState.missionStartVector.distance);
+                this.drawVector(ctx, dir, '#ADD8E6', 'Orig', fixedLength, rocketState.missionStartVector.distance, rocketScreen);
             }
         }
         if (options.showMissionTargetVector && rocketState.missionTargetVector && rocketState.missionTargetVector.vector) {
@@ -218,16 +218,23 @@ class VectorsView {
                 const dir = { x: v.x / norm, y: v.y / norm };
                  // Le vecteur 'v' pointe de la fusée vers la cible. On dessine dans cette direction.
                 // Ajout de la distance au vecteur Destination
-                this.drawVector(ctx, dir, 'gold', 'Dest', fixedLength, rocketState.missionTargetVector.distance);
+                this.drawVector(ctx, dir, 'gold', 'Dest', fixedLength, rocketState.missionTargetVector.distance, rocketScreen);
             }
         }
 
         // Vecteurs de poussée individuels (si actifs)
         if (options.showThrustVector && rocketState.thrustVectors) {
+            // thrustData.position est un offset dans le repère LOCAL de la fusée, alors que
+            // thrustData.vector est déjà exprimé dans le repère MONDE (voir PhysicsVectors).
+            // Il faut donc tourner l'offset de l'angle de la fusée avant de le projeter,
+            // sinon l'origine de la flèche dérive du mauvais côté quand la fusée pivote.
+            const rocketAngle = rocketState.angle || 0;
+            const cosA = Math.cos(rocketAngle);
+            const sinA = Math.sin(rocketAngle);
             for (const thrusterName in rocketState.thrustVectors) {
                 const thrustData = rocketState.thrustVectors[thrusterName];
                 // On s'attend à ce que thrustData contienne { vector: {x, y}, magnitude: M, position: {x, y} }
-                // où position est relative au centre de la fusée.
+                // où position est relative au centre de la fusée (repère local, non tourné).
                 if (thrustData.magnitude > 0 && thrustData.vector) {
                     let color = '#FFFFFF'; // Couleur par défaut
                     switch (thrusterName) {
@@ -238,8 +245,13 @@ class VectorsView {
                     }
                     // La longueur est fixe pour la visualisation des propulseurs actifs
                     const displayLength = 60;
-                    // L'origine du vecteur est la position du propulseur sur la fusée
-                    this.drawVector(ctx, thrustData.vector, color, thrusterName, displayLength, null, thrustData.position);
+                    // L'origine du vecteur est la position du propulseur sur la fusée :
+                    // offset local tourné puis converti en coordonnées écran.
+                    const local = thrustData.position || { x: 0, y: 0 };
+                    const originWorldX = rocketState.position.x + (local.x * cosA - local.y * sinA);
+                    const originWorldY = rocketState.position.y + (local.x * sinA + local.y * cosA);
+                    const originScreen = camera.worldToScreen(originWorldX, originWorldY);
+                    this.drawVector(ctx, thrustData.vector, color, thrusterName, displayLength, null, originScreen);
                 }
             }
         }
@@ -255,7 +267,7 @@ class VectorsView {
      * @param {string} label - Texte à afficher près de la pointe du vecteur.
      * @param {number} [length=80] - Longueur d'affichage du vecteur en pixels. La magnitude réelle du vecteur n'est utilisée que pour la direction.
      * @param {number | null} [distance=null] - Si fourni, ajoute cette valeur (arrondie) au label.
-     * @param {{x: number, y: number}} [origin={x:0, y:0}] - Point d'origine du vecteur, relatif au contexte actuel (par défaut {0,0}).
+     * @param {{x: number, y: number}} [origin={x:0, y:0}] - Point d'origine du vecteur, en coordonnées ÉCRAN (pixels), le contexte n'étant plus transformé par la caméra.
      * @private
      */
     drawVector(ctx, vector, color, label, length = 80, distance = null, origin = {x:0, y:0}) {

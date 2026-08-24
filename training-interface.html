@@ -184,18 +184,32 @@
     <script>
         // Forcer le backend CPU pour éviter les erreurs SIGILL avec WASM/WebGL
         (async function() {
-            try {
-                // Tenter d'abord WebGL (plus rapide)
-                await tf.setBackend('webgl');
-                console.log('[TensorFlow.js] Backend WebGL activé');
-            } catch (e) {
-                console.warn('[TensorFlow.js] WebGL non disponible, utilisation du backend CPU');
+            // CORRECTION (repli CPU mort) : tf.setBackend() RÉSOUT à false quand le backend n'est
+            // pas disponible, il ne rejette pas. Le try/catch seul ne déclenchait donc JAMAIS le
+            // repli CPU, contrairement à ce qu'annonçait le commentaire (SIGILL). On teste
+            // désormais le booléen retourné, tout en conservant le catch pour les vraies erreurs.
+            const useCpu = async (raison) => {
+                console.warn(`[TensorFlow.js] ${raison}, utilisation du backend CPU`);
                 try {
-                    await tf.setBackend('cpu');
-                    console.log('[TensorFlow.js] Backend CPU activé');
+                    const cpuOk = await tf.setBackend('cpu');
+                    console.log(cpuOk
+                        ? '[TensorFlow.js] Backend CPU activé'
+                        : '[TensorFlow.js] Backend CPU indisponible (backend par défaut conservé)');
                 } catch (e2) {
                     console.error('[TensorFlow.js] Erreur d\'initialisation du backend:', e2);
                 }
+            };
+
+            try {
+                // Tenter d'abord WebGL (plus rapide)
+                const webglOk = await tf.setBackend('webgl');
+                if (webglOk) {
+                    console.log('[TensorFlow.js] Backend WebGL activé');
+                } else {
+                    await useCpu('WebGL non disponible');
+                }
+            } catch (e) {
+                await useCpu(`Erreur WebGL (${e && e.message ? e.message : e})`);
             }
             await tf.ready();
             console.log('[TensorFlow.js] Backend actif:', tf.getBackend());
@@ -428,7 +442,8 @@
                 </div>
                 <div class="metric-card">
                     <div class="metric-value" id="bestReward">0.00</div>
-                    <div class="metric-label">Meilleure Récompense</div>
+                    <!-- CORRECTION : c'est le TOTAL du meilleur épisode, pas une moyenne. -->
+                    <div class="metric-label">Meilleur Épisode (récompense totale)</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value" id="modelSize">0 KB</div>
@@ -439,8 +454,8 @@
                     <div class="metric-label">Mémoire Utilisée</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value" id="trainingEfficiency">0%</div>
-                    <div class="metric-label">Efficacité</div>
+                    <div class="metric-value" id="trainingEfficiency">0</div>
+                    <div class="metric-label">Débit (pas/s)</div>
                 </div>
             </div>
         </div>
@@ -485,7 +500,12 @@
                     losses: [],
                     episodes: []
                 };
-                
+                // Meilleure récompense d'épisode observée depuis le début du run (tous épisodes
+                // confondus) : suivie ici car les métriques de l'orchestrateur ne conservent
+                // qu'une fenêtre glissante des 100 derniers épisodes.
+                this.bestEpisodeReward = null;
+
+
                 this.log('Initialisation de l\'interface d\'entraînement...', 'info');
                 
                 try {
@@ -677,6 +697,11 @@
                     this.log('Entraînement démarré!', 'success');
                     this.updateStatus('training', 'Entraînement en cours...');
                     this.isTraining = true;
+                    // CORRECTION (graphiques cumulés entre deux runs) : trainingData n'était vidé
+                    // que par resetTraining(), si bien que les points du run n°2 s'ajoutaient à la
+                    // suite de ceux du run n°1 (avec des numéros d'épisode qui repartaient à zéro).
+                    // Chaque nouveau run repart désormais d'un graphique vierge.
+                    this.clearCharts();
                     this.updateButtons();
                 });
                 
@@ -800,6 +825,10 @@
                         epsilon: config.epsilon,
                         gamma: config.gamma,
                         batchSize: config.batchSize,
+                        // Fréquence d'entraînement (1 mise à jour tous les N pas) : le champ
+                        // s'appelle updateFrequency côté RocketAI/TrainingOrchestrator. Sans
+                        // ce passage, le curseur "updateFreq" de l'UI n'avait aucun effet.
+                        updateFrequency: config.updateFreq,
                         headlessMode: config.trainingMode === 'headless',
                         visualSpeed: this.visualSpeed || 1,
                         objectives: [config.objective]
@@ -852,7 +881,18 @@
                 const startBtn = document.getElementById('startTraining');
                 const pauseBtn = document.getElementById('pauseTraining');
                 const stopBtn = document.getElementById('stopTraining');
-                
+                const loadBtn = document.getElementById('loadModel');
+                const resetBtn = document.getElementById('resetTraining');
+
+                // CORRECTION : "Charger Modèle" pendant une session dispose le modèle que
+                // model.fit() est en train d'utiliser (RocketAI.loadModel refuse désormais aussi
+                // côté agent) ; "Reset" efface les métriques de l'orchestrateur (dont
+                // trainingStartTime) sous les pieds du run en cours. On désactive les deux tant
+                // qu'une session est ouverte, pause comprise.
+                const sessionOuverte = this.isTraining || this.isPaused;
+                if (loadBtn) loadBtn.disabled = sessionOuverte;
+                if (resetBtn) resetBtn.disabled = sessionOuverte;
+
                 if (this.isPaused) {
                     startBtn.textContent = '▶️ Reprendre';
                     startBtn.disabled = false;
@@ -911,6 +951,26 @@
                 this.updateTrainingStatistics(metrics);
             }
 
+            /**
+             * Vide les séries des graphiques et le suivi du meilleur épisode.
+             * Utilisé au démarrage d'un nouveau run (AI.TRAINING_STARTED) et par le Reset.
+             */
+            clearCharts() {
+                this.trainingData = { rewards: [], losses: [], episodes: [] };
+                this.bestEpisodeReward = null;
+
+                if (this.rewardChart) {
+                    this.rewardChart.data.labels = [];
+                    this.rewardChart.data.datasets[0].data = [];
+                    this.rewardChart.update('none');
+                }
+                if (this.lossChart) {
+                    this.lossChart.data.labels = [];
+                    this.lossChart.data.datasets[0].data = [];
+                    this.lossChart.update('none');
+                }
+            }
+
             updateCharts(episode, reward, loss) {
                 // Limiter à 100 points pour les performances
                 if (this.trainingData.rewards.length > 100) {
@@ -958,23 +1018,38 @@
                     document.getElementById('totalTrainingTime').textContent = timeStr;
                     
                     // Temps moyen par épisode
+                    // CORRECTION : sans le `else`, la valeur du run précédent restait affichée
+                    // quand aucun épisode n'a encore été joué (notamment après un Reset).
                     if (metrics.episode > 0) {
                         const avgTimePerEpisode = totalTime / metrics.episode;
                         const avgSeconds = Math.floor(avgTimePerEpisode / 1000);
                         document.getElementById('averageEpisodeTime').textContent = `${avgSeconds}s`;
+                    } else {
+                        document.getElementById('averageEpisodeTime').textContent = '0s';
                     }
                 } else {
                     document.getElementById('totalTrainingTime').textContent = '0s';
                     document.getElementById('averageEpisodeTime').textContent = '0s';
                 }
                 
-                // Meilleure récompense - utiliser les métriques de l'orchestrateur
+                // Meilleure récompense d'ÉPISODE depuis le début du run.
+                // CORRECTION : l'ancien calcul prenait le max de orchestratorMetrics.averageRewards,
+                // qui n'est PAS un historique complet mais une fenêtre glissante des 100 derniers
+                // épisodes (cf. updateMetrics) : le "meilleur" affiché DIMINUAIT dès que le record
+                // sortait de la fenêtre. On maintient donc ici un maximum monotone.
+                // (metrics.bestAverageReward de l'orchestrateur n'est pas utilisable pour cette
+                //  tuile : c'est le meilleur score MOYEN d'évaluation, renseigné seulement toutes
+                //  les evaluationInterval épisodes.)
                 if (orchestratorMetrics && orchestratorMetrics.averageRewards && orchestratorMetrics.averageRewards.length > 0) {
-                    const bestReward = Math.max(...orchestratorMetrics.averageRewards);
-                    document.getElementById('bestReward').textContent = bestReward.toFixed(2);
-                } else {
-                    document.getElementById('bestReward').textContent = '0.00';
+                    const windowBest = Math.max(...orchestratorMetrics.averageRewards);
+                    this.bestEpisodeReward = (typeof this.bestEpisodeReward === 'number')
+                        ? Math.max(this.bestEpisodeReward, windowBest)
+                        : windowBest;
                 }
+                document.getElementById('bestReward').textContent =
+                    (typeof this.bestEpisodeReward === 'number' && isFinite(this.bestEpisodeReward))
+                        ? this.bestEpisodeReward.toFixed(2)
+                        : '0.00';
                 
                 // Taille du modèle (estimation)
                 if (this.trainingOrchestrator && this.trainingOrchestrator.rocketAI && this.trainingOrchestrator.rocketAI.model) {
@@ -997,10 +1072,19 @@
                     document.getElementById('memoryUsage').textContent = 'N/A';
                 }
                 
-                // Efficacité d'entraînement (taux de succès * vitesse)
-                const successRate = metrics.successRate || 0;
-                const efficiency = Math.round(successRate);
-                document.getElementById('trainingEfficiency').textContent = `${efficiency}%`;
+                // Débit de simulation (pas de physique par seconde).
+                // CORRECTION : cette tuile affichait `Math.round(successRate)`, c'est-à-dire
+                // EXACTEMENT la tuile "Taux de Succès" sous un autre nom (le commentaire promettait
+                // "taux de succès * vitesse", la vitesse n'a jamais été prise en compte). On y met
+                // désormais une grandeur réellement distincte et mesurable : le débit d'entraînement.
+                let throughput = 0;
+                if (orchestratorMetrics && orchestratorMetrics.trainingStartTime) {
+                    const elapsedSec = (Date.now() - orchestratorMetrics.trainingStartTime) / 1000;
+                    if (elapsedSec > 0) {
+                        throughput = Math.round((orchestratorMetrics.totalSteps || 0) / elapsedSec);
+                    }
+                }
+                document.getElementById('trainingEfficiency').textContent = `${throughput}`;
             }
 
             log(message, type = 'info') {
@@ -1023,17 +1107,24 @@
             }
 
             async saveModel() {
+                // CORRECTION (destruction du modèle entraîné) : sans session active, l'ancien code
+                // créait un agent NEUF (poids ALÉATOIRES) et l'écrivait dans la même et unique clé
+                // localStorage — écrasant purement et simplement le modèle entraîné. On refuse
+                // désormais, comme pour le chargement : seul l'agent de la session peut être sauvé.
+                const rocketAI = this.trainingOrchestrator.rocketAI;
+                if (!rocketAI) {
+                    this.log('Aucun agent entraîné dans cette session : rien à sauvegarder (le meilleur modèle est déjà sauvegardé automatiquement à la fin ou à l\'arrêt d\'un entraînement)', 'warning');
+                    return;
+                }
+
                 this.log('Sauvegarde du modèle en cours...', 'info');
                 try {
-                    // Créer un agent temporaire si nécessaire
-                    let rocketAI = this.trainingOrchestrator.rocketAI;
-                    if (!rocketAI) {
-                        this.log('Création d\'un agent IA temporaire pour la sauvegarde...', 'info');
-                        rocketAI = new RocketAI(this.eventBus);
+                    const saved = await rocketAI.saveModel();
+                    if (saved) {
+                        this.log('Modèle sauvegardé avec succès', 'success');
+                    } else {
+                        this.log('Sauvegarde impossible : l\'agent n\'a pas de modèle valide', 'error');
                     }
-                    
-                    await rocketAI.saveModel();
-                    this.log('Modèle sauvegardé avec succès', 'success');
                 } catch (error) {
                     this.log(`Erreur lors de la sauvegarde: ${error.message}`, 'error');
                 }
@@ -1042,18 +1133,22 @@
             async loadModel() {
                 this.log('Chargement du modèle en cours...', 'info');
                 try {
-                    // Créer un agent temporaire si nécessaire
-                    let rocketAI = this.trainingOrchestrator.rocketAI;
+                    // CORRECTION : sans session active, l'ancien code chargeait les poids dans un
+                    // agent temporaire aussitôt jeté (2 modèles TF.js fuités, chargement sans
+                    // aucun effet). Le chargement n'a de sens que sur l'agent de la session.
+                    const rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
-                        this.log('Création d\'un agent IA temporaire pour le chargement...', 'info');
-                        rocketAI = new RocketAI(this.eventBus);
+                        this.log('Aucune session d\'entraînement active : démarrez un entraînement avant de charger un modèle', 'warning');
+                        return;
                     }
-                    
+
                     const success = await rocketAI.loadModel();
                     if (success) {
                         this.log('Modèle chargé avec succès', 'success');
                     } else {
-                        this.log('Aucun modèle sauvegardé trouvé', 'info');
+                        // loadModel() renvoie false soit s'il n'y a rien à charger, soit si le
+                        // modèle trouvé est incompatible/périmé (détail exact dans la console).
+                        this.log('Aucun modèle sauvegardé exploitable (absent, architecture incompatible ou antérieur au changement d\'échelle de l\'état) — voir la console', 'warning');
                     }
                 } catch (error) {
                     this.log(`Erreur lors du chargement: ${error.message}`, 'error');
@@ -1067,16 +1162,31 @@
                 setTimeout(() => {
                     this.currentEpisode = 0;
                     this.totalSteps = 0;
-                    this.trainingData = { rewards: [], losses: [], episodes: [] };
-                    
+
+                    // CORRECTION (statistiques figées après un Reset) : updateMetrics({}) ne
+                    // suffisait pas, car trois tuiles sont calculées à partir des métriques de
+                    // l'orchestrateur, que le Reset ne touchait pas :
+                    //  - "Temps Total" continuait de compter depuis trainingStartTime ;
+                    //  - "Temps Moy./Épisode" n'était jamais réécrit (garde episode > 0) ;
+                    //  - "Meilleure Récompense" relisait averageRewards du run précédent.
+                    const orchestratorMetrics = this.trainingOrchestrator && this.trainingOrchestrator.metrics;
+                    if (orchestratorMetrics) {
+                        orchestratorMetrics.trainingStartTime = null;
+                        orchestratorMetrics.averageRewards = [];
+                        orchestratorMetrics.episodeLengths = [];
+                        orchestratorMetrics.explorationRates = [];
+                        orchestratorMetrics.losses = [];
+                        orchestratorMetrics.bestAverageReward = -Infinity;
+                        orchestratorMetrics.totalSteps = 0;
+                        orchestratorMetrics.successfulEpisodes = 0;
+                        orchestratorMetrics.episode = 0;
+                        orchestratorMetrics.episodesCompleted = 0;
+                    }
+
+                    // Vide les séries des graphiques + le suivi de la meilleure récompense.
+                    this.clearCharts();
                     this.updateMetrics({});
-                    this.rewardChart.data.labels = [];
-                    this.rewardChart.data.datasets[0].data = [];
-                    this.rewardChart.update();
-                    this.lossChart.data.labels = [];
-                    this.lossChart.data.datasets[0].data = [];
-                    this.lossChart.update();
-                    
+
                     this.log('Entraînement réinitialisé', 'info');
                 }, 1000);
             }
@@ -1231,227 +1341,14 @@
                 
                 window.trainingInterface = new TrainingInterface();
                 
-                // CORRECTION : Ajouter les fonctions de test directement à window
-                if (typeof window.testUpdateFrequency === 'undefined') {
-                    console.log('🔧 Ajout des fonctions de test directement...');
-                    
-                    // Test de fréquence d'updates
-                    window.testUpdateFrequency = async function() {
-                        console.log('⚡ TEST DE FRÉQUENCE D\'UPDATES RÉELLE');
-                        console.log('=====================================');
-                        
-                        try {
-                            const eventBus = new EventBus();
-                            const rocketAI = new RocketAI(eventBus);
-                            
-                            console.log(`Configuration: updateFrequency = ${rocketAI.config.updateFrequency} pas`);
-                            
-                            // Compter les updates pendant une simulation courte
-                            const originalTrain = rocketAI.train.bind(rocketAI);
-                            let updateCount = 0;
-                            
-                            rocketAI.train = async function() {
-                                updateCount++;
-                                console.log(`Update #${updateCount} à l'étape ${this.totalSteps}`);
-                                return originalTrain();
-                            };
-                            
-                            // Remplir le buffer avec des données factices
-                            console.log('Remplissage du buffer...');
-                            for (let i = 0; i < rocketAI.config.batchSize + 10; i++) {
-                                rocketAI.replayBuffer.push({
-                                    state: Array(10).fill(Math.random() * 0.1),
-                                    action: Math.floor(Math.random() * 5),
-                                    reward: Math.random() * 2 - 1,
-                                    nextState: Array(10).fill(Math.random() * 0.1),
-                                    done: false
-                                });
-                            }
-                            
-                            console.log(`Buffer rempli: ${rocketAI.replayBuffer.length} expériences`);
-                            
-                            // Simuler 100 pas
-                            const targetSteps = 100;
-                            console.log(`\nSimulation de ${targetSteps} pas...`);
-                            
-                            rocketAI.isTraining = true;
-                            rocketAI.rocketData = {
-                                x: 100000, y: 6471000, vx: 100, vy: 0,
-                                angle: 0, angularVelocity: 0.01
-                            };
-                            rocketAI.celestialBodyData = {
-                                x: 0, y: 6471000, radius: 6371000
-                            };
-                            
-                            for (let step = 0; step < targetSteps; step++) {
-                                rocketAI.totalSteps = step;
-                                
-                                // Simuler step() sans vraiment appeler l'entraînement complet
-                                if (step % rocketAI.config.updateFrequency === 0 && rocketAI.replayBuffer.length >= rocketAI.config.batchSize) {
-                                    await rocketAI.train();
-                                }
-                            }
-                            
-                            const expectedUpdates = Math.floor(targetSteps / rocketAI.config.updateFrequency);
-                            
-                            console.log(`\n📊 RÉSULTATS:`);
-                            console.log(`   Steps simulés: ${targetSteps}`);
-                            console.log(`   Updates attendus: ${expectedUpdates}`);
-                            console.log(`   Updates réels: ${updateCount}`);
-                            console.log(`   Ratio: ${updateCount}/${targetSteps} = ${(updateCount/targetSteps*100).toFixed(1)}%`);
-                            
-                            if (updateCount === expectedUpdates) {
-                                console.log(`   ✅ PARFAIT! Fréquence respectée.`);
-                            } else if (updateCount > expectedUpdates * 0.8) {
-                                console.log(`   ⚡ CORRECT, légère variation acceptable.`);
-                            } else {
-                                console.log(`   ❌ PROBLÈME: Trop peu d'updates réels.`);
-                            }
-                            
-                            // Restaurer la fonction originale
-                            rocketAI.train = originalTrain;
-                            
-                        } catch (error) {
-                            console.error('❌ Erreur lors du test de fréquence:', error);
-                        }
-                    };
-                    
-                    // Diagnostic complet
-                    window.diagnosticComplet = async function() {
-                        console.log('🔍 DIAGNOSTIC COMPLET DU SYSTÈME D\'APPRENTISSAGE');
-                        console.log('===================================================');
-                        
-                        try {
-                            const eventBus = new EventBus();
-                            const rocketAI = new RocketAI(eventBus);
-                            
-                            // Test 1: Configuration epsilon
-                            console.log('\n1️⃣ TEST DE LA DÉCROISSANCE D\'EPSILON:');
-                            console.log(`   Epsilon initial: ${rocketAI.config.epsilon}`);
-                            console.log(`   Epsilon decay: ${rocketAI.config.epsilonDecay}`);
-                            console.log(`   Epsilon min: ${rocketAI.config.epsilonMin}`);
-                            
-                            // Simulation de la décroissance
-                            let testEpsilon = rocketAI.config.epsilon;
-                            let episodes = 0;
-                            while (testEpsilon > 0.1 && episodes < 500) {
-                                testEpsilon *= rocketAI.config.epsilonDecay;
-                                episodes++;
-                            }
-                            console.log(`   🎯 Épisodes pour atteindre ε=0.1: ${episodes}`);
-                            if (episodes > 150) {
-                                console.log(`   ⚠️ TROP LENT! Devrait être ~100 épisodes max`);
-                            } else {
-                                console.log(`   ✅ Décroissance correcte`);
-                            }
-                            
-                            // Test 2: Configuration fréquence
-                            console.log('\n2️⃣ TEST DE LA FRÉQUENCE D\'ENTRAÎNEMENT:');
-                            console.log(`   Update frequency (RocketAI): ${rocketAI.config.updateFrequency} pas`);
-                            console.log(`   🎯 ATTENDU: 1000 pas → ${Math.floor(1000 / rocketAI.config.updateFrequency)} entraînements`);
-                            console.log(`   Batch size: ${rocketAI.config.batchSize}`);
-                            console.log(`   Replay buffer size: ${rocketAI.config.replayBufferSize}`);
-                            
-                            const stepsFor100Updates = rocketAI.config.updateFrequency * 100;
-                            console.log(`   ⚡ 100 entraînements en ${stepsFor100Updates} pas (${(stepsFor100Updates/60).toFixed(1)}s à 60fps)`);
-                            
-                            if (rocketAI.config.updateFrequency <= 8) {
-                                console.log(`   ✅ Fréquence excellente pour apprentissage rapide`);
-                            } else if (rocketAI.config.updateFrequency <= 32) {
-                                console.log(`   ⚡ Fréquence correcte`);
-                            } else {
-                                console.log(`   ⚠️ Fréquence trop faible, apprentissage lent`);
-                            }
-                            
-                            console.log('\n✅ Diagnostic terminé. Utilisez testUpdateFrequency() pour un test complet.');
-                            
-                        } catch (error) {
-                            console.error('❌ Erreur lors du diagnostic:', error);
-                        }
-                    };
-                    
-                    // Test d'évaluation
-                    window.testEvaluationMode = async function() {
-                        console.log('🧪 Test d\'évaluation (ε=0) - Fonctionnalité disponible');
-                        console.log('Note: Cette fonction nécessite train.js pour fonctionner complètement.');
-                        
-                        // Version simplifiée pour l'interface
-                        try {
-                            const eventBus = new EventBus();
-                            const rocketAI = new RocketAI(eventBus);
-                            
-                            const originalEpsilon = rocketAI.config.epsilon;
-                            rocketAI.config.epsilon = 0.0;
-                            
-                            console.log(`✅ Epsilon forcé à 0 (était ${originalEpsilon.toFixed(3)})`);
-                            console.log('Pour un test complet, utilisez la version dans train.js');
-                            
-                            rocketAI.config.epsilon = originalEpsilon;
-                            
-                        } catch (error) {
-                            console.error('❌ Erreur:', error);
-                        }
-                    };
-                    
-                    console.log('\n🎮 Fonctions de test ajoutées:');
-                    console.log('   testUpdateFrequency() - Test du nombre d\'updates réels');
-                    console.log('   diagnosticComplet() - Diagnostic complet du système');
-                    console.log('   testEvaluationMode() - Test d\'évaluation simplifié');
-                    
-                    // Test rapide pour valider toutes les corrections
-                    window.testCorrections = function() {
-                        console.log('🚀 VALIDATION RAPIDE DES CORRECTIONS');
-                        console.log('=====================================');
-                        
-                        try {
-                            const eventBus = new EventBus();
-                            const rocketAI = new RocketAI(eventBus);
-                            
-                            console.log('✅ RocketAI créé avec succès');
-                            console.log(`📊 Configuration actuelle:`);
-                            console.log(`   - updateFrequency: ${rocketAI.config.updateFrequency} pas (CORRIGÉ de 1000→4)`);
-                            console.log(`   - epsilonDecay: ${rocketAI.config.epsilonDecay} (CORRIGÉ de 0.995→0.98)`);
-                            console.log(`   - batchSize: ${rocketAI.config.batchSize}`);
-                            console.log(`   - replayBufferSize: ${rocketAI.config.replayBufferSize}`);
-                            
-                            // Calculs d'efficacité
-                            const updates1000steps = Math.floor(1000 / rocketAI.config.updateFrequency);
-                            const epsilonAt100eps = Math.pow(rocketAI.config.epsilonDecay, 100);
-                            
-                            console.log(`\n🎯 Impact des corrections:`);
-                            console.log(`   - Updates en 1000 pas: ${updates1000steps} (était ~1 avant)`);
-                            console.log(`   - Gain d'entraînement: ×${updates1000steps} plus d'apprentissage!`);
-                            console.log(`   - Epsilon après 100 épisodes: ${epsilonAt100eps.toFixed(3)} (était ~0.6 avant)`);
-                            
-                            if (updates1000steps > 200) {
-                                console.log(`   ✅ EXCELLENT: Fréquence d'entraînement très élevée`);
-                            } else if (updates1000steps > 50) {
-                                console.log(`   ⚡ BIEN: Fréquence d'entraînement correcte`);
-                            } else {
-                                console.log(`   ⚠️ ATTENTION: Fréquence encore un peu faible`);
-                            }
-                            
-                            if (epsilonAt100eps < 0.2) {
-                                console.log(`   ✅ EXCELLENT: Décroissance epsilon rapide`);
-                            } else {
-                                console.log(`   ⚠️ ATTENTION: Décroissance epsilon encore lente`);
-                            }
-                            
-                            console.log(`\n📈 Prédictions de performance:`);
-                            console.log(`   - L'agent devrait apprendre ${updates1000steps}× plus vite`);
-                            console.log(`   - Loss devrait être > 0 dès les premiers entraînements`);
-                            console.log(`   - Récompenses positives attendues avec le nouveau shaping`);
-                            console.log(`   - Normalisation sécurisée = plus de NaN dans les gradients`);
-                            
-                            console.log(`\n🧪 Prochaine étape: testUpdateFrequency() pour validation complète`);
-                            
-                        } catch (error) {
-                            console.error('❌ Erreur lors de la validation:', error);
-                        }
-                    };
-                    
-                    console.log('   testCorrections() - 🚀 Validation rapide de TOUTES les corrections');
-                }
+                // NOTE (bloc de debug mort supprimé) : ce fichier contenait ici ~220 lignes
+                // gardées par `if (typeof window.testUpdateFrequency === 'undefined')`. Comme
+                // train.js est chargé AVANT et assigne toujours window.testUpdateFrequency, la
+                // condition était systématiquement fausse : le bloc ne s'installait jamais.
+                // Les helpers utiles (testUpdateFrequency, diagnosticComplet, testEvaluationMode)
+                // sont déjà fournis par train.js dans des versions complètes ; seule la variante
+                // simplifiée locale et testCorrections() (simple impression de constantes)
+                // disparaissent — code mort depuis toujours.
                 
             } catch (error) {
                 console.error('Erreur lors de l\'initialisation de l\'interface:', error);

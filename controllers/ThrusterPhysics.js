@@ -278,9 +278,12 @@ class ThrusterPhysics {
         const rocketBody = this.physicsController.rocketBody;
 
         if (rocketBody) {
-            rocketBody.angularDamping = assistedControls ? this.assistedAngularDamping : this.angularDamping;
+            // NOTE: `angularDamping` N'EXISTE PAS dans Matter.js 0.19 (aucune occurrence dans la
+            // lib) : l'écrire sur le corps n'avait aucun effet, et les constantes
+            // ASSISTED_ANGULAR_DAMPING / NORMAL_ANGULAR_DAMPING ne sont donc jamais lues par le
+            // moteur. L'assistance réelle est entièrement assurée par applyRotationStabilization()
+            // ci-dessous. On ne pose donc plus cette propriété fantôme.
             console.log(`Contrôles assistés: ${assistedControls ? 'ACTIVÉS' : 'DÉSACTIVÉS'}`);
-            console.log(`Amortissement angulaire: ${rocketBody.angularDamping.toFixed(2)} (${assistedControls ? 'assisté' : 'normal'})`);
             if (assistedControls) {
                 console.log("Stabilisation automatique de la rotation activée");
             }
@@ -299,12 +302,21 @@ class ThrusterPhysics {
 
             // Si aucun contrôle de rotation manuel n'est appliqué et que la fusée tourne
             // (avec une marge pour éviter les micro-corrections inutiles)
-            if (!leftActive && !rightActive && Math.abs(rocketBody.angularVelocity) > 0.001) { 
+            if (!leftActive && !rightActive && Math.abs(rocketBody.angularVelocity) > 0.001) {
                 // Calculer une force de stabilisation proportionnelle et opposée à la vitesse angulaire
                 // Le facteur 'rotationStabilityFactor' contrôle l'intensité de la stabilisation.
                 // On le borne dans [0,1] pour que la correction ne dépasse jamais la vitesse angulaire
                 // actuelle : sinon (factor > 1) le signe de la rotation s'inverserait et divergerait.
-                const effectiveFactor = Math.max(0, Math.min(1, this.rotationStabilityFactor));
+                const baseFactor = Math.max(0, Math.min(1, this.rotationStabilityFactor));
+                // Indépendance au framerate : le facteur est exprimé PAR FRAME à 60 Hz. Appliqué tel
+                // quel, l'amortissement était 2,4× plus fort à 144 Hz qu'à 60 Hz (même correction
+                // répétée plus souvent). On le convertit en décroissance exponentielle équivalente
+                // sur le deltaTime réel ; à 60 Hz le comportement est strictement inchangé.
+                const dt = (this.physicsController && this.physicsController.lastDeltaTime) || (1 / 60);
+                const framesA60Hz = Math.max(0, dt * 60);
+                const effectiveFactor = (baseFactor >= 1)
+                    ? 1
+                    : 1 - Math.pow(1 - baseFactor, framesA60Hz);
                 const stabilizationForce = -rocketBody.angularVelocity * effectiveFactor;
                 // Appliquer directement un changement de vitesse angulaire (comme un léger couple inverse)
                 // Note: Matter.js n'a pas de 'applyTorque' direct, donc on modifie la vitesse angulaire

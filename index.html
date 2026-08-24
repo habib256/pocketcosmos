@@ -261,6 +261,41 @@
             } catch (e) {}
         }
         updateOptionLabels();
+        // Ce script inline s'exécute AVANT le chargement de constants.js (plus bas dans la page) :
+        // le premier appel ci-dessus retombe donc toujours sur les icônes de secours, et modifier
+        // UI.ICONS dans constants.js n'avait aucun effet sur l'affichage initial. On repasse une
+        // fois la page chargée, quand `UI` est réellement défini.
+        window.addEventListener('load', updateOptionLabels);
+
+        // Rendre le focus au jeu après une interaction SOURIS avec un contrôle de la page.
+        // Les navigateurs laissent le focus sur un <button>/<input> après un clic : la barre
+        // Espace (touche de poussée principale) activait alors ce contrôle au lieu de piloter la
+        // fusée — cliquer sur ⚙️ puis appuyer sur Espace refermait le panneau en boucle.
+        // On ne retire le focus que sur un vrai clic pointeur (detail > 0) afin de préserver la
+        // navigation au clavier (Tab + Espace reste fonctionnel pour qui n'utilise pas la souris).
+        // Distinguer souris et clavier par un `pointerdown` préalable plutôt que par `ev.detail`.
+        // Cliquer le LIBELLÉ d'une case à cocher (la grande zone cliquable) fait suivre au
+        // navigateur un clic SYNTHÉTIQUE sur l'input, avec `detail === 0` — indiscernable d'une
+        // activation clavier. Le focus restait donc sur la case, et la barre Espace (poussée
+        // principale) la cochait/décochait au lieu de piloter la fusée.
+        let clicPointeur = false;
+        const marquerPointeur = () => { clicPointeur = true; };
+        const rendreFocusAuJeu = (ev) => {
+            if (!clicPointeur) return;                   // activation clavier : ne pas voler le focus
+            clicPointeur = false;
+            const el = ev && ev.currentTarget;
+            if (el && typeof el.blur === 'function') el.blur();
+        };
+        const controlesFocusables = [openOptions, toggleButton, showNamesCheckbox, showStationsCheckbox];
+        controlesFocusables.forEach((el) => {
+            if (!el) return;
+            el.addEventListener('pointerdown', marquerPointeur);
+            el.addEventListener('click', rendreFocusAuJeu);
+        });
+        // Les libellés relaient le clic vers leur case : marquer aussi le pointeur depuis eux.
+        [labelShowNames, labelShowStations].forEach((el) => {
+            if (el && el.parentNode) el.parentNode.addEventListener('pointerdown', marquerPointeur);
+        });
 
         showNamesCheckbox.addEventListener('change', (e) => {
             window.UI_STATE.hideBodyNames = !e.target.checked;
@@ -274,8 +309,13 @@
         // Gestion du bouton mute/unmute
         toggleButton.addEventListener('click', () => {
             if (audioElement.paused) {
-                audioElement.play();
-                toggleButton.textContent = '🔊';
+                // N'afficher 🔊 que si la lecture DÉMARRE réellement : play() renvoie une promesse
+                // qui peut être rejetée (politique d'autoplay, fichier illisible). L'ancien code
+                // laissait ce rejet non géré et affichait 🔊 inconditionnellement — le bouton
+                // prétendait que la musique jouait alors que tout était silencieux.
+                audioElement.play()
+                    .then(() => { toggleButton.textContent = '🔊'; })
+                    .catch(() => { toggleButton.textContent = '🔇'; });
             } else {
                 audioElement.pause();
                 toggleButton.textContent = '🔇';
@@ -404,13 +444,9 @@
         console.log("🔴 [index.html] main.js chargé");
     </script>
 
-    <div class="info-item">
-        <p>Altitude: <span id="altitude">--</span> m</p>
-    </div>
-    <!-- Ajout de la section Cargo -->
-    <div class="info-item">
-        <p>Cargo:</p>
-        <div id="cargo-display" class="cargo-icons"></div> <!-- Conteneur pour les icônes -->
-    </div>
+    <!-- NOTE: les anciens éléments HUD DOM (#altitude, #cargo-display) ont été supprimés :
+         aucun script n'y écrivait jamais, l'altitude restait donc affichée « -- » en permanence
+         et la zone cargo restait vide. Altitude, vitesse, carburant et cargo sont dessinés sur
+         le canvas par UIView. -->
 </body>
 </html> 

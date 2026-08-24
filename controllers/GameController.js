@@ -218,6 +218,10 @@ class GameController {
      * @private
      */
     handleTogglePause() {
+        // Même garde que handleResumeIfPaused et resetRocket : pendant le fetch asynchrone d'un
+        // monde, la partie est en pause "technique". Reprendre ici relancerait l'ANCIEN monde
+        // (ou un monde vide au premier lancement) et masquerait l'écran de chargement.
+        if (this._universeLoadInFlight) return;
         if (this.currentState === GameStates.PLAYING) {
             this.changeState(GameStates.PAUSED);
         } else if (this.currentState === GameStates.PAUSED) {
@@ -543,14 +547,45 @@ class GameController {
      * @private
      */
     gameLoop(timestamp) {
-        // console.log('[GameController.gameLoop] Entrée dans gameLoop, timestamp:', timestamp); // SUPPRESSION DE LOG
+        // RÉSILIENCE : tout le corps de la frame est protégé et la frame SUIVANTE est planifiée
+        // dans un `finally`. Sans cela, la moindre exception levée dans update() ou render()
+        // (typiquement un NaN qui atteint Matter et fait échouer le solveur de collision) tuait
+        // définitivement la chaîne requestAnimationFrame : image gelée, plus aucune entrée, plus
+        // de pause, et aucun message — seul un rechargement de la page permettait d'en sortir.
+        try {
+            this._gameLoopBody(timestamp);
+        } catch (e) {
+            this._erreursFrame = (this._erreursFrame || 0) + 1;
+            // Ne pas inonder la console : les erreurs de frame se répètent à 60 Hz.
+            if (this._erreursFrame <= 3 || this._erreursFrame % 300 === 0) {
+                console.error(`[GameController.gameLoop] Erreur pendant la frame (#${this._erreursFrame}) :`, e);
+            }
+        } finally {
+            // Rappeler gameLoop pour la prochaine frame, MÊME après une exception.
+            this._rafId = requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
+        }
+    }
+
+    /**
+     * Corps réel d'une frame (voir gameLoop pour la protection contre les exceptions).
+     * @param {DOMHighResTimeStamp} timestamp
+     * @private
+     */
+    _gameLoopBody(timestamp) {
 
         let deltaTime = (timestamp - this.lastTimestamp) / 1000; // deltaTime en secondes
         // Clamp du deltaTime pour éviter les spikes (ex: retour d'onglet)
         if (deltaTime > 0.05) deltaTime = 0.05;
         if (deltaTime < 0) deltaTime = 0;
         this.lastTimestamp = timestamp;
-        this.elapsedTime += deltaTime;
+        // Le temps de jeu n'avance PAS pendant la pause. `elapsedTime` pilote les animations
+        // décoratives (scintillement des étoiles) transmises au rendu : depuis que la scène est
+        // dessinée sous le voile de pause, le laisser courir donnait une image « figée » dont les
+        // étoiles continuaient de scintiller. Il sert aussi de base de temps de jeu, qui ne doit
+        // pas comptabiliser le temps passé en pause.
+        if (this.currentState !== GameStates.PAUSED) {
+            this.elapsedTime += deltaTime;
+        }
 
         // Gérer les mises à jour en fonction de l'état
         switch (this.currentState) {
@@ -562,6 +597,14 @@ class GameController {
             case GameStates.GAME_OVER:
                 // Pendant l'écran rouge crashé (GAME_OVER), on continue de lire les entrées du gamepad
                 // pour permettre la relance via le même bouton que les propulseurs.
+                if (this.inputController) {
+                    this.inputController.update();
+                }
+                break;
+            case GameStates.PAUSED:
+                // Le gamepad est lu par polling (contrairement au clavier, événementiel) :
+                // sans cet appel, un joueur 100% manette ne peut plus jamais reprendre la
+                // partie après une mise en pause (Start et boost ne sont plus lus).
                 if (this.inputController) {
                     this.inputController.update();
                 }
@@ -579,11 +622,8 @@ class GameController {
 
         // console.log('[GameController.gameLoop] Appel de this.render()'); // SUPPRESSION DE LOG
         this.render(timestamp); // Appel de la méthode render de GameController
-
-        // Rappeler gameLoop pour la prochaine frame d'animation
-        // La boucle tourne toujours, mais les actions (update, render) peuvent être conditionnelles à l'état.
-        // On stocke l'identifiant RAF pour pouvoir annuler la boucle (stop()/cleanup()) et éviter les boucles concurrentes.
-        this._rafId = requestAnimationFrame((newTimestamp) => this.gameLoop(newTimestamp));
+        // NOTE: la planification de la frame suivante est faite par gameLoop() dans son `finally`,
+        // afin qu'une exception ici n'interrompe pas la boucle.
     }
     
     /**
@@ -609,6 +649,12 @@ class GameController {
     resetRocket() {
         let startLocation = null;
 
+        // Ne pas réinitialiser pendant qu'un chargement d'univers est en vol : resetRocket()
+        // force PLAYING et relance la simulation, ce qui ferait repartir l'ANCIEN monde
+        // (ou un monde vide au tout premier lancement) — exactement ce que le garde de
+        // handleResumeIfPaused() empêche pour les autres chemins de reprise.
+        if (this._universeLoadInFlight) return;
+
         if (!this.rocketModel) {
             // Ceci ne devrait plus arriver : GameSetupController initialise les modèles avant tout reset.
             // L'ancien chemin de fallback appelait initializeGameComponents() avec une mauvaise signature
@@ -617,9 +663,26 @@ class GameController {
             return;
         }
         
-        this.rocketModel.reset();
-        this.rocketModel.cargo = new RocketCargo(); 
-        this.totalCreditsEarned = 10;
+        this.rocketModel.reset(); // réinitialise aussi la cargaison
+        if (!this.rocketModel.cargo) this.rocketModel.cargo = new RocketCargo();
+
+        // Les crédits sont CONSERVÉS. Ils étaient auparavant remis à 10, ce qui était cohérent
+        // avec l'ancien comportement (le reset repassait toutes les missions en "pending", donc
+        // les crédits étaient re-gagnables). Depuis que seules les missions ÉCHOUÉES sont
+        // réactivées (les missions accomplies restent "completed" et ne peuvent plus être
+        // re-validées par checkMissionCompletion), remettre les crédits à 10 détruisait
+        // définitivement les gains du joueur à chaque appui sur R ou après un crash.
+
+        // Rejouer les missions après un respawn : la destruction de la fusée marque toutes
+        // les missions "pending" comme "failed" (handleRocketStateUpdated). Sans réactivation,
+        // un seul crash rendait la session définitivement sans mission (donc sans crédits),
+        // jusqu'à un rechargement complet du monde.
+        // On réactive UNIQUEMENT les missions échouées : `resetMissions()` reconstruirait toute
+        // la liste en "pending" et effacerait aussi les missions déjà accomplies (or resetRocket
+        // est accessible à tout moment via la touche R, pas seulement après un crash).
+        if (this.missionManager && typeof this.missionManager.reactivateFailedMissions === 'function') {
+            this.missionManager.reactivateFailedMissions();
+        }
 
         // Recharger la position d'origine (spawn du preset) si disponible
         const spawn = this.universeModel && this.universeModel.spawnInfo ? this.universeModel.spawnInfo : null;
@@ -640,12 +703,25 @@ class GameController {
             }
         } else if (spawn && spawn.position) {
             this.rocketModel.setPosition(spawn.position.x || 0, spawn.position.y || 0);
-            if (spawn.velocity) this.rocketModel.setVelocity(spawn.velocity.x || 0, spawn.velocity.y || 0);
+            // Vélocité du preset en u/s -> échelle Matter, comme le mode "hostName" ci-dessus
+            // et comme GameSetupController.buildWorldFromData.
+            if (spawn.velocity) this.rocketModel.setVelocity(
+                (spawn.velocity.x || 0) * PHYSICS.MATTER_BASE_DELTA,
+                (spawn.velocity.y || 0) * PHYSICS.MATTER_BASE_DELTA
+            );
             if (typeof spawn.angle === 'number') this.rocketModel.setAngle(spawn.angle);
             this.rocketModel.isLanded = false;
             this.rocketModel.landedOn = null;
         } else {
-            const host = this.universeModel.celestialBodies.find(body => body.name === 'Terre');
+            // Repli quand le preset ne décrit AUCUN spawn exploitable.
+            // On cherche d'abord un corps nommé 'Terre' (héritage), puis on retombe sur le premier
+            // corps du monde — le MÊME repli que `GameSetupController.buildWorldFromData`.
+            // Sans ce second niveau, les mondes sans « Terre » (2 à 6) laissaient la fusée à sa
+            // position par défaut (0,0), c'est-à-dire À L'INTÉRIEUR de l'astre central, d'où une
+            // éjection immédiate ; et le chargement de monde et la touche R pouvaient placer la
+            // fusée à deux endroits différents.
+            const host = this.universeModel.celestialBodies.find(body => body.name === 'Terre')
+                || this.universeModel.celestialBodies[0];
             if (host) {
                 const sun = this.universeModel.celestialBodies[0];
                 const angleVersSoleil = Math.atan2(host.position.y - sun.position.y, host.position.x - sun.position.x);
@@ -659,7 +735,7 @@ class GameController {
                 this.rocketModel.updateRelativePosition(host);
                 startLocation = host.name;
             } else {
-                console.error("Impossible de trouver le corps d'accueil pour repositionner la fusée.");
+                console.error("Impossible de trouver le corps d'accueil pour repositionner la fusée : le monde ne contient aucun corps céleste.");
             }
 
             if (this.cameraModel) {
@@ -1034,7 +1110,10 @@ class GameController {
                 this.universeModel,
                 this.particleSystemModel,
                 this.cameraModel,
-                this.missionManager ? this.missionManager.getActiveMissions() : [],
+                // Liste COMPLÈTE des missions : UIView filtre lui-même par statut et a besoin
+                // des missions terminées pour pouvoir afficher "Missions réussies !".
+                // Avec getActiveMissions() (pending uniquement), cet état était inatteignable.
+                this.missionManager ? this.missionManager.missions : [],
                 this.totalCreditsEarned,
                 this.missionJustSucceededFlag
             );
@@ -1072,16 +1151,55 @@ class GameController {
         let pausedForLoad = false;
         // Restaure un état cohérent après un échec de chargement.
         const restoreAfterFailure = () => {
+            // Le chargement est terminé (en échec) : baisser le drapeau AVANT le changement
+            // d'état, sinon _onEnterState(PAUSED) supprimerait l'affichage du menu de pause
+            // (suppression prévue seulement pour la pause technique pendant le fetch) et le
+            // joueur se retrouverait en pause sans menu visible. Le finally le remet à false.
+            this._universeLoadInFlight = false;
             // Si aucun monde n'a jamais été chargé (modèles absents), on ne peut pas reprendre :
             // on reste dans l'état précédent (typiquement LOADING).
             const canResume = !!(this.rocketModel && this.universeModel
                 && Array.isArray(this.universeModel.celestialBodies)
                 && this.universeModel.celestialBodies.length > 0);
-            if (this.physicsController) this.physicsController.resumeSimulation();
-            if (canResume) {
-                this.changeState(GameStates.PLAYING);
-            } else {
-                this.changeState(previousState);
+            // Ne pas passer outre une pause voulue par le joueur : si la partie était déjà en
+            // PAUSED avant la demande de chargement, on l'y laisse.
+            // Une fusée DÉTRUITE ne doit pas être remise en PLAYING : update() la renverrait
+            // aussitôt en CRASH_ANIMATION, or aucune explosion n'est en cours et
+            // PARTICLES.EXPLOSION_COMPLETED — seule sortie de cet état — ne sera jamais réémis
+            // (applyDamage ne réémet pas ROCKET.DESTROYED sur une épave). Le jeu resterait figé
+            // sur l'épave, écran de game over déjà masqué et pause inopérante.
+            const epaveDetruite = !!(this.rocketModel && this.rocketModel.isDestroyed);
+            const targetState = canResume
+                ? (epaveDetruite
+                    ? GameStates.GAME_OVER
+                    : (previousState === GameStates.PAUSED ? GameStates.PAUSED : GameStates.PLAYING))
+                : previousState;
+            // La simulation doit suivre l'état visé. `changeState` court-circuite quand l'état
+            // est inchangé (PAUSED -> PAUSED) : sans ce test, on reprenait la physique tout en
+            // restant affiché en pause, exactement l'incohérence que ce garde évite.
+            if (this.physicsController) {
+                if (targetState === GameStates.PAUSED) {
+                    this.physicsController.pauseSimulation();
+                } else {
+                    this.physicsController.resumeSimulation();
+                }
+            }
+            this.changeState(targetState);
+            // L'overlay de chargement a pu être affiché par la pause technique : le retirer, la
+            // transition PAUSED -> PAUSED ne rejouant aucun _onEnterState.
+            if (targetState === GameStates.PAUSED) {
+                this.eventBus.emit(EVENTS.UI.HIDE_LOADING_SCREEN);
+                this.eventBus.emit(EVENTS.UI.SHOW_PAUSE_MENU);
+            }
+
+            // Prévenir l'interface de l'échec. C'est VITAL quand aucun monde n'a pu être chargé :
+            // le jeu retombe alors dans l'état précédent (LOADING au premier lancement), or la
+            // boucle de jeu ne traite pas cet état et l'écran de démarrage a déjà été retiré du
+            // DOM — le joueur restait bloqué sur « Chargement… » à vie, sans qu'aucune touche ni
+            // aucun bouton ne réponde. C'est exactement ce qui arrive en ouvrant index.html en
+            // file:// (fetch refusé), le piège que CLAUDE.md signale.
+            if (this.eventBus && EVENTS.UNIVERSE && EVENTS.UNIVERSE.LOAD_FAILED) {
+                this.eventBus.emit(EVENTS.UNIVERSE.LOAD_FAILED, { canResume });
             }
         };
         try {
@@ -1112,7 +1230,14 @@ class GameController {
                 return;
             }
 
-            this.resetWorld(data);
+            // resetWorld rattrape ses propres exceptions : sans ce test, un monde malformé
+            // (JSON valide mais sans `bodies`) laissait le jeu bloqué en PAUSED avec l'écran
+            // de chargement affiché en permanence, sans qu'aucune exception ne remonte ici.
+            const ok = this.resetWorld(data);
+            if (ok === false && pausedForLoad) {
+                console.error('[GameController] Échec de resetWorld : restauration d\'un état jouable.');
+                restoreAfterFailure();
+            }
         } catch (e) {
             console.error('[GameController] handleUniverseLoadRequested erreur:', e);
             // En cas d'échec (ex: fetch/JSON), ne pas rester bloqué en PAUSED sans monde.
@@ -1128,12 +1253,16 @@ class GameController {
      * Réinitialise l'univers et repositionne la fusée à partir de données de monde.
      * Ne recrée pas les contrôleurs; réutilise les instances existantes et réinitialise la physique.
      * @param {object} worldData
+     * @returns {boolean} true si le monde a été construit et activé, false en cas d'échec.
+     *   L'appelant DOIT restaurer un état jouable sur false : cette méthode rattrape ses propres
+     *   erreurs (buildWorldFromData lève sur des données malformées), donc sans ce retour l'échec
+     *   était totalement silencieux et laissait le jeu figé sur l'écran de chargement.
      */
     resetWorld(worldData) {
         try {
             if (!this.rocketModel) {
                 console.error('[GameController.resetWorld] rocketModel manquant.');
-                return;
+                return false;
             }
 
             // Nettoyage léger des systèmes dépendants
@@ -1146,9 +1275,15 @@ class GameController {
             const built = setup.buildWorldFromData(worldData, this.rocketModel);
             if (!built || !built.universeModel) {
                 console.error('[GameController.resetWorld] Échec de buildWorldFromData.');
-                return;
+                return false;
             }
             this.universeModel = built.universeModel;
+
+            // buildWorldFromData ressuscite la fusée (rocketModel.reset()) : il faut donc
+            // aussi purger le drapeau de destruction, sinon le prochain crash dans le nouveau
+            // monde n'émettrait pas MISSION.FAILED (le garde de handleRocketStateUpdated
+            // le prendrait pour une destruction déjà notifiée).
+            this._lastRocketDestroyed = false;
 
             // Réinitialiser le moteur physique avec les nouveaux modèles
             if (this.physicsController) {
@@ -1174,8 +1309,10 @@ class GameController {
             if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE) {
                 this.eventBus.emit(EVENTS.UNIVERSE.RELOAD_COMPLETED, {});
             }
+            return true;
         } catch (e) {
             console.error('[GameController.resetWorld] Erreur lors du reset:', e);
+            return false;
         }
     }
 
@@ -1286,6 +1423,11 @@ class GameController {
                 this._pendingStateTransition = GameStates.PLAYING;
                 break;
             case GameStates.PLAYING:
+                // Filet de sécurité : quel que soit le chemin d'entrée en jeu, l'overlay de
+                // chargement doit disparaître. Nécessaire depuis que la pause technique de
+                // chargement affiche SHOW_LOADING_SCREEN : la transition PAUSED -> PLAYING ne
+                // passe pas par _onExitState(LOADING), seul endroit qui émettait le HIDE.
+                this.eventBus.emit(EVENTS.UI.HIDE_LOADING_SCREEN);
                 // Démarrer/reprendre la simulation physique, activer les contrôles
                 if (this.physicsController) this.physicsController.resumeSimulation(); // Méthode à créer
                 console.log("Émission de :", EVENTS.GAME.GAME_RESUMED); // Ou un nouvel event type GAME_STARTED_PLAYING
@@ -1296,8 +1438,17 @@ class GameController {
                 if (this.physicsController) this.physicsController.pauseSimulation(); // Méthode à créer
                 console.log("Émission de :", EVENTS.GAME.GAME_PAUSED);
                 this.eventBus.emit(EVENTS.GAME.GAME_PAUSED);
-                console.log("Émission de :", EVENTS.UI.SHOW_PAUSE_MENU);
-                this.eventBus.emit(EVENTS.UI.SHOW_PAUSE_MENU);
+                // Pause "technique" pendant le chargement d'un monde : afficher l'écran de
+                // CHARGEMENT plutôt que le menu de pause. Sinon le menu clignote à chaque
+                // changement d'univers (et s'affiche au tout premier lancement, avant d'avoir
+                // joué) ; et le supprimer sans rien mettre à la place laisserait un canvas noir
+                // sans aucune indication pendant tout le fetch.
+                if (this._universeLoadInFlight) {
+                    this.eventBus.emit(EVENTS.UI.SHOW_LOADING_SCREEN);
+                } else {
+                    console.log("Émission de :", EVENTS.UI.SHOW_PAUSE_MENU);
+                    this.eventBus.emit(EVENTS.UI.SHOW_PAUSE_MENU);
+                }
                 break;
             case GameStates.CRASH_ANIMATION:
                 // La simulation continue de tourner pour montrer l'explosion.

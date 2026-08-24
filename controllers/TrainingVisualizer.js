@@ -19,7 +19,14 @@ class TrainingVisualizer {
         this.trajectorySampleRate = 1; // Enregistrer 1 point tous les N steps (ajusté dynamiquement)
         this.maxTrajectoriesCount = 100; // Nombre max de trajectoires à conserver
         this.cameraInitialized = false; // Flag pour savoir si la caméra a déjà été initialisée
-        
+
+        // CORRECTION (objectif 'navigate' invisible) : objectif du run courant, mis à jour depuis
+        // AI.TRAINING_STARTED. En 'navigate' l'univers est VIDE : il ne faut surtout pas injecter
+        // la Terre/Lune par défaut (rayon 6,4e6) qui cadrait la caméra ~370× trop loin.
+        this.currentObjective = 'navigate';
+        // Passe à true dès que la caméra a été cadrée sur les VRAIS points A/B du run.
+        this.navPointsFramed = false;
+
         // Données de l'environnement
         this.rocketData = null;
         this.celestialBodies = [];
@@ -80,14 +87,55 @@ class TrainingVisualizer {
         const unsubscribe3 = this.eventBus.subscribe(window.EVENTS.AI.EPISODE_ENDED, (data) => {
             this.onEpisodeEnded(data);
         });
-        
+
+        // CORRECTION : connaître l'objectif du run permet de ne PAS injecter les corps célestes
+        // par défaut en 'navigate', et de re-cadrer la caméra sur les nouveaux points A/B.
+        const unsubscribe4 = this.eventBus.subscribe(window.EVENTS.AI.TRAINING_STARTED, (data) => {
+            this.onTrainingStarted(data);
+        });
+
+
+        // CORRECTION (fuite) : conserver les unsubscribe localement pour que destroy() puisse
+        // réellement se désabonner. Sans cela, un EPISODE_STARTED reçu après destroy() levait une
+        // exception (canvas/ctx mis à null) et le visualiseur détruit restait référencé par le bus.
+        this._unsubs = [unsubscribe1, unsubscribe2, unsubscribe3, unsubscribe4];
+
         if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
             window.controllerContainer.track(unsubscribe1);
             window.controllerContainer.track(unsubscribe2);
             window.controllerContainer.track(unsubscribe3);
+            window.controllerContainer.track(unsubscribe4);
         }
     }
-    
+
+    /**
+     * Début d'une session d'entraînement : mémoriser l'objectif et repartir d'un cadrage neuf.
+     */
+    onTrainingStarted(data) {
+        const objectives = data && data.config && data.config.objectives;
+        if (objectives && objectives.length > 0) {
+            this.currentObjective = objectives[0];
+        }
+
+        // Les points A/B et les corps célestes du run précédent ne sont plus valides : on les
+        // oublie pour que la caméra se recadre sur ceux du nouveau run dès leur arrivée.
+        this.startPoint = null;
+        this.targetPoint = null;
+        this.navPointsFramed = false;
+        if (this.isNavigateMode()) {
+            this.celestialBodies = [];
+        }
+    }
+
+    /**
+     * L'objectif courant est-il une navigation point à point (univers vide) ?
+     * Vrai aussi dès que des points A/B ont été reçus (détection robuste côté données).
+     */
+    isNavigateMode() {
+        return this.currentObjective === 'navigate' || !!(this.startPoint || this.targetPoint);
+    }
+
+
     /**
      * Gérer le début d'un nouvel épisode
      */
@@ -114,7 +162,9 @@ class TrainingVisualizer {
                 // Préserver le zoom si la caméra a déjà été initialisée
                 this.initializeCamera(this.cameraInitialized);
             }
-        } else if (this.celestialBodies.length === 0) {
+        } else if (this.celestialBodies.length === 0 && !this.isNavigateMode()) {
+            // CORRECTION : en 'navigate' l'univers est VIDE par construction — injecter la
+            // Terre/Lune factices y créait des planètes fantômes et un cadrage aberrant.
             this.initializeDefaultCelestialBodies();
         }
     }
@@ -132,8 +182,12 @@ class TrainingVisualizer {
     setActive(active) {
         this.isActive = active;
         if (active) {
-            // Initialiser les corps célestes par défaut si aucun n'est présent
-            if (this.celestialBodies.length === 0) {
+            // Initialiser les corps célestes par défaut si aucun n'est présent.
+            // CORRECTION : jamais en mode 'navigate' (univers vide) — la Terre/Lune factices
+            // (rayon 6,4e6) cadraient la caméra à un zoom ~2,35e-6 et verrouillaient
+            // cameraInitialized, si bien que le couloir réel A→B (127 279 unités) était rendu
+            // sur ~0,3 px et que les repères A/B restaient invisibles.
+            if (this.celestialBodies.length === 0 && !this.isNavigateMode()) {
                 this.initializeDefaultCelestialBodies();
             }
             this.startRenderLoop();
@@ -189,8 +243,7 @@ class TrainingVisualizer {
                     this.trajectoryStepCounter = 0;
                     this.rocketTrajectory.push({
                         x: this.rocketData.position.x,
-                        y: this.rocketData.position.y,
-                        timestamp: Date.now() // CORRECTION (bug #7) : nécessaire au calcul d'alpha (fade)
+                        y: this.rocketData.position.y
                     });
 
                     // Si on dépasse la limite, doubler le taux d'échantillonnage
@@ -225,8 +278,13 @@ class TrainingVisualizer {
             pointsChanged = true;
         }
         
-        // Initialiser la caméra si les points de navigation sont disponibles et que la caméra n'a pas encore été initialisée
-        if (pointsChanged && this.startPoint && this.targetPoint && !this.cameraInitialized) {
+        // Cadrer la caméra sur les VRAIS points de navigation dès leur première arrivée.
+        // CORRECTION : le garde était `!this.cameraInitialized`, un drapeau jamais remis à false
+        // et déjà positionné par le cadrage par défaut (Terre factice) -> le recadrage sur A/B
+        // n'avait jamais lieu et calculateNavigateZoom() (≈ 2,1e-3) ne servait à rien. On utilise
+        // désormais un drapeau propre aux points de navigation, réarmé à chaque nouveau run.
+        if (pointsChanged && this.startPoint && this.targetPoint && !this.navPointsFramed) {
+            this.navPointsFramed = true;
             this.initializeCamera(false);
         }
         
@@ -314,10 +372,12 @@ class TrainingVisualizer {
      * Définir le mode de suivi de la fusée
      */
     setFollowRocket(follow) {
-        this.camera.followRocket = follow;
         if (!follow) {
             this.initializeCamera();
         }
+        // CORRECTION: initializeCamera() force followRocket = true en fin d'exécution ; il faut
+        // donc (ré)appliquer l'argument APRÈS, sinon setFollowRocket(false) réactivait le suivi.
+        this.camera.followRocket = follow;
     }
     
     /**
@@ -369,11 +429,15 @@ class TrainingVisualizer {
      * Générer des étoiles de fond
      */
     generateStars(count) {
+        // CORRECTION : les étoiles étaient tirées sur ±2,5e8 unités alors que le monde
+        // d'entraînement fait ~1,4e5 unités : AUCUNE n'était jamais dans le champ. On les stocke
+        // désormais en coordonnées NORMALISÉES ([-0,5 ; 0,5]) et renderStars() les projette sur
+        // l'étendue réelle de la scène (A↔B, ou la vue courante).
         const stars = [];
         for (let i = 0; i < count; i++) {
             stars.push({
-                x: (Math.random() - 0.5) * 500000000, // Plus large pour couvrir l'espace Terre-Lune
-                y: (Math.random() - 0.5) * 500000000,
+                nx: Math.random() - 0.5,
+                ny: Math.random() - 0.5,
                 brightness: Math.random() * 0.8 + 0.2
             });
         }
@@ -570,15 +634,41 @@ class TrainingVisualizer {
      */
     renderStars() {
         this.ctx.fillStyle = this.colors.stars;
-        
-        // Adapter la taille des étoiles au zoom pour qu'elles restent visibles
-        const starSize = Math.max(1, 2 / this.camera.zoom);
-        
-        for (const star of this.stars) {
-            this.ctx.globalAlpha = star.brightness * 0.5;
-            this.ctx.fillRect(star.x, star.y, starSize, starSize);
+
+        // Le contexte est en coordonnées MONDE (applyCamera a déjà appliqué le zoom) : une taille
+        // de N pixels à l'écran vaut N / zoom unités monde.
+        const zoom = (isFinite(this.camera.zoom) && this.camera.zoom > 0) ? this.camera.zoom : 0.00711;
+        const starSize = 2 / zoom;
+
+        // Étendue du champ d'étoiles : centré sur la scène (milieu A↔B si connus, sinon la
+        // caméra) et dimensionné sur la distance A↔B (ou sur la vue courante), de sorte que les
+        // étoiles tombent toujours dans le champ tout en restant fixes dans le monde (parallaxe).
+        const viewW = (this.canvas.width || 800) / zoom;
+        const viewH = (this.canvas.height || 600) / zoom;
+        let centerX = isFinite(this.camera.x) ? this.camera.x : 0;
+        let centerY = isFinite(this.camera.y) ? this.camera.y : 0;
+        let spanX = viewW * 2;
+        let spanY = viewH * 2;
+
+        if (this.startPoint && this.targetPoint &&
+            isFinite(this.startPoint.x) && isFinite(this.targetPoint.x)) {
+            centerX = (this.startPoint.x + this.targetPoint.x) / 2;
+            centerY = (this.startPoint.y + this.targetPoint.y) / 2;
+            const ddx = this.targetPoint.x - this.startPoint.x;
+            const ddy = this.targetPoint.y - this.startPoint.y;
+            const abSpan = Math.sqrt(ddx * ddx + ddy * ddy) * 2;
+            spanX = Math.max(abSpan, viewW * 2);
+            spanY = Math.max(abSpan, viewH * 2);
         }
-        
+
+        for (const star of this.stars) {
+            // Compatibilité : anciennes étoiles éventuelles stockées en coordonnées absolues
+            const nx = (typeof star.nx === 'number') ? star.nx : 0;
+            const ny = (typeof star.ny === 'number') ? star.ny : 0;
+            this.ctx.globalAlpha = star.brightness * 0.5;
+            this.ctx.fillRect(centerX + nx * spanX, centerY + ny * spanY, starSize, starSize);
+        }
+
         this.ctx.globalAlpha = 1.0;
     }
     
@@ -724,14 +814,19 @@ class TrainingVisualizer {
      * Dessiner les corps célestes
      */
     renderCelestialBodies() {
+        // Le contexte est en coordonnées MONDE (applyCamera a déjà appliqué le zoom) : pour
+        // garantir une taille minimale de N pixels à l'écran il faut N / zoom unités monde.
+        // CORRECTION : le code MULTIPLIAIT par le zoom (≈ 2,7e-3) — les corps étaient dessinés
+        // ~370 000× trop petits (donc invisibles), idem pour la taille de police.
+        const zoom = (isFinite(this.camera.zoom) && this.camera.zoom > 0) ? this.camera.zoom : 0.00711;
+
         for (const body of this.celestialBodies) {
             if (!body.position) continue;
-            
-            // Calculer la taille d'affichage basée sur le rayon réel et le zoom
+
+            // Rayon réel, avec un plancher de 8 px à l'écran pour rester visible de loin
             const realRadius = body.radius || 50000;
-            // S'assurer que les corps célestes sont toujours visibles avec une taille minimale plus grande
-            const displayRadius = Math.max(8, realRadius * this.camera.zoom);
-            
+            const displayRadius = Math.max(realRadius, 8 / zoom);
+
             this.ctx.beginPath();
             this.ctx.arc(body.position.x, body.position.y, displayRadius, 0, Math.PI * 2);
             
@@ -746,14 +841,14 @@ class TrainingVisualizer {
             
             this.ctx.fill();
             
-            // Contour plus visible
+            // Contour plus visible (2 px à l'écran)
             this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            this.ctx.lineWidth = Math.max(2, 3 / this.camera.zoom);
+            this.ctx.lineWidth = 2 / zoom;
             this.ctx.stroke();
-            
-            // Nom du corps céleste (toujours visible avec une taille adaptée)
+
+            // Nom du corps céleste : 14 px à l'écran -> 14 / zoom unités monde
             this.ctx.fillStyle = '#FFFFFF';
-            const fontSize = Math.max(10, Math.min(20, 15 / this.camera.zoom));
+            const fontSize = 14 / zoom;
             this.ctx.font = `${fontSize}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.fillText(body.name || 'Corps', body.position.x, body.position.y + displayRadius + fontSize + 5);
@@ -792,28 +887,17 @@ class TrainingVisualizer {
             this.ctx.strokeStyle = this.colors.trajectory;
             this.ctx.globalAlpha = 1.0;
             this.ctx.beginPath();
-            
-            // Dessiner la trajectoire avec un effet de fade basé sur l'âge des points
-            for (let i = 1; i < this.rocketTrajectory.length; i++) {
-                const point = this.rocketTrajectory[i];
-                const prevPoint = this.rocketTrajectory[i - 1];
-                
-                // Calculer l'opacité basée sur l'âge du point
-                // CORRECTION (bug #7) : point.timestamp est désormais défini ; on clampe
-                // dans [0.3, 1] et on se protège d'un timestamp manquant (NaN -> 1).
-                const ts = (typeof point.timestamp === 'number' && isFinite(point.timestamp))
-                    ? point.timestamp : Date.now();
-                const age = (Date.now() - ts) / 30000; // 30 secondes de fade
-                const alpha = Math.max(0.3, Math.min(1, 1 - age));
 
-                this.ctx.globalAlpha = alpha;
-                
-                if (i === 1) {
-                    this.ctx.moveTo(prevPoint.x, prevPoint.y);
-                }
-                this.ctx.lineTo(point.x, point.y);
+            // CORRECTION (fade mort) : l'ancien code calculait un globalAlpha par point à
+            // l'intérieur d'un unique beginPath()/stroke() — seule la DERNIÈRE valeur s'appliquait,
+            // le dégradé n'a donc jamais existé. Le rendre réel imposerait un stroke() par segment
+            // (des milliers d'appels par frame, sur le thread qui fait tourner l'entraînement) :
+            // on supprime plutôt le calcul mort et le champ `timestamp` qui ne servait qu'à lui.
+            this.ctx.moveTo(this.rocketTrajectory[0].x, this.rocketTrajectory[0].y);
+            for (let i = 1; i < this.rocketTrajectory.length; i++) {
+                this.ctx.lineTo(this.rocketTrajectory[i].x, this.rocketTrajectory[i].y);
             }
-            
+
             this.ctx.stroke();
         }
         
@@ -833,10 +917,14 @@ class TrainingVisualizer {
         this.ctx.save();
         this.ctx.translate(x, y);
         this.ctx.rotate(angle);
-        
-        // Taille adaptée au zoom - plus visible à faible zoom
-        const size = Math.max(10, 10000 * this.camera.zoom);
-        
+
+        // Le contexte est en coordonnées MONDE : une taille minimale de N pixels à l'écran vaut
+        // N / zoom unités monde. CORRECTION : l'ancien `10000 * zoom` MULTIPLIAIT par le zoom
+        // (≈ 2,7e-3 -> 27 unités monde ≈ 0,07 px à l'écran) : la fusée était invisible.
+        const zoom = (isFinite(this.camera.zoom) && this.camera.zoom > 0) ? this.camera.zoom : 0.00711;
+        const rocketHalfHeight = (typeof ROCKET !== 'undefined' && ROCKET.HEIGHT) ? ROCKET.HEIGHT / 2 : 30;
+        const size = Math.max(rocketHalfHeight, 12 / zoom); // au moins ~12 px à l'écran
+
         // Dessiner la fusée comme un triangle simple
         this.ctx.fillStyle = this.rocketData.isDestroyed ? '#ff0000' : this.colors.rocket;
         this.ctx.beginPath();
@@ -897,12 +985,16 @@ class TrainingVisualizer {
         if (this.rocketData) {
             const pos = this.rocketData.position || {};
             const vel = this.rocketData.velocity || {};
-            const speed = Math.sqrt((vel.x || 0) ** 2 + (vel.y || 0) ** 2);
-            
+            // CORRECTION (unités) : rocketData.velocity est en échelle Matter
+            // (≈ u/s × MATTER_BASE_DELTA, cf. PHYSICS.md §1). L'afficher tel quel en « m/s »
+            // annonçait une vitesse ~16,67× trop grande. On convertit en unités/seconde.
+            const VK = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+            const speed = Math.sqrt((vel.x || 0) ** 2 + (vel.y || 0) ** 2) / VK;
+
             info.push(
                 `------- Fusée -------`,
                 `Position: (${(pos.x || 0).toFixed(0)}, ${(pos.y || 0).toFixed(0)})`,
-                `Vitesse: ${speed.toFixed(1)} m/s`,
+                `Vitesse: ${speed.toFixed(1)} u/s`,
                 `Carburant: ${(this.rocketData.fuel || 0).toFixed(0)}`,
                 `État: ${this.rocketData.isDestroyed ? '💥 Détruite' : this.rocketData.isLanded ? '✅ Atterrie' : '🚀 En vol'}`
             );
@@ -950,6 +1042,17 @@ class TrainingVisualizer {
      */
     destroy() {
         this.stopRenderLoop();
+        this.isActive = false;
+
+        // Se désabonner AVANT de lâcher le canvas/contexte (sinon un événement AI.* arrivant
+        // ensuite exécuterait le rendu sur un ctx null).
+        if (this._unsubs && this._unsubs.length > 0) {
+            for (const unsub of this._unsubs) {
+                try { if (typeof unsub === 'function') unsub(); } catch (e) { /* ignore */ }
+            }
+            this._unsubs = [];
+        }
+
         this.eventBus = null;
         this.canvas = null;
         this.ctx = null;

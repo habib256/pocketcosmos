@@ -90,7 +90,11 @@ window.EVENTS = {
   UNIVERSE: {
     STATE_UPDATED: 'UNIVERSE_STATE_UPDATED',
     LOAD_REQUESTED: 'UNIVERSE_LOAD_REQUESTED',
-    RELOAD_COMPLETED: 'UNIVERSE_RELOAD_COMPLETED'
+    RELOAD_COMPLETED: 'UNIVERSE_RELOAD_COMPLETED',
+    // Émis quand un chargement de monde échoue (fetch 404, JSON invalide, données malformées).
+    // Indispensable au tout premier chargement : sans monde, le jeu ne peut pas reprendre et
+    // l'écran de démarrage doit rester disponible pour réessayer.
+    LOAD_FAILED: 'UNIVERSE_LOAD_FAILED'
   },
   PARTICLE_SYSTEM: {
     UPDATED: 'PARTICLE_SYSTEM_UPDATED'

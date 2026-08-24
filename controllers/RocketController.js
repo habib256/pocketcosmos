@@ -4,6 +4,9 @@ class RocketController {
         this.eventBus = eventBus;
         this.rocketModel = rocketModel;
         this.physicsController = actualPhysicsController; // actualPhysicsController est l'instance de PhysicsController
+        /** @type {boolean} Le jeu est-il en pause ? Tenu à jour via GAME_PAUSED / GAME_RESUMED.
+         *  Sert à ignorer les commandes continues du gamepad pendant la pause (cf. handleRotateCommand). */
+        this.isGamePaused = false;
         
         if (actualParticleController && typeof actualParticleController.getParticleSystemModel === 'function') {
             this.particleSystemModel = actualParticleController.getParticleSystemModel();
@@ -98,6 +101,25 @@ class RocketController {
 
         // Nouvel abonnement pour la commande de rotation générique (par exemple, depuis un joystick)
         subscribeAndTrack(EVENTS.INPUT.ROTATE_COMMAND, (data) => this.handleRotateCommand(data));
+
+        // Suivi de l'état de pause : le gamepad est lu par polling à chaque frame, y compris
+        // en pause. On a donc besoin de savoir si le jeu tourne pour ne pas écrire la puissance
+        // des propulseurs dans le modèle pendant que la simulation est figée.
+        if (EVENTS.GAME && EVENTS.GAME.GAME_PAUSED) {
+            subscribeAndTrack(EVENTS.GAME.GAME_PAUSED, () => {
+                this.isGamePaused = true;
+                // Couper la boucle sonore du propulseur : son seul autre point d'arrêt
+                // (ThrusterPhysics.updateThrusters) ne tourne plus une fois la simulation en pause,
+                // le son continuait donc indéfiniment par-dessus le menu de pause.
+                const tp = this.physicsController && this.physicsController.thrusterPhysics;
+                if (tp && typeof tp.stopMainThrusterSound === 'function') {
+                    tp.stopMainThrusterSound();
+                }
+            });
+        }
+        if (EVENTS.GAME && EVENTS.GAME.GAME_RESUMED) {
+            subscribeAndTrack(EVENTS.GAME.GAME_RESUMED, () => { this.isGamePaused = false; });
+        }
         
         console.log(`[RocketController] Abonné à ${subscriptionCount} événements`);
     }
@@ -115,6 +137,11 @@ class RocketController {
         this.rocketModel.setThrusterPower('main', ROCKET.THRUSTER_POWER.MAIN);
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('main', true, this.rocketModel);
+            // Rétablir l'intensité PLEINE du panache : powerLevel n'est écrit que par
+            // handleSetThrusterPower, et un passage à 0 par ce chemin (désactivation de
+            // l'IA, rotation gamepad) le laissait figé bas — la poussée clavier suivante
+            // n'émettait plus qu'une seule particule.
+            this._updateEmitterPowerLevel('main', ROCKET.THRUSTER_POWER.MAIN);
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
@@ -125,13 +152,15 @@ class RocketController {
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('main', false, this.rocketModel);
         }
-        // Rendre la gestion du son plus robuste
-        if (this.physicsController && this.physicsController.mainThrusterSoundPlaying) {
-            if (this.physicsController.mainThrusterSound && typeof this.physicsController.mainThrusterSound.pause === 'function') {
-                this.physicsController.mainThrusterSound.pause();
-                this.physicsController.mainThrusterSound.currentTime = 0;
-            }
-            this.physicsController.mainThrusterSoundPlaying = false; // Assurer que l'état est mis à jour
+        // Couper le son du propulseur principal.
+        // L'état du son vit sur ThrusterPhysics, PAS sur PhysicsController : l'ancien test
+        // (`this.physicsController.mainThrusterSoundPlaying`) était toujours undefined, donc
+        // cette branche ne s'exécutait jamais. Comme updateThrusters() — l'autre chemin d'arrêt —
+        // ne tourne pas quand la simulation est en pause, la boucle sonore continuait par-dessus
+        // le menu de pause ou l'écran de chargement.
+        const thrusterPhysics = this.physicsController && this.physicsController.thrusterPhysics;
+        if (thrusterPhysics && typeof thrusterPhysics.stopMainThrusterSound === 'function') {
+            thrusterPhysics.stopMainThrusterSound();
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
@@ -142,6 +171,11 @@ class RocketController {
         this.rocketModel.setThrusterPower('rear', ROCKET.THRUSTER_POWER.REAR);
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('rear', true, this.rocketModel);
+            // Rétablir l'intensité PLEINE du panache : powerLevel n'est écrit que par
+            // handleSetThrusterPower, et un passage à 0 par ce chemin (désactivation de
+            // l'IA, rotation gamepad) le laissait figé bas — la poussée clavier suivante
+            // n'émettait plus qu'une seule particule.
+            this._updateEmitterPowerLevel('rear', ROCKET.THRUSTER_POWER.REAR);
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
@@ -161,6 +195,11 @@ class RocketController {
         this.rocketModel.setThrusterPower('left', ROCKET.THRUSTER_POWER.LEFT);
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('left', true, this.rocketModel);
+            // Rétablir l'intensité PLEINE du panache : powerLevel n'est écrit que par
+            // handleSetThrusterPower, et un passage à 0 par ce chemin (désactivation de
+            // l'IA, rotation gamepad) le laissait figé bas — la poussée clavier suivante
+            // n'émettait plus qu'une seule particule.
+            this._updateEmitterPowerLevel('left', ROCKET.THRUSTER_POWER.LEFT);
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
@@ -180,6 +219,11 @@ class RocketController {
         this.rocketModel.setThrusterPower('right', ROCKET.THRUSTER_POWER.RIGHT);
         if (this.particleSystemModel) {
             this.particleSystemModel.setEmitterActive('right', true, this.rocketModel);
+            // Rétablir l'intensité PLEINE du panache : powerLevel n'est écrit que par
+            // handleSetThrusterPower, et un passage à 0 par ce chemin (désactivation de
+            // l'IA, rotation gamepad) le laissait figé bas — la poussée clavier suivante
+            // n'émettait plus qu'une seule particule.
+            this._updateEmitterPowerLevel('right', ROCKET.THRUSTER_POWER.RIGHT);
         }
         this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
     }
@@ -205,9 +249,30 @@ class RocketController {
             if (this.particleSystemModel) {
                 const fuelOk = this.rocketModel._infiniteFuel || this.rocketModel.fuel > 0;
                 this.particleSystemModel.setEmitterActive(thrusterId, fuelOk && power > 0.01, this.rocketModel);
+                // Moduler l'intensité visuelle du panache selon la puissance réelle.
+                // `setEmitterPowerLevel` n'était appelé NULLE PART : ParticleController module
+                // pourtant nombre, vitesse, durée de vie et taille des particules par
+                // powerLevel/100, qui restait figé à 100. Le panache était donc identique à 5 %
+                // et à 100 % de poussée (visible au stick analogique et sous contrôle de l'IA).
+                this._updateEmitterPowerLevel(thrusterId, power);
             }
             this.eventBus.emit(this.ROCKET_INTERNAL_STATE_CHANGED_EVENT);
         }
+    }
+
+    /**
+     * Répercute la puissance d'un propulseur sur l'intensité visuelle de son émetteur.
+     * @param {string} thrusterId - 'main' | 'rear' | 'left' | 'right'
+     * @param {number} power - Puissance ABSOLUE (0..maxPower), pas un pourcentage.
+     * @private
+     */
+    _updateEmitterPowerLevel(thrusterId, power) {
+        if (!this.particleSystemModel || typeof this.particleSystemModel.setEmitterPowerLevel !== 'function') return;
+        const thruster = this.rocketModel && this.rocketModel.thrusters && this.rocketModel.thrusters[thrusterId];
+        const maxPower = thruster && thruster.maxPower;
+        if (!maxPower || maxPower <= 0) return;
+        const ratio = Math.max(0, Math.min(1, power / maxPower));
+        this.particleSystemModel.setEmitterPowerLevel(thrusterId, ratio * 100);
     }
 
     // +++ NOUVEAU GESTIONNAIRE pour EVENTS.INPUT.ROTATE_COMMAND +++
@@ -216,11 +281,24 @@ class RocketController {
 
         const rotateValue = data.value; // Valeur de rotation, négative pour droite, positive pour gauche
 
-        // Note: Accéder à gameController.isPaused nécessiterait de passer gameController au constructeur
-        // ou de gérer la pause via un événement auquel RocketController s'abonne.
-        // Pour l'instant, on suppose que si le jeu est en pause, InputController n'émet pas ces événements,
-        // ou que GameController gère la pause globalement pour les mises à jour.
-        // Si GameController.isPaused est nécessaire, il faudrait l'ajouter.
+        // Le gamepad est lu par polling à chaque frame, y compris pendant la pause : un stick
+        // maintenu (ou une simple dérive au repos au-dessus de axisThreshold = 0,1) réémet
+        // ROTATE_COMMAND en continu. On ignore donc ces commandes en pause plutôt que de
+        // demander une reprise : émettre RESUME_IF_PAUSED ici rendait la mise en pause
+        // IMPOSSIBLE tant que le stick était dévié (reprise immédiate à la frame suivante).
+        // Les autres chemins de contrôle (clavier, boutons) restent événementiels : eux
+        // demandent bien la reprise, car ils traduisent une intention ponctuelle du joueur.
+        //
+        // ⚠️ EXCEPTION IMPORTANTE : value === 0 est la commande d'ARRÊT, et c'est le SEUL signal
+        // qui remet les propulseurs latéraux à zéro pour le gamepad. Elle est émise depuis des
+        // chemins qui s'exécutent justement pendant la pause (front descendant de l'axe lu par
+        // update(), relâchement global sur blur, déconnexion de la manette) et le front est
+        // CONSOMMÉ au passage. L'ignorer laissait le propulseur latéral allumé pour de bon :
+        // à la reprise, la fusée tournait sur elle-même en brûlant du carburant, sans qu'aucun
+        // événement ultérieur ne vienne la stopper. On traite donc toujours l'arrêt.
+        if (this.isGamePaused && rotateValue !== 0) {
+            return;
+        }
 
         let powerLeft = 0;
         let powerRight = 0;

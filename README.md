@@ -58,7 +58,10 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 
 ### Architecture
 *   **Architecture Modulaire (MVC + EventBus) 🏗️:** Code structuré et découplé facilitant la maintenance et l'évolution.
-*   **Génération Procédurale:** Support pour le chargement de mondes préconfigurés ou générés aléatoirement.
+*   **Mondes préconfigurés:** 6 univers chargés depuis `assets/worlds/*.json`. (Une source
+    `random` existe dans le code de chargement mais le générateur `window.ProceduralGenerator`
+    n'est pas implémenté : la génération procédurale de mondes n'est pas disponible aujourd'hui.
+    Les ceintures d'astéroïdes, elles, sont bien générées procéduralement.)
 
 ## 🎮 Contrôles
 
@@ -79,6 +82,11 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **P** ou **Echap** : Pause / Reprendre la simulation
 - **M** : Diminuer la puissance globale des propulseurs
 - **N** : Augmenter la puissance globale des propulseurs
+- **H** : Activer/désactiver l'aide au pilotage 🤓 (stabilisation automatique de la rotation)
+
+Également disponibles (non listés ci-dessus car non clavier) : **glisser-déposer souris ou tactile**
+pour déplacer la caméra, et une **manette** (sticks : rotation/zoom · A : poussée · Y : rétro ·
+LB/RB : traces/vecteurs · Start : pause · L3 : réinitialiser · View : centrer la caméra).
 
 ## 🔧 Technologies
 
@@ -156,9 +164,10 @@ L'interface web complète permet de :
 Envie d'expérimenter ? 🧪 Le fichier `constants.js` est votre terrain de jeu ! Modifiez :
 
 - La gravité (`PHYSICS.G`)
-- La puissance et l'efficacité des propulseurs (`ROCKET.THRUSTER_POWER`, `ROCKET.FUEL_EFFICIENCY`)
+- La puissance et la consommation des propulseurs (`ROCKET.THRUSTER_POWER`, `ROCKET.FUEL_CONSUMPTION`)
 - Les caractéristiques de la fusée (masse, carburant max, résistance `ROCKET.MAX_HEALTH`)
-- Les paramètres d'orbite des corps célestes (`UNIVERSE`)
+- Les paramètres par défaut des corps célestes (`CELESTIAL_BODY`) ; masses, rayons et orbites de
+  chaque monde se règlent dans `assets/worlds/*.json`
 - Les seuils de difficulté (atterrissage, crash `PHYSICS.LANDING_MAX_SPEED`, `PHYSICS.IMPACT_DAMAGE_FACTOR`)
 - Les paramètres d'entraînement IA (`AI`)
 

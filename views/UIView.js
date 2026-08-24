@@ -20,9 +20,12 @@ class UIView {
     /**
      * Crée une instance de UIView.
      * @param {EventBus} eventBus - Le bus d'événements pour la communication (potentiellement future).
+     * @param {HTMLCanvasElement} [canvas] - Canvas de jeu. Utilisé uniquement pour restreindre le
+     *   gestionnaire de clic à la zone de jeu ; le rendu reçoit son canvas via `render()`.
      */
-    constructor(eventBus) {
+    constructor(eventBus, canvas) {
         this.eventBus = eventBus; // Utilisé pour émettre/écouter des événements UI
+        this.canvas = canvas || null;
 
         // Styles par défaut
         this.fontFamily = 'Arial'; // Utiliser une seule source pour la famille de police
@@ -58,14 +61,26 @@ class UIView {
 
         this.subscribeToEvents();
 
-        // Brancher un gestionnaire de clic global et le relayer via EventBus (découplage InputController/UI)
+        // Relayer les clics du CANVAS via l'EventBus (découplage InputController/UI).
+        // L'écouteur était posé sur `window` : il se déclenchait sur n'importe quel clic de la page
+        // (sélecteur de monde, cases à cocher, bouton son…) tout en annonçant un `canvas_click`, et
+        // rapportait clientX/clientY comme s'il s'agissait de coordonnées canvas. On l'attache donc
+        // au canvas quand il est fourni, et on convertit en coordonnées canvas.
+        const cible = this.canvas || window;
         const onClick = (ev) => {
             if (!this.eventBus || !window.EVENTS || !window.EVENTS.UI || !window.EVENTS.UI.UPDATE) return;
-            this.eventBus.emit(window.EVENTS.UI.UPDATE, { type: 'canvas_click', x: ev.clientX, y: ev.clientY });
+            let x = ev.clientX;
+            let y = ev.clientY;
+            if (this.canvas && typeof this.canvas.getBoundingClientRect === 'function') {
+                const rect = this.canvas.getBoundingClientRect();
+                x = ev.clientX - rect.left;
+                y = ev.clientY - rect.top;
+            }
+            this.eventBus.emit(window.EVENTS.UI.UPDATE, { type: 'canvas_click', x, y });
         };
-        window.addEventListener('click', onClick);
+        cible.addEventListener('click', onClick);
         if (window.controllerContainer && typeof window.controllerContainer.track === 'function') {
-            window.controllerContainer.track(() => window.removeEventListener('click', onClick));
+            window.controllerContainer.track(() => cible.removeEventListener('click', onClick));
         }
     }
 
@@ -526,7 +541,10 @@ class UIView {
 
         const activeMissions = missions ? missions.filter(m => m.status === 'pending') : [];
         const completedMissions = missions ? missions.filter(m => m.status === 'completed') : [];
-        const allMissionsCompleted = missions && activeMissions.length === 0 && missions.length > 0;
+        // Succès = plus aucune mission en cours ET au moins une réellement accomplie.
+        // Sans la condition sur `completedMissions`, une liste entièrement en échec affichait
+        // aussi le message vert "Missions réussies !".
+        const allMissionsCompleted = activeMissions.length === 0 && completedMissions.length > 0;
 
         if (rocketModel && rocketModel.isDestroyed) {
             ctx.font = `bold 14px ${this.fontFamily}`;

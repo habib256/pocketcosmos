@@ -45,7 +45,8 @@ class TrainingOrchestrator {
         
         // Métriques d'entraînement
         this.metrics = {
-            episode: 0,
+            episode: 0,             // Index 0-based de la boucle d'entraînement (PAS un compteur)
+            episodesCompleted: 0,   // Nombre d'épisodes réellement terminés
             totalSteps: 0,
             totalReward: 0,
             bestAverageReward: -Infinity,
@@ -71,7 +72,18 @@ class TrainingOrchestrator {
         this.trainingEnv = null;
         this.evaluationEnv = null;
         this.rocketAI = null;
-        
+
+        // CORRECTION (Stop puis Start rapproché) : compteur de "génération" de session. Il est
+        // incrémenté à chaque startTraining() et capturé par les traitements de fin asynchrones
+        // (finalizeTraining / cleanupAfterError). Ces derniers ne libèrent/annulent les champs
+        // partagés (rocketAI, trainingEnv, evaluationEnv, isTraining) que si la génération n'a pas
+        // changé entre-temps — sinon ils détruiraient les ressources du run SUIVANT.
+        this._runGeneration = 0;
+
+        // Budget de pas par épisode RÉELLEMENT utilisé par le run courant (peut différer de
+        // config.maxStepsPerEpisode pour l'objectif 'navigate'). Voir initializeEnvironments().
+        this.effectiveMaxStepsPerEpisode = null;
+
         this.setupEventListeners();
     }
     
@@ -101,7 +113,12 @@ class TrainingOrchestrator {
         if (this.isTraining) {
             return;
         }
-        
+
+        // Nouvelle génération de session : toute finalisation asynchrone encore en vol (issue du
+        // run précédent) devient obsolète et cessera de toucher aux champs partagés.
+        this._runGeneration = (this._runGeneration || 0) + 1;
+        const runId = this._runGeneration;
+
         try {
         // Fusionner la configuration utilisateur avec la configuration par défaut
         this.config = { ...this.config, ...userConfig };
@@ -118,6 +135,7 @@ class TrainingOrchestrator {
         
         // CORRECTION: Réinitialiser les métriques au début de l'entraînement
         this.metrics.episode = 0;
+        this.metrics.episodesCompleted = 0; // Nombre d'épisodes RÉELLEMENT terminés (voir updateMetrics)
         this.metrics.totalSteps = 0;
         this.metrics.totalReward = 0;
         this.metrics.successfulEpisodes = 0; // CORRECTION: Réinitialiser le compteur de succès
@@ -129,6 +147,23 @@ class TrainingOrchestrator {
         this.metrics.bestAverageReward = -Infinity;
         this.metrics.trainingStartTime = Date.now();
         this.metrics.lastCheckpointTime = null;
+
+        // CORRECTION (état résiduel entre deux runs) : recentPerformance / earlyStoppingCounter /
+        // bestModelWeights survivaient d'un entraînement à l'autre — le run n°2 déclenchait donc
+        // son early stopping à partir des scores du run n°1, et les poids retenus pouvaient venir
+        // d'un modèle déjà disposé. On repart d'un état propre (en libérant les tenseurs retenus).
+        if (this.trainingState.bestModelWeights) {
+            this.trainingState.bestModelWeights.forEach(w => {
+                if (w && typeof w.dispose === 'function') {
+                    try { w.dispose(); } catch (e) { /* ignore */ }
+                }
+            });
+        }
+        this.trainingState.bestModelWeights = null;
+        this.trainingState.recentPerformance = [];
+        this.trainingState.earlyStoppingCounter = 0;
+        this._stopRequested = false;
+
         this.isTraining = true;
             
             // Initialiser les environnements
@@ -143,20 +178,22 @@ class TrainingOrchestrator {
                 timestamp: this.metrics.trainingStartTime
             });
             
-            // Démarrer la boucle d'entraînement
-            await this.trainingLoop();
-            
+            // Démarrer la boucle d'entraînement (elle porte l'identifiant de CE run)
+            await this.trainingLoop(runId);
+
         } catch (error) {
             // Ignorer silencieusement les erreurs "disposed" car c'est un comportement attendu lors du cleanup
             const isDisposedError = error.message && error.message.includes('disposed');
             
             // Erreurs ignorées silencieusement (dont "disposed")
             
-            // Nettoyer les ressources en cas d'erreur
-            await this.cleanupAfterError();
-            
-            // N'émettre l'événement d'erreur que pour les vraies erreurs
-            if (!isDisposedError) {
+            // Nettoyer les ressources en cas d'erreur (uniquement celles de CE run)
+            await this.cleanupAfterError(runId);
+
+            // N'émettre l'événement d'erreur que pour les vraies erreurs, et seulement si un
+            // nouveau run n'a pas déjà démarré entre-temps (sinon l'UI afficherait "Erreur
+            // d'entraînement" alors que la session courante tourne normalement).
+            if (!isDisposedError && this._runGeneration === runId) {
                 this.eventBus.emit(window.EVENTS.AI.TRAINING_ERROR, { error: error.message });
             }
         }
@@ -165,30 +202,47 @@ class TrainingOrchestrator {
     /**
      * Nettoie les ressources après une erreur pour permettre un nouveau démarrage
      */
-    async cleanupAfterError() {
+    async cleanupAfterError(runId = this._runGeneration) {
+        // CORRECTION (Stop/Start rapproché) : ce nettoyage est asynchrone (attente de 350 ms). Si
+        // un nouveau run a démarré pendant l'attente, il ne faut PAS toucher à ses ressources.
+        if (this._runGeneration !== runId) return;
+
         this.isTraining = false;
         this.isPaused = false;
-        
+
         // Nettoyer l'agent IA avec un délai suffisant pour que les opérations async s'arrêtent
-        if (this.rocketAI) {
+        const agent = this.rocketAI;
+        if (agent) {
             try {
                 // Appeler cleanup d'abord pour marquer comme disposé
-                if (typeof this.rocketAI.cleanup === 'function') {
-                    this.rocketAI.cleanup();
+                if (typeof agent.cleanup === 'function') {
+                    agent.cleanup();
                 }
-                
+
                 // Attendre que les opérations en cours se terminent et que cleanup() dispose les modèles
                 await new Promise(resolve => setTimeout(resolve, 350));
-                
+
             } catch (e) { /* ignore */ }
+            if (this._runGeneration !== runId) return;
             this.rocketAI = null;
         }
-        
+
+        if (this._runGeneration !== runId) return;
+
         // Réinitialiser les environnements
         this.trainingEnv = null;
         this.evaluationEnv = null;
     }
     
+    /**
+     * Budget de pas par épisode du run courant.
+     * CORRECTION : source unique pour la boucle d'entraînement, l'évaluation et le critère de
+     * succès par défaut, sans jamais muter this.config (qui survit d'un run à l'autre).
+     */
+    getMaxStepsPerEpisode() {
+        return this.effectiveMaxStepsPerEpisode || this.config.maxStepsPerEpisode;
+    }
+
     /**
      * Initialise les environnements d'entraînement et d'évaluation
      */
@@ -208,20 +262,27 @@ class TrainingOrchestrator {
             const pointA = { x: 0, y: 0 };
             const pointB = { x: 90000, y: 90000 }; // ~127k unités (diagonale)
 
-            // Angle initial aléatoire pour forcer l'IA à s'orienter
+            // Angle initial aléatoire pour forcer l'IA à s'orienter.
+            // CORRECTION: l'angle n'est plus figé pour tout le run — `randomizeInitialAngle`
+            // demande à HeadlessRocketEnvironment.reset() d'en tirer un NOUVEAU à chaque épisode
+            // (entraînement ET évaluation, evaluationConfig étant une copie de trainingConfig).
+            // La valeur ci-dessous ne sert donc que d'angle du tout premier reset.
             const rocketInitialAngle = Math.random() * Math.PI * 2;
 
             // Budget de steps réduit ~5× (vol plus court A→B). Distance ~127k unités, croisière
             // cible ~2500 u/s → ~51s → ~3000 steps de croisière + freinage ⇒ 4000 steps (66s @ 1/60s).
             const navigateMaxSteps = Math.max(this.config.maxStepsPerEpisode, 4000);
 
-            // IMPORTANT: Mettre à jour this.config pour que la boucle d'entraînement (runEpisode)
-            // utilise aussi cette limite, pas seulement l'environnement
-            this.config.maxStepsPerEpisode = navigateMaxSteps;
+            // CORRECTION (fuite de configuration entre deux runs) : on n'écrit PLUS ce budget dans
+            // this.config (persistant et seulement fusionné par startTraining) — un run 'orbit' ou
+            // 'land' lancé ensuite héritait silencieusement des 4000 pas/épisode de 'navigate'.
+            // Le budget effectif du run est porté par un champ dédié, lu via getMaxStepsPerEpisode().
+            this.effectiveMaxStepsPerEpisode = navigateMaxSteps;
 
             trainingConfig = {
                 maxStepsPerEpisode: navigateMaxSteps,
                 infiniteFuel: true,
+                randomizeInitialAngle: true,
                 rocketInitialState: {
                     position: { ...pointA },
                     velocity: { x: 0, y: 0 },
@@ -244,8 +305,17 @@ class TrainingOrchestrator {
             // Configuration par défaut avec Terre et Lune
             // Position initiale de la fusée : sur la surface de la Terre, côté +Y
             const rocketStartY = aiEnvConfig.EARTH_POSITION.y + CELESTIAL_BODY.RADIUS + aiEnvConfig.ROCKET_INITIAL_OFFSET;
-            const rocketInitialAngle = -Math.PI / 2; // Pointant vers le haut pour décoller
-            
+            // CORRECTION : l'angle de départ était -π/2, annoncé « pointant vers le haut ». Faux :
+            // le nez / l'axe de poussée principale est (sin a, -cos a) (cf. ThrusterPhysics), donc
+            // à -π/2 le nez pointe (-1, 0), strictement HORIZONTAL — alors que la fusée apparaît en
+            // (0, R+50), c'est-à-dire côté +Y, où « le haut » est +Y. Mesuré : plein gaz depuis cet
+            // angle -> crash au pas 30 (altitude max 49,9) ; avec π -> altitude 217 320.
+            // À π : nez = (sin π, -cos π) = (0, +1) = vers le haut depuis la surface côté +Y.
+            const rocketInitialAngle = Math.PI; // Nez vers +Y (à l'opposé du centre) pour décoller
+
+            // Budget effectif du run = celui demandé par la configuration utilisateur.
+            this.effectiveMaxStepsPerEpisode = this.config.maxStepsPerEpisode;
+
             trainingConfig = {
                 maxStepsPerEpisode: this.config.maxStepsPerEpisode,
                 rocketInitialState: {
@@ -285,12 +355,16 @@ class TrainingOrchestrator {
         // CORRECTION: Utiliser la même configuration que l'entraînement pour cohérence
         // Pour 'navigate', utiliser la même config (sans planètes)
         // Pour les autres objectifs, utiliser la config avec Terre et Lune
+        // Propager le mode headless à l'environnement : il s'en sert pour ne PAS construire le
+        // payload de visualisation (copies profondes tous les 2 pas) quand personne ne l'affiche.
+        trainingConfig.headlessMode = (this.config.headlessMode === true);
+
         const evaluationConfig = {
             ...trainingConfig,
             // Pour l'évaluation, on peut utiliser la même config que l'entraînement
             // ou adapter selon les besoins (pour l'instant, on copie simplement)
         };
-        
+
         // Créer les environnements avec l'EventBus partagé
         this.trainingEnv = new HeadlessRocketEnvironment(trainingConfig);
         this.trainingEnv.eventBus = this.eventBus; // Utiliser l'EventBus partagé
@@ -384,9 +458,18 @@ class TrainingOrchestrator {
         this.rocketAI.config.gamma = this.config.gamma;
         this.rocketAI.config.batchSize = this.config.batchSize;
         this.rocketAI.config.replayBufferSize = this.config.replayBufferSize;
-        
+        // Fréquence d'entraînement (1 mise à jour tous les N pas), pilotée par l'UI.
+        // Le champ réellement lu par la boucle d'épisode est config.updateFrequency ;
+        // on ne l'écrase que si l'UI a fourni une valeur valide.
+        if (typeof this.config.updateFrequency === 'number' && this.config.updateFrequency >= 1) {
+            this.rocketAI.config.updateFrequency = Math.floor(this.config.updateFrequency);
+        }
+
         // Activer le mode entraînement
         this.rocketAI.isTraining = true;
+        // L'orchestrateur gère lui-même la décroissance d'epsilon (une fois par épisode, timeouts
+        // compris) -> empêcher RocketAI.handleCrash/handleSuccess de la dupliquer.
+        this.rocketAI.epsilonDecayManagedExternally = true;
         
         // Recompiler le modèle avec les nouveaux paramètres
         if (this.rocketAI.model) {
@@ -400,33 +483,55 @@ class TrainingOrchestrator {
     /**
      * Boucle d'entraînement principale
      */
-    async trainingLoop() {
+    async trainingLoop(runId = this._runGeneration) {
         // CORRECTION: S'assurer que maxEpisodes est bien défini et > 0
         const maxEpisodes = Math.max(1, this.config.maxEpisodes || 1000);
-        
-        for (let episode = 0; episode < maxEpisodes && this.isTraining; episode++) {
+
+        // CORRECTION (Stop puis Start rapproché) : `runId` identifie CE run. Si l'utilisateur
+        // relance un entraînement pendant qu'on est encore dans un await, la génération change :
+        // cette boucle (et sa finalisation) doivent alors rendre la main sans rien toucher, sinon
+        // elles piloteraient/libéreraient les environnements du run suivant.
+        const isCurrentRun = () => this._runGeneration === runId;
+
+        for (let episode = 0; episode < maxEpisodes && this.isTraining && isCurrentRun(); episode++) {
             // Vérifier que l'entraînement n'a pas été arrêté
             if (!this.isTraining) {
                 break;
             }
-            
+
             if (this.isPaused) {
                 await this.waitForResume();
             }
-            
+
+            if (!isCurrentRun()) return;
+
             this.metrics.episode = episode;
-            
+
             // Exécuter un épisode d'entraînement
-            const episodeResult = await this.runTrainingEpisode();
-            
+            const episodeResult = await this.runTrainingEpisode(runId);
+
+            // Un nouveau run a pris la main pendant l'épisode : abandonner sans finaliser.
+            if (!isCurrentRun()) return;
+
             // Vérifier à nouveau après l'épisode (au cas où runTrainingEpisode aurait modifié isTraining)
             if (!this.isTraining) {
                 break;
             }
-            
+
             // Mettre à jour les métriques
             this.updateMetrics(episodeResult);
-            
+
+            // CORRECTION (dernier épisode jamais affiché) : la progression était émise TOUT À LA
+            // FIN de l'itération, donc après les `break` de convergence et d'early stopping —
+            // l'affichage restait figé un épisode en arrière quand le run s'arrêtait ainsi.
+            // On l'émet désormais dès que les métriques de l'épisode sont à jour.
+            this.eventBus.emit(window.EVENTS.AI.TRAINING_PROGRESS, {
+                episode: episode + 1, // CORRECTION: Afficher le numéro d'épisode commençant à 1 pour l'interface
+                totalEpisodes: maxEpisodes,
+                metrics: this.metrics,
+                config: this.config
+            });
+
             // Log périodique
             if (episode % this.config.logInterval === 0) {
                 this.logProgress();
@@ -435,12 +540,13 @@ class TrainingOrchestrator {
             // Évaluation périodique (avec protection contre les erreurs)
             if (episode % this.config.evaluationInterval === 0 && episode > 0) {
                 try {
-                    await this.evaluateAgent();
+                    await this.evaluateAgent(runId);
                 } catch (error) {
                     // Ignorer les erreurs d'évaluation pour ne pas arrêter l'entraînement
                 }
+                if (!isCurrentRun()) return;
             }
-            
+
             // Sauvegarde périodique (avec protection contre les erreurs)
             if (episode % this.config.checkpointInterval === 0 && episode > 0) {
                 try {
@@ -448,8 +554,9 @@ class TrainingOrchestrator {
                 } catch (error) {
                     // Ignorer les erreurs de sauvegarde pour ne pas arrêter l'entraînement
                 }
+                if (!isCurrentRun()) return;
             }
-            
+
             // CORRECTION: Vérification de convergence (seulement après PLUS de 100 épisodes)
             // Utiliser > au lieu de >= pour permettre au moins 100 épisodes complets
             if (episode > this.config.evaluationInterval && this.checkConvergence()) {
@@ -460,30 +567,35 @@ class TrainingOrchestrator {
             if (episode >= this.config.evaluationInterval * 2 && this.checkEarlyStopping()) {
                 break;
             }
-            
-            // Émission d'événement de progression
-            this.eventBus.emit(window.EVENTS.AI.TRAINING_PROGRESS, {
-                episode: episode + 1, // CORRECTION: Afficher le numéro d'épisode commençant à 1 pour l'interface
-                totalEpisodes: maxEpisodes,
-                metrics: this.metrics,
-                config: this.config
-            });
-            
+
             // IMPORTANT: Céder le contrôle au navigateur pour que l'UI reste réactive
             // Utiliser requestAnimationFrame pour synchroniser avec le rafraîchissement écran
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
-        
-        // Finaliser l'entraînement seulement si on a atteint la fin normale
+
+        // Un run plus récent a démarré : c'est lui qui possède désormais l'agent et les
+        // environnements, on ne finalise rien (sinon on les libérerait sous ses pieds).
+        if (!isCurrentRun()) return;
+
+        // Finaliser l'entraînement.
         if (this.isTraining) {
-            await this.finalizeTraining();
+            // Fin normale (budget d'épisodes atteint, convergence ou early stopping)
+            await this.finalizeTraining(false, runId);
+        } else if (this._stopRequested) {
+            // CORRECTION : un arrêt demandé par l'utilisateur passait AUTREFOIS à côté de toute
+            // la finalisation (le garde `if (this.isTraining)` était faux) : les meilleurs poids
+            // (trainingState.bestModelWeights) étaient perdus, aucun checkpoint final n'était
+            // écrit et les environnements/l'agent restaient vivants. On finalise donc aussi ici,
+            // sans émettre TRAINING_COMPLETED (TRAINING_STOPPED a déjà été émis par stopTraining).
+            this._stopRequested = false;
+            await this.finalizeTraining(true, runId);
         }
     }
     
     /**
      * Exécute un épisode d'entraînement
      */
-    async runTrainingEpisode() {
+    async runTrainingEpisode(runId = this._runGeneration) {
         const startTime = Date.now();
         
         // Réinitialiser l'environnement
@@ -508,9 +620,15 @@ class TrainingOrchestrator {
             celestialBodies: celestialBodiesData
         });
         
-        while (!done && steps < this.config.maxStepsPerEpisode && this.isTraining) {
+        while (!done && steps < this.getMaxStepsPerEpisode() && this.isTraining) {
             // Vérifier que l'agent est toujours disponible
             if (!this.rocketAI || this.rocketAI.isDisposed) {
+                break;
+            }
+
+            // Un nouveau run a démarré pendant un await : cet épisode appartient à un run mort,
+            // il ne doit plus piloter les environnements (qui sont maintenant ceux du run suivant).
+            if (this._runGeneration !== runId) {
                 break;
             }
             
@@ -527,12 +645,18 @@ class TrainingOrchestrator {
                 const aiState = this.buildAIState(state, this.trainingEnv);
                 const nextAIState = this.buildAIState(result.observation, this.trainingEnv);
                 
+                // CORRECTION (item 8) : `done` sert à piloter la boucle, mais l'apprentissage doit
+                // distinguer un état ABSORBANT (crash, panne sèche, objectif atteint) d'une simple
+                // TRONCATURE par le budget de pas. `truncated` est propagé jusqu'à RocketAI.train(),
+                // qui continue de bootstrapper (γ·maxQ') sur une troncature au lieu d'enseigner
+                // Q = récompense du dernier pas.
                 this.rocketAI.replayBuffer.push({
                     state: aiState,
                     action: this.getActionIndex(action),
                     reward: result.reward,
                     nextState: nextAIState,
-                    done: result.done
+                    done: result.done,
+                    truncated: !!(result.truncated || (result.info && result.info.truncated))
                 });
 
                 // Borne le replay buffer pour éviter une croissance mémoire illimitée
@@ -590,47 +714,21 @@ class TrainingOrchestrator {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
 
-            // Émettre l'événement de step pour la visualisation. Inutile en headless ; en visuel on
-            // rend tous les (10 × vitesse) steps -> plus la vitesse est haute, moins on rend (= rapide).
-            if (!this.config.headlessMode && steps % (10 * _speed) === 0 && this.trainingEnv.rocketModel) {
-                const stepCelestialBodies = (this.trainingEnv.universeModel && this.trainingEnv.universeModel.celestialBodies) 
-                    ? this.trainingEnv.universeModel.celestialBodies.map(body => ({
-                        name: body.name,
-                        position: body.position ? { x: body.position.x, y: body.position.y } : { x: 0, y: 0 },
-                        radius: body.radius,
-                        mass: body.mass,
-                        color: body.color
-                    })) 
-                    : [];
-                
-                this.eventBus.emit(window.EVENTS.AI.TRAINING_STEP, {
-                    step: steps,
-                    episode: this.metrics.episode,
-                    rocket: {
-                        // CORRECTION: RocketModel expose position/velocity (objets) et isDestroyed,
-                        // pas .x/.y/.vx/.vy/.isCrashed (qui valaient undefined -> NaN dans le tracé).
-                        position: {
-                            x: this.trainingEnv.rocketModel.position.x,
-                            y: this.trainingEnv.rocketModel.position.y
-                        },
-                        velocity: {
-                            x: this.trainingEnv.rocketModel.velocity.x,
-                            y: this.trainingEnv.rocketModel.velocity.y
-                        },
-                        angle: this.trainingEnv.rocketModel.angle,
-                        fuel: this.trainingEnv.rocketModel.fuel,
-                        isLanded: this.trainingEnv.rocketModel.isLanded,
-                        isDestroyed: this.trainingEnv.rocketModel.isDestroyed
-                    },
-                    celestialBodies: stepCelestialBodies
-                });
-            }
+            // CORRECTION (double flux TRAINING_STEP) : l'orchestrateur émettait ici un SECOND flux
+            // de steps, en plus de celui de HeadlessRocketEnvironment.emitVisualizationData()
+            // (tous les 2 pas). Le visualiseur — seul abonné — recevait donc chaque trajectoire en
+            // double : trafic d'événements doublé et trajectorySampleRate divisé deux fois plus
+            // vite que prévu. On conserve UN SEUL flux, celui de l'environnement, dont le payload
+            // est le plus riche (il porte targetPoint/startPoint, nécessaires au cadrage caméra).
+            // Aucune métrique n'est perdue : le payload supprimé ne contenait que des champs déjà
+            // présents dans celui de l'environnement (step, rocket, celestialBodies).
         }
         
-        // CORRECTION : Appliquer la décroissance d'epsilon après chaque épisode (avec protection)
-        if (this.rocketAI && !this.rocketAI.isDisposed && 
-            this.rocketAI.config.epsilon > this.rocketAI.config.epsilonMin) {
-            this.rocketAI.config.epsilon *= this.rocketAI.config.epsilonDecay;
+        // CORRECTION : Appliquer la décroissance d'epsilon après chaque épisode (avec protection).
+        // Passe par RocketAI.decayEpsilon() : logique unique, bornée par epsilonMin, partagée avec
+        // le chemin en jeu (qui décrémente sur crash/succès quand aucun orchestrateur ne pilote).
+        if (this.rocketAI && !this.rocketAI.isDisposed) {
+            this.rocketAI.decayEpsilon();
         }
         
         const episodeDuration = Date.now() - startTime;
@@ -712,6 +810,7 @@ class TrainingOrchestrator {
             || { x: 0, y: 0 };
 
         return RocketAI.buildStateVector({
+            positionScale: this.getPositionScale(env),
             x: environmentState.rocketX || 0,
             y: environmentState.rocketY || 0,
             vx: environmentState.rocketVX || 0,
@@ -722,37 +821,82 @@ class TrainingOrchestrator {
             targetY: targetPoint.y
         });
     }
-    
+
+    /**
+     * CORRECTION (item 9) : échelle de normalisation des features positionnelles, adaptée à
+     * l'OBJECTIF de l'environnement courant.
+     * - 'navigate' : distance initiale A→B (~127k unités) -> features 0/1/7/8 dans [0, ~1].
+     * - autres objectifs (orbit/land/crash_moon/explore) : la fusée évolue entre le rayon du corps
+     *   de référence et l'altitude orbitale max (820 à 2220 unités). Avec l'échelle fixe de 150000
+     *   ces features restaient dans [0,005 ; 0,015] alors que les features 4/5/9 sont d'ordre 1.
+     * @param {HeadlessRocketEnvironment} [env] - L'environnement courant.
+     * @return {number} Échelle positionnelle strictement positive.
+     */
+    getPositionScale(env = this.trainingEnv) {
+        const objective = env && env.config?.missionConfig?.objective;
+
+        if (objective === 'navigate') {
+            const target = env.config?.missionConfig?.targetPoint;
+            const start = env.config?.rocketInitialState?.position;
+            if (target && start) {
+                const d = Math.hypot(target.x - start.x, target.y - start.y);
+                if (isFinite(d) && d > 0) return d;
+            }
+            return RocketAI.DEFAULT_POSITION_SCALE;
+        }
+
+        // Corps de référence : celui qui porte la cible (origine en headless), sinon le premier.
+        const bodies = (env && env.universeModel && env.universeModel.celestialBodies) || [];
+        const reference = bodies.find(b => b && b.name === 'Terre') || bodies[0];
+        return RocketAI.positionScaleForBody(reference ? reference.radius : 0);
+    }
+
     /**
      * Convertit l'index d'action en commandes pour l'environnement
      */
+    // CORRECTION (divergence entraînement/jeu + propulseurs collés) : l'action envoyée à
+    // l'environnement est désormais dérivée de la TABLE D'ACTIONS CANONIQUE
+    // (RocketAI.ACTION_THRUSTERS), la MÊME que celle appliquée en jeu par RocketAI.emitControl().
+    // Chaque action spécifie les QUATRE propulseurs (HeadlessRocketEnvironment.step() ne touche
+    // que les propulseurs présents dans l'objet : un 'thrustBackward' laissait sinon l'arrière à
+    // MAX pour tout le reste de l'épisode, et 'noAction' ne le coupait pas).
+    // On n'émet plus `rotationInput` : left/right sont pilotés explicitement, ce qui est
+    // strictement équivalent (RocketController.handleRotateCommand mappe +1 -> gauche, -1 -> droite).
     convertActionIndexToEnvironmentAction(actionIndex) {
-        const actions = [
-            { mainThruster: 1.0, rotationInput: 0 },    // Poussée avant
-            { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 }, // Poussée arrière
-            { mainThruster: 0, rotationInput: 1.0 },    // index 2 = Rotation gauche (rotateLeft -> propulseur gauche)
-            { mainThruster: 0, rotationInput: -1.0 },   // index 3 = Rotation droite (rotateRight -> propulseur droit)
-            { mainThruster: 0, rotationInput: 0 }       // Aucune action
-        ];
-        
-        return actions[actionIndex] || actions[4]; // Action par défaut
+        const names = (typeof RocketAI !== 'undefined' && RocketAI.ACTION_NAMES)
+            ? RocketAI.ACTION_NAMES
+            : ['thrustForward', 'thrustBackward', 'rotateLeft', 'rotateRight', 'noAction'];
+        const name = names[actionIndex] || 'noAction';
+        const table = (typeof RocketAI !== 'undefined' && RocketAI.ACTION_THRUSTERS) ? RocketAI.ACTION_THRUSTERS : null;
+        const t = (table && table[name]) || { main: 0, rear: 0, left: 0, right: 0 };
+
+        return {
+            mainThruster: t.main,
+            rearThruster: t.rear,
+            leftThruster: t.left,
+            rightThruster: t.right
+        };
     }
-    
+
     /**
      * Obtient l'index d'action à partir de l'action
      */
     getActionIndex(action) {
+        if (!action) return 4;
         if (action.mainThruster > 0.5) return 0;
         if (action.rearThruster > 0.5) return 1;
-        if (action.rotationInput > 0.5) return 2;  // index 2 = rotateLeft (rotationInput +1.0)
-        if (action.rotationInput < -0.5) return 3; // index 3 = rotateRight (rotationInput -1.0)
+        if (action.leftThruster > 0.5) return 2;   // index 2 = rotateLeft (propulseur gauche)
+        if (action.rightThruster > 0.5) return 3;  // index 3 = rotateRight (propulseur droit)
+        // Rétro-compatibilité : anciennes actions exprimées via rotationInput
+        if (action.rotationInput > 0.5) return 2;
+        if (action.rotationInput < -0.5) return 3;
         return 4;
     }
     
     /**
      * Évalue les performances de l'agent
      */
-    async evaluateAgent() {
+    async evaluateAgent(runId = this._runGeneration) {
         // Protection: vérifier que l'agent est disponible et non disposé
         if (!this.rocketAI || this.rocketAI.isDisposed || !this.rocketAI.model) {
             return;
@@ -761,6 +905,7 @@ class TrainingOrchestrator {
         const numEvaluationEpisodes = 10;
         let totalScore = 0;
         let successCount = 0;
+        let evaluatedEpisodes = 0; // Épisodes d'évaluation réellement menés à terme
         
         // Sauvegarder l'état d'entraînement
         const wasTraining = this.rocketAI.isTraining;
@@ -772,13 +917,25 @@ class TrainingOrchestrator {
                 if (!this.rocketAI || this.rocketAI.isDisposed) {
                     break;
                 }
-                
+                // CORRECTION : honorer un arrêt/une pause demandés PENDANT l'évaluation. Sans
+                // cela, un Stop pendant l'évaluation laissait tourner les 10 épisodes restants
+                // (des milliers de pas) avant que la boucle d'entraînement ne reprenne la main.
+                if (!this.isTraining || this.isPaused) {
+                    break;
+                }
+                // Idem si un nouveau run a démarré : l'environnement d'évaluation n'est plus le nôtre.
+                if (this._runGeneration !== runId) {
+                    return;
+                }
+
                 let state = this.evaluationEnv.reset();
                 let episodeReward = 0;
                 let done = false;
                 let steps = 0;
                 
-                while (!done && steps < this.config.maxStepsPerEpisode) {
+                // Sortie immédiate si l'entraînement est arrêté ou mis en pause (cf. ci-dessus).
+                while (!done && steps < this.getMaxStepsPerEpisode() && this.isTraining && !this.isPaused
+                       && this._runGeneration === runId) {
                     // CORRECTION (bug #2) : cible B résolue sur l'env d'évaluation.
                     const action = this.getActionFromState(state, this.evaluationEnv);
                     const result = this.evaluationEnv.step(action);
@@ -795,6 +952,7 @@ class TrainingOrchestrator {
                 }
                 
                 totalScore += episodeReward;
+                evaluatedEpisodes++;
                 // CORRECTION (bug eval): évaluer le succès sur l'environnement d'évaluation
                 if (this.isEpisodeSuccessful(episodeReward, steps, this.evaluationEnv)) {
                     successCount++;
@@ -808,10 +966,16 @@ class TrainingOrchestrator {
             if (this.rocketAI && !this.rocketAI.isDisposed) {
                 this.rocketAI.isTraining = wasTraining;
             }
-            
+
+            // Évaluation interrompue (stop/pause) : les scores partiels ne sont pas représentatifs,
+            // on ne les enregistre pas (ils fausseraient bestAverageReward et l'early stopping).
+            if (evaluatedEpisodes < numEvaluationEpisodes) {
+                return;
+            }
+
             const averageScore = totalScore / numEvaluationEpisodes;
             const successRate = successCount / numEvaluationEpisodes;
-            
+
             this.metrics.lastEvaluationScore = averageScore;
             this.trainingState.recentPerformance.push(averageScore);
             
@@ -911,7 +1075,7 @@ class TrainingOrchestrator {
         
         // Critères de succès par défaut : récompense positive significative et durée raisonnable
         // CORRECTION: Être plus strict sur la récompense (au moins 10 points)
-        return reward >= 10 && steps < this.config.maxStepsPerEpisode * 0.8;
+        return reward >= 10 && steps < this.getMaxStepsPerEpisode() * 0.8;
     }
     
     /**
@@ -920,6 +1084,10 @@ class TrainingOrchestrator {
     updateMetrics(episodeResult) {
         this.metrics.totalSteps += episodeResult.steps;
         this.metrics.totalReward += episodeResult.totalReward;
+        // CORRECTION (comptage): metrics.episode est l'index 0-based de la boucle ; il vaut donc
+        // toujours "nombre d'épisodes terminés - 1". On maintient un compteur explicite pour les
+        // taux de succès et les statistiques finales.
+        this.metrics.episodesCompleted = (this.metrics.episodesCompleted || 0) + 1;
 
         if (episodeResult.success) {
             this.metrics.successfulEpisodes++;
@@ -974,10 +1142,14 @@ class TrainingOrchestrator {
         if (this.metrics.episode <= this.config.evaluationInterval) return false;
         if (this.metrics.episode <= 100) return false; // Minimum 100 épisodes avant convergence
         
+        // CORRECTION (comptage): diviser par le nombre d'épisodes RÉELLEMENT terminés
+        // (metrics.episode est l'index 0-based de la boucle -> une unité de moins, ce qui
+        // surestimait légèrement le taux de succès).
+        const episodesCompleted = this.metrics.episodesCompleted || 0;
         // Protection contre division par zéro
-        if (this.metrics.episode === 0) return false;
-        
-        const successRate = this.metrics.successfulEpisodes / this.metrics.episode;
+        if (episodesCompleted === 0) return false;
+
+        const successRate = this.metrics.successfulEpisodes / episodesCompleted;
         return successRate >= this.config.targetSuccessRate;
     }
     
@@ -989,10 +1161,19 @@ class TrainingOrchestrator {
         if (this.trainingState.recentPerformance.length < 5) return false;
         if (this.metrics.episode < 200) return false; // Minimum 200 épisodes avant early stopping
         
-        // Vérifier si les performances n'augmentent plus
+        // Vérifier si les performances n'augmentent plus.
+        // CORRECTION (test non cohérent en signe) : `best * 0.95` est SUPÉRIEUR à `best` quand
+        // `best` est négatif (cas normal en début d'entraînement) -> la condition était vraie par
+        // construction et l'early stopping se déclenchait mécaniquement vers l'épisode ~300,
+        // quels que soient les progrès. On utilise une marge d'amélioration en valeur absolue,
+        // valable pour les deux signes : stagnation si aucun score récent ne dépasse
+        // best - |best| * 5 %.
+        const best = this.metrics.bestAverageReward;
+        if (!isFinite(best)) return false;
+        const stagnationThreshold = best - Math.abs(best) * 0.05;
         const recent = this.trainingState.recentPerformance.slice(-5);
-        const isStagnant = recent.every(score => score <= this.metrics.bestAverageReward * 0.95);
-        
+        const isStagnant = recent.every(score => score <= stagnationThreshold);
+
         if (isStagnant) {
             this.trainingState.earlyStoppingCounter++;
         } else {
@@ -1025,12 +1206,30 @@ class TrainingOrchestrator {
     
     /**
      * Finalise l'entraînement
+     * @param {boolean} [userStopped=false] - true si la finalisation fait suite à un arrêt demandé
+     *   par l'utilisateur (stopTraining). Dans ce cas on restaure/sauvegarde exactement comme pour
+     *   une fin normale, mais on n'émet pas TRAINING_COMPLETED (TRAINING_STOPPED l'a déjà été) et
+     *   on libère les ressources lourdes (environnements + agent) puisque la session est close.
+     * @param {number} [runId] - Génération du run à finaliser (capturée par startTraining). Toute
+     *   libération est annulée si une session plus récente a démarré entre-temps.
      */
-    async finalizeTraining() {
+    async finalizeTraining(userStopped = false, runId = this._runGeneration) {
+        // CORRECTION (Stop puis Start en < 300 ms) : cette finalisation est ASYNCHRONE
+        // (setWeights + saveCheckpoint). Pendant ces await, l'utilisateur pouvait relancer un
+        // entraînement (stopTraining() a déjà réactivé le bouton Démarrer) : la queue de cette
+        // fonction remettait alors isTraining à false et surtout mettait à null rocketAI /
+        // trainingEnv / evaluationEnv du run TOUT NEUF -> TypeError sur trainingEnv.reset() et
+        // "Erreur d'entraînement". On capture la génération courante et on n'agit sur les champs
+        // partagés que tant qu'elle n'a pas changé. `runId` est celui capturé au DÉMARRAGE du run
+        // (startTraining) et propagé par trainingLoop : le capturer ici aurait été trop tard, la
+        // relance ayant pu se produire avant même l'entrée dans cette fonction.
+        const isCurrentRun = () => this._runGeneration === runId;
+
+        if (!isCurrentRun()) return;
         this.isTraining = false;
 
         // Restaurer le meilleur modèle (avec protection)
-        if (this.trainingState.bestModelWeights && 
+        if (this.trainingState.bestModelWeights &&
             this.rocketAI && !this.rocketAI.isDisposed && this.rocketAI.model) {
             try {
                 await this.rocketAI.model.setWeights(this.trainingState.bestModelWeights);
@@ -1038,7 +1237,9 @@ class TrainingOrchestrator {
                 // Ignorer silencieusement
             }
         }
-        
+
+        if (!isCurrentRun()) return;
+
         // CORRECTION MEMORY LEAK: Libérer les tensors de bestModelWeights
         if (this.trainingState.bestModelWeights) {
             this.trainingState.bestModelWeights.forEach(w => {
@@ -1053,23 +1254,62 @@ class TrainingOrchestrator {
         if (this.rocketAI && !this.rocketAI.isDisposed) {
             await this.saveCheckpoint();
         }
-        
+
+        // Un nouveau run a pu démarrer pendant la sauvegarde : ne rien libérer ni annoncer.
+        if (!isCurrentRun()) return;
+
         // Calcul des statistiques finales
         const trainingDuration = Date.now() - this.metrics.trainingStartTime;
+        // CORRECTION (comptage): metrics.episode est l'INDEX de boucle (0-based) ; on utilise
+        // episodesCompleted, incrémenté une fois par épisode réellement terminé.
+        const episodesCompleted = this.metrics.episodesCompleted || 0;
         // CORRECTION: Protection contre division par zéro
-        const finalSuccessRate = (this.metrics.episode > 0) 
-            ? this.metrics.successfulEpisodes / this.metrics.episode 
+        const finalSuccessRate = (episodesCompleted > 0)
+            ? this.metrics.successfulEpisodes / episodesCompleted
             : 0;
-        
+
+        // ⚠️ Ce n'est PAS la moyenne sur tout l'entraînement : episodeLengths est borné aux 100
+        // derniers épisodes (cf. updateMetrics), donc c'est une moyenne glissante de fin de run.
+        const lengths = this.metrics.episodeLengths;
+        const averageEpisodeLengthLast100 = (lengths && lengths.length > 0)
+            ? lengths.reduce((a, b) => a + b, 0) / lengths.length
+            : 0;
+
         const finalStats = {
-            episodes: this.metrics.episode,
+            episodes: episodesCompleted,
             totalSteps: this.metrics.totalSteps,
             trainingDuration,
             finalSuccessRate,
             bestAverageReward: this.metrics.bestAverageReward,
-            averageEpisodeLength: this.metrics.episodeLengths.reduce((a, b) => a + b, 0) / this.metrics.episodeLengths.length
+            // Nom historique conservé (lu par train.js) mais c'est bien la moyenne des 100 derniers
+            // épisodes ; utiliser de préférence averageEpisodeLengthLast100, explicite.
+            averageEpisodeLength: averageEpisodeLengthLast100,
+            averageEpisodeLengthLast100
         };
-        
+
+        if (userStopped) {
+            // Arrêt utilisateur : la session est terminée. Le meilleur modèle vient d'être
+            // restauré puis sauvegardé en localStorage juste au-dessus.
+            // Les modèles TensorFlow de l'agent SONT réellement libérés (cleanup dispose les
+            // tenseurs et désabonne l'agent).
+            if (this.rocketAI && typeof this.rocketAI.cleanup === 'function') {
+                try { this.rocketAI.cleanup(); } catch (e) { /* ignore */ }
+            }
+            this.rocketAI = null;
+
+            // ⚠️ Les environnements, eux, ne sont ici que DÉRÉFÉRENCÉS, pas libérés :
+            // HeadlessRocketEnvironment n'expose aucun cleanup(), et ses sous-contrôleurs
+            // (RocketController, MissionManager) restent abonnés au bus PARTAGÉ tandis que
+            // SynchronizationManager garde ses écouteurs beforeUpdate/afterUpdate sur son moteur
+            // Matter. Ces fermetures maintiennent les deux environnements en vie : après N
+            // cycles arrêt/relance, chaque SET_THRUSTER_POWER est distribué aux contrôleurs des
+            // environnements morts en plus des vivants. Fuite ANTÉRIEURE à ce correctif, non
+            // résolue ici (elle demande un vrai cleanup() côté environnement) — cf. TODO.md.
+            this.trainingEnv = null;
+            this.evaluationEnv = null;
+            return;
+        }
+
         this.eventBus.emit(window.EVENTS.AI.TRAINING_COMPLETED, finalStats);
     }
     
@@ -1093,6 +1333,13 @@ class TrainingOrchestrator {
      * Arrête l'entraînement
      */
     stopTraining() {
+        // _stopRequested indique à trainingLoop() qu'il doit finaliser malgré la sortie anticipée
+        // (restauration des meilleurs poids + checkpoint final + libération des ressources).
+        // La finalisation est faite par la boucle elle-même : elle est encore en train de tourner
+        // au moment où ce gestionnaire d'événement s'exécute.
+        if (this.isTraining) {
+            this._stopRequested = true;
+        }
         this.isTraining = false;
         this.isPaused = false;
         this.eventBus.emit(window.EVENTS.AI.TRAINING_STOPPED, this.metrics);

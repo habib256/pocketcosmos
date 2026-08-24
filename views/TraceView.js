@@ -96,6 +96,22 @@ class TraceView {
 
         let isNewPath = true; // Indicateur pour savoir si on doit commencer un nouveau segment de tracé
 
+        // Tampon réutilisé pour la projection écran (voir la note anti-allocation plus bas).
+        const screenPos = this._screenPos || (this._screenPos = { x: 0, y: 0 });
+
+        // Fenêtre d'élagage : segments entièrement hors écran. On garde une marge généreuse
+        // (une pleine dimension de canvas) pour que les segments traversants restent corrects,
+        // et on ne coupe qu'à partir du 2e point consécutif hors champ afin de ne jamais
+        // supprimer le segment qui entre ou sort de l'écran.
+        const largeur = (ctx.canvas && ctx.canvas.width) || 0;
+        const hauteur = (ctx.canvas && ctx.canvas.height) || 0;
+        const marge = Math.max(largeur, hauteur);
+        const elagageActif = largeur > 0 && hauteur > 0;
+        let precedentHorsChamp = false;
+        // Dernier point écarté par l'élagage, conservé pour raccorder le segment entrant.
+        const ancre = this._ancre || (this._ancre = { x: 0, y: 0 });
+        let ancreValide = false;
+
         // Itérer sur tous les points stockés dans l'ordre chronologique.
         // Avec le buffer circulaire (une fois plein), le plus ancien point se trouve à `head`,
         // donc on parcourt depuis `head` en bouclant modulo la longueur.
@@ -111,26 +127,72 @@ class TraceView {
                     ctx.stroke(); // Dessine le segment tracé jusqu'à présent
                     isNewPath = true; // Prépare le début d'un nouveau chemin au prochain point valide
                 }
+                // Repartir d'un état d'élagage neuf : sans cette remise à zéro, un `precedentHorsChamp`
+                // hérité d'AVANT la rupture pouvait faire écarter le premier point valide d'après,
+                // donc perdre le premier segment de chaque nouveau tronçon.
+                precedentHorsChamp = false;
+                ancreValide = false;
                 continue; // Passe au point suivant
             }
 
             // Vérifier que le point a des coordonnées valides avant de continuer
             if (point.x === undefined || point.y === undefined ||
                 isNaN(point.x) || isNaN(point.y)) {
-                console.warn("[TraceView] Point de trace invalide ignoré:", point);
+                // Terminer le chemin en cours AVANT de repartir à zéro : sans ce stroke(), le
+                // beginPath() du point valide suivant jetait tout le tracé accumulé — un seul
+                // point invalide effaçait visuellement toute la trace qui le précédait.
+                if (!isNewPath) { ctx.stroke(); }
+                // Avertissement throttlé : cette boucle tourne à chaque frame sur un anneau de
+                // 20 000 points ; un warn non throttlé produisait 60 messages/seconde pendant
+                // toute la durée de vie du point (~5 min), ce qui écroule la frame à lui seul.
+                this._avertirUneFois("[TraceView] Point de trace invalide ignoré", point);
                 isNewPath = true; // Un point invalide force aussi le début d'un nouveau chemin
+                precedentHorsChamp = false; // même raison que pour la rupture : repartir d'un élagage neuf
                 continue;
             }
 
-            // Convertir les coordonnées du monde en coordonnées de l'écran via la caméra
-            const screenPos = camera.worldToScreen(point.x, point.y);
+            // Conversion monde -> écran SANS allocation : `camera.worldToScreen` crée un objet
+            // {x,y} par appel, soit jusqu'à 20 000 objets jetables par frame une fois l'anneau
+            // plein (~1,2 M/s à 60 fps). On applique donc la même formule en place.
+            screenPos.x = (point.x - camera.x) * camera.zoom + camera.offsetX;
+            screenPos.y = (point.y - camera.y) * camera.zoom + camera.offsetY;
 
             // Vérifier que les coordonnées d'écran résultantes sont valides
             if (isNaN(screenPos.x) || isNaN(screenPos.y)) {
-                console.warn("[TraceView] Coordonnées d'écran invalides après transformation:", screenPos, "depuis", point);
+                if (!isNewPath) { ctx.stroke(); } // ne pas jeter le tracé déjà accumulé
+                this._avertirUneFois("[TraceView] Coordonnées d'écran invalides après transformation", point);
                 isNewPath = true; // Coordonnées écran invalides forcent un nouveau chemin
+                precedentHorsChamp = false; // idem : ne pas hériter d'un état d'élagage d'avant la rupture
                 continue;
             }
+
+            // Élagage : un point hors de la fenêtre élargie n'est soumis au rasteriseur que s'il
+            // est le premier de sa série (segment sortant) ou s'il précède un point visible
+            // (segment entrant, traité au tour suivant via `precedentHorsChamp`). Deux points
+            // consécutifs hors champ ne peuvent pas produire de segment visible : on rompt le
+            // chemin plutôt que d'empiler des lineTo à des coordonnées atteignant ±7e5 px.
+            const horsChamp = elagageActif && (
+                screenPos.x < -marge || screenPos.x > largeur + marge ||
+                screenPos.y < -marge || screenPos.y > hauteur + marge
+            );
+            if (horsChamp && precedentHorsChamp) {
+                if (!isNewPath) { ctx.stroke(); isNewPath = true; }
+                // Mémoriser ce point comme ANCRE : s'il est suivi d'un point visible, le segment
+                // qui entre à l'écran doit être tracé depuis lui. Sans cette ancre, l'élagage
+                // supprimait le segment entrant (le point visible démarrait un moveTo isolé) —
+                // le tracé semblait « sauter » le bord de l'écran.
+                ancre.x = screenPos.x; ancre.y = screenPos.y; ancreValide = true;
+                continue;
+            }
+            precedentHorsChamp = horsChamp;
+
+            // Reprendre depuis l'ancre élaguée pour dessiner le segment entrant.
+            if (isNewPath && ancreValide) {
+                ctx.beginPath();
+                ctx.moveTo(ancre.x, ancre.y);
+                isNewPath = false;
+            }
+            ancreValide = false;
 
             if (isNewPath) {
                 // Commencer un nouveau segment de tracé
@@ -157,7 +219,30 @@ class TraceView {
      */
     toggleVisibility() {
         this.isVisible = !this.isVisible;
+        // Insérer une discontinuité en RÉAFFICHANT la trace : pendant qu'elle était masquée,
+        // update() ignorait les nouveaux points sans toucher à `lastPoint`. Le premier point
+        // enregistré après réaffichage était donc relié en ligne droite au dernier point d'avant
+        // le masquage — un trajet que la fusée n'a jamais parcouru (ex : Terre → Mars en droite
+        // ligne). `clear(false)` pose un `null` (marqueur de rupture) et remet `lastPoint` à zéro.
+        if (this.isVisible && typeof this.clear === 'function') {
+            this.clear(false);
+        }
         return this.isVisible;
+    }
+
+    /**
+     * Avertissement throttlé : cette méthode est appelée depuis la boucle de rendu, qui parcourt
+     * jusqu'à 20 000 points 60 fois par seconde. Un `console.warn` direct y produirait des
+     * milliers de messages par seconde et effondrerait la frame à lui seul.
+     * @param {string} message
+     * @param {*} [detail]
+     * @private
+     */
+    _avertirUneFois(message, detail) {
+        if (!this._avertissementsVus) this._avertissementsVus = new Set();
+        if (this._avertissementsVus.has(message)) return;
+        this._avertissementsVus.add(message);
+        console.warn(message, detail);
     }
 
     /**

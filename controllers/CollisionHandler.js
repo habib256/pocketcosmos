@@ -35,6 +35,13 @@ class CollisionHandler {
      * Gère 'collisionStart', 'collisionActive', et 'collisionEnd'.
      */
     setupCollisionEvents() {
+        // Idempotence : le moteur Matter est créé une seule fois mais initPhysics() rappelle
+        // cette méthode à chaque reset/chargement de monde/épisode IA. Sans désabonnement,
+        // les écouteurs s'empilent et chaque impact applique les dégâts N fois.
+        // CollisionHandler est le seul abonné à ces trois événements (vérifié), donc un
+        // Events.off par nom (sans callback) est sûr.
+        this.Events.off(this.engine, 'collisionStart collisionActive collisionEnd');
+
         const rocketModel = this.physicsController.rocketModel;
 
         // Événement déclenché au début d'une collision
@@ -116,8 +123,18 @@ class CollisionHandler {
                         if (otherBody.label !== 'rocket' && impactSpeedUs > COLLISION_THRESHOLD) {
                             // Collision significative.
                             if (!rocketModel.isDestroyed) {
+                                // landedOn est posé avant applyDamage car le chemin de destruction
+                                // s'en sert (écran de fin, épave attachée au corps).
+                                const previousLandedOn = rocketModel.landedOn;
                                 rocketModel.landedOn = otherBody.label;
                                 const wasJustDestroyedByNonFatal = rocketModel.applyDamage(impactDamage);
+                                if (!wasJustDestroyedByNonFatal && previousLandedOn !== otherBody.label) {
+                                    // Rebond survécu sur un corps où la fusée n'était pas posée :
+                                    // restaurer l'état précédent (null en vol, ou le corps d'appui
+                                    // réel si elle est posée ailleurs). Sans cela, landedOn restait
+                                    // renseigné en plein vol — ou désignait le mauvais corps.
+                                    rocketModel.landedOn = previousLandedOn;
+                                }
                                 this.playCollisionSound(impactVelocity);
 
                                 if (wasJustDestroyedByNonFatal) {
@@ -384,7 +401,9 @@ class CollisionHandler {
             } else if (angleDiff > crashAngleThresholdRad) {
                 crashReason = `Angle d'atterrissage incorrect (actuel: ${angleDiffDeg.toFixed(1)}°, max: ${this.PHYSICS.CRASH_ANGLE_DEG}°)`;
             } else if (angularVelocity > this.PHYSICS.CRASH_ANGULAR_VELOCITY) {
-                crashReason = `Vitesse angulaire trop élevée (actuelle: ${angularVelocity.toFixed(3)} rad/s, max: ${this.PHYSICS.CRASH_ANGULAR_VELOCITY} rad/s)`;
+                // Unités : échelle Matter (≈ rad/s × MATTER_BASE_DELTA). On affiche les deux pour ne pas
+                // reproduire l'ancienne annotation trompeuse « rad/s » (cf. PHYSICS.md §1.2).
+                crashReason = `Vitesse angulaire trop élevée (actuelle: ${angularVelocity.toFixed(1)} éch. Matter ≈ ${(angularVelocity / this.PHYSICS.MATTER_BASE_DELTA).toFixed(2)} rad/s, max: ${this.PHYSICS.CRASH_ANGULAR_VELOCITY})`;
             }
 
             if (crashReason) {

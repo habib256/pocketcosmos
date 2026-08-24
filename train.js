@@ -271,15 +271,20 @@ async function testEvaluationMode() {
                 // Action de l'IA (exploitation pure)
                 const actionIndex = rocketAI.act(aiState);
                 
-                // Convertir en action environnement
-                const actions = [
-                    { mainThruster: 1.0, rotationInput: 0 },
-                    { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 },
-                    { mainThruster: 0, rotationInput: -1.0 },
-                    { mainThruster: 0, rotationInput: 1.0 },
-                    { mainThruster: 0, rotationInput: 0 }
-                ];
-                const action = actions[actionIndex] || actions[4];
+                // Convertir en action environnement via la table CANONIQUE (RocketAI.ACTION_THRUSTERS),
+                // seule source de vérité partagée par le jeu, l'entraînement et ce diagnostic.
+                // Ce fichier dupliquait sa propre table, restée divergente : elle utilisait
+                // `rotationInput` et ne spécifiait qu'une partie des propulseurs, si bien qu'un
+                // 'thrustBackward' laissait l'arrière bloqué à MAX jusqu'à la fin de l'épisode.
+                const noms = RocketAI.ACTION_NAMES;
+                const nom = noms[actionIndex] || 'noAction';
+                const t = RocketAI.ACTION_THRUSTERS[nom] || RocketAI.ACTION_THRUSTERS.noAction;
+                const action = {
+                    mainThruster: t.main,
+                    rearThruster: t.rear,
+                    leftThruster: t.left,
+                    rightThruster: t.right
+                };
                 
                 const result = testEnv.step(action);
                 state = result.observation;

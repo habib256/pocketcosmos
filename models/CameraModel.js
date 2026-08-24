@@ -145,6 +145,10 @@ class CameraModel {
      * @param {number} newZoom - Le nouveau niveau de zoom souhaité.
      */
     setZoom(newZoom) {
+        // Math.max/min ne filtrent PAS NaN (Math.max(0.0025, NaN) === NaN) : un zoom NaN se
+        // propagerait à toutes les projections écran et laisserait un canvas définitivement
+        // blanc, sans moyen de récupérer en jeu (aucun reset ne réinitialise le zoom).
+        if (typeof newZoom !== 'number' || !isFinite(newZoom)) return;
         this.zoom = Math.max(RENDER.MIN_ZOOM, Math.min(RENDER.MAX_ZOOM, newZoom));
     }
 
