@@ -166,6 +166,17 @@ class PhysicsVectors {
         return this.totalAcceleration;
     }
 
+    // POINT DE CONVERSION UNIQUE échelle Matter -> unités/seconde (cf. PHYSICS.md §1).
+    // Le jeu passe deltaTime en SECONDES à Engine.update alors que Matter suppose des ms
+    // (_baseDelta = 1000/60), donc body.velocity ≈ (u/s) × MATTER_BASE_DELTA. Cette méthode
+    // ramène une composante (ou magnitude) de vélocité Matter en u/s. Utilisée par
+    // RocketAI.buildStateVector et HeadlessRocketEnvironment (rewards/succès) pour que la
+    // convention ne soit plus dupliquée à chaque site d'appel.
+    static matterToGameVelocity(value) {
+        const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+        return value / k;
+    }
+
     static calculateGravityVector(rocketModel, universeModel, PHYSICS_G) {
         if (!rocketModel || !universeModel) return null;
 

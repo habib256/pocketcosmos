@@ -169,6 +169,17 @@ class HeadlessRocketEnvironment {
         this._previousPotential = null; // Pour potential-based reward shaping
         this._missionAlreadyRewardedThisEpisode = false;
         this._zonesReached = new Set(); // Pour tracker les zones déjà récompensées
+
+        // Cible VIVANTE (peut être mobile — rôle 'intercept'). _targetBasePoint = position de
+        // départ (référence des patterns) ; _targetPoint = position courante ; _targetVelocity =
+        // vitesse propre en u/s (exposée dans l'état, dims 10-11). Pour une cible fixe, la vitesse
+        // reste (0,0). Voir _updateMovingTarget() et _getTargetPoint().
+        const tp0 = this.config.missionConfig?.targetPoint;
+        this._targetBasePoint = tp0 ? { x: tp0.x, y: tp0.y } : null;
+        this._targetPoint = tp0 ? { x: tp0.x, y: tp0.y } : null;
+        this._targetVelocity = { x: 0, y: 0 };
+        this._targetElapsed = 0;                 // temps écoulé (s) pour les patterns
+        this._proximityStreak = 0;               // steps consécutifs à portée (succès 'proximity')
         
         // Réinitialiser les missions
         this.missionManager.resetMissions(); // Vide les missions existantes et crée les missions par défaut
@@ -303,9 +314,9 @@ class HeadlessRocketEnvironment {
             
             // CORRECTION: Ajouter les points de navigation pour l'objectif 'navigate'
             if (this.config.missionConfig && this.config.missionConfig.objective === 'navigate') {
-                const targetPoint = this.config.missionConfig.targetPoint;
+                const targetPoint = this._getTargetPoint(); // cible VIVANTE (mobile pour 'intercept')
                 if (targetPoint) {
-                    visualizationData.targetPoint = { ...targetPoint }; // Point B (destination)
+                    visualizationData.targetPoint = { ...targetPoint }; // Point B (destination, courante)
                 }
                 // Point A = position initiale de la fusée
                 if (this.config.rocketInitialState && this.config.rocketInitialState.position) {
@@ -400,12 +411,15 @@ class HeadlessRocketEnvironment {
 
         // this.rocketController.update(deltaTime); // Normalement gère les réponses aux événements, pas de logique continue ici.
         this.physicsController.update(deltaTime);  // Cœur de la simulation physique
-        // CORRECTION: la consommation de carburant vit UNIQUEMENT dans RocketModel.update()
-        // (source unique, cf. PHYSICS.md §3.1). Sans cet appel le carburant ne baissait jamais
-        // en headless : la terminaison `fuel <= 0` et le statut 'out_of_fuel' étaient morts.
-        // RocketModel.update() respecte lui-même _infiniteFuel (posé depuis config.infiniteFuel
-        // dans reset()), donc 'navigate' conserve son carburant infini.
+        // La consommation de carburant vit UNIQUEMENT dans RocketModel.update() (source unique,
+        // cf. PHYSICS.md §3.1). Sans cet appel, le carburant ne baisse JAMAIS en headless : la
+        // terminaison `fuel <= 0` et le statut 'out_of_fuel' redeviennent du code mort, et les
+        // objectifs sans carburant infini s'entraînent avec un réservoir illimité.
+        // RocketModel.update() respecte lui-même `_infiniteFuel`, posé depuis `config.infiniteFuel`
+        // dans reset() — 'navigate' conserve donc son carburant infini.
         this.rocketModel.update(deltaTime);
+        this._updateMovingTarget(deltaTime);       // Déplace la cible (rôle 'intercept')
+        this._updateProximityStreak();             // Compteur de proximité (succès 'intercept'), 1×/step
         this.missionManager.update(deltaTime, this.rocketModel, this.universeModel); // Logique des missions
 
         // Un pas de physique vient d'être intégré : invalide les caches de vérification
@@ -443,6 +457,16 @@ class HeadlessRocketEnvironment {
             reward += timeoutPenalty;
         }
 
+        // Pénalité de sortie de limites (apprise sur ce dernier step, comme le timeout) : décourage
+        // la fuite hors zone. On la mémorise pour l'attribuer au statut de fin ci-dessous.
+        const outOfBounds = done && this._isOutOfBounds() && !this.rocketModel.isDestroyed;
+        if (outOfBounds) {
+            const oobPenalty = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
+                ? AI_TRAINING.NAVIGATE_REWARDS.TIMEOUT_PENALTY
+                : -50;
+            reward += oobPenalty;
+        }
+
         // Ajouter la récompense au total
         this.totalRewardInEpisode += reward;
 
@@ -473,17 +497,10 @@ class HeadlessRocketEnvironment {
             missionStatus: this.missionManager.getCurrentMissionStatus() // Supposer une telle méthode
         };
         if (done) {
-            // CORRECTION (item 10) : le succès était déduit de missionManager.isCurrentMissionSuccessful(),
-            // jamais vrai pour les missions "jeton" de l'entraînement (NavigateToken & co, cargo
-            // impossible à obtenir) — un vrai succès 'navigate' était donc rapporté
-            // 'unknown_done_reason'. On interroge d'abord le critère de succès de l'OBJECTIF
-            // (checkObjectiveSuccess), en gardant la mission cargo comme repli. Le succès est testé
-            // avant 'crashed' car pour 'crash_moon' l'impact EST le succès.
-            info.objectiveSuccess = objectiveSuccess;
-            const missionSuccess = objectiveSuccess || this.missionManager.isCurrentMissionSuccessful();
-            info.status = missionSuccess ? 'mission_success' :
-                          this.rocketModel.isDestroyed ? 'crashed' :
+            info.status = this.rocketModel.isDestroyed ? 'crashed' :
                           this.rocketModel.fuel <= 0 ? 'out_of_fuel' :
+                          this.missionManager.isCurrentMissionSuccessful() ? 'mission_success' :
+                          outOfBounds ? 'out_of_bounds' :
                           this.currentStep >= this.maxStepsPerEpisode ? 'max_steps_reached' : 'unknown_done_reason';
 
             // Émettre événement de fin d'épisode
@@ -519,13 +536,18 @@ class HeadlessRocketEnvironment {
             // Physics State (directement depuis physicsController)
             rocketAccX: this.physicsController.lastRocketAcceleration ? this.physicsController.lastRocketAcceleration.x : 0,
             rocketAccY: this.physicsController.lastRocketAcceleration ? this.physicsController.lastRocketAcceleration.y : 0,
-            
-            // Mission State (exemple simplifié)
-            // targetX, targetY (position de la cible de la mission)
-            // distanceToTarget
-            
-            // Universe State (positions relatives des corps importants)
         };
+
+        // Mission / cible : position VIVANTE + vitesse propre (u/s). Pour une cible mobile
+        // ('intercept'), targetVX/VY sont non nuls → dims 10-11 du vecteur d'état actives.
+        // NB : targetVX/VY sont déjà en u/s (grandeur cinématique), PAS en échelle Matter.
+        const tp = this._getTargetPoint();
+        if (tp) {
+            obs.targetX = tp.x;
+            obs.targetY = tp.y;
+            obs.targetVX = this._targetVelocity ? this._targetVelocity.x : 0;
+            obs.targetVY = this._targetVelocity ? this._targetVelocity.y : 0;
+        }
         // !! IMPORTANT: Normaliser ces valeurs entre -1 et 1 ou 0 et 1 si possible.
         return obs;
     }
@@ -540,10 +562,13 @@ class HeadlessRocketEnvironment {
 
         // CORRECTION: Pénalité de base adaptée selon l'objectif
         const objective = this.config.missionConfig?.objective;
-        const stepPenalty = (objective === 'navigate' && typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS) 
-            ? AI_TRAINING.NAVIGATE_REWARDS.STEP_PENALTY 
+        let stepPenalty = (objective === 'navigate' && typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
+            ? AI_TRAINING.NAVIGATE_REWARDS.STEP_PENALTY
             : -0.01;
-        reward += stepPenalty; 
+        // Rôle 'course' : pénalité par step accrue → pousse à finir vite (complète raceTimeBonus).
+        const spf = this.config.missionConfig?.stepPenaltyFactor;
+        if (spf && spf > 0) stepPenalty *= spf;
+        reward += stepPenalty;
 
         // CORRECTION: Pénalité pour la consommation de carburant (sauf si carburant infini)
         if (objective !== 'navigate' || !this.config.infiniteFuel) {
@@ -661,13 +686,22 @@ class HeadlessRocketEnvironment {
                 case 'navigate':
                     // CORRECTION: Système de récompense avancé pour navigation
                     reward += this.calculateNavigateReward();
-                    
+
                     // Récompense de terminaison (succès)
                     if (this.checkNavigateSuccess() && !this._missionAlreadyRewardedThisEpisode) {
                         const successReward = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
                             ? AI_TRAINING.NAVIGATE_REWARDS.SUCCESS_REWARD
                             : 1000;
-                        reward += successReward + this.successTimeCredit();
+                        reward += successReward;
+
+                        // BONUS DE COURSE (rôle 'race') : récompense supplémentaire proportionnelle
+                        // au budget de steps RESTANT → pousse à atteindre la cible le plus vite
+                        // possible (plus tôt = plus de bonus). Neutre pour les autres rôles.
+                        if (this.config.missionConfig?.raceTimeBonus) {
+                            const stepsRemaining = Math.max(0, this.maxStepsPerEpisode - this.currentStep);
+                            const ratio = this.maxStepsPerEpisode > 0 ? stepsRemaining / this.maxStepsPerEpisode : 0;
+                            reward += successReward * ratio;
+                        }
                         this._missionAlreadyRewardedThisEpisode = true;
                     }
                     break;
@@ -812,8 +846,8 @@ class HeadlessRocketEnvironment {
      */
     calculateNavigateReward() {
         let reward = 0;
-        
-        const targetPoint = this.config.missionConfig?.targetPoint;
+
+        const targetPoint = this._getTargetPoint(); // cible VIVANTE (mobile pour 'intercept')
         if (!targetPoint) return reward;
         
         // Récupérer la configuration des récompenses
@@ -937,18 +971,23 @@ class HeadlessRocketEnvironment {
         const alignment = targetDirX * rocketDirX + targetDirY * rocketDirY;
         // alignment = 1 si parfaitement aligné, -1 si opposé
         
-        // Récompense basée sur l'alignement PUR (produit scalaire cap/direction cible).
-        //
-        // CORRECTION (item 7 : composante fantôme dominante) : on avait ici un SECOND bonus de
-        // vitesse radiale, `reward += (radialVelocity / 100) * 0.5`, dont le /100 datait de l'époque
-        // où VELOCITY_TARGET valait 30 u/s (elle vaut 2500 aujourd'hui). Mesuré sur une approche
-        // parfaite, ce seul terme totalisait 30 551 — 64,8 % de la composante « heading » et 55,5 %
-        // du retour d'épisode — alors que la composante « réduction de distance » OFFICIELLE est
-        // mathématiquement bornée à DISTANCE_DELTA pour tout l'épisode (somme télescopique).
-        // Le bonus radial existe DÉJÀ, correctement calibré, dans calculateVelocityReward
-        // ((v_rad / VELOCITY_TARGET) × 0,2) : ce doublon est donc supprimé, et « heading » ne
-        // récompense plus que l'orientation, conformément à sa documentation.
-        return alignment * config.HEADING_ALIGNMENT;
+        // Récompense basée sur l'alignement
+        let reward = alignment * config.HEADING_ALIGNMENT;
+        
+        // Bonus si la fusée se déplace vers la cible (vitesse radiale positive)
+        if (this.rocketModel.velocity) {
+            // velocity est stockée en échelle Matter (≈ u/s × 1000/60) ; conversion en u/s
+            // via le point de conversion unique (cf. PHYSICS.md §1).
+            const radialVelocity = PhysicsVectors.matterToGameVelocity(
+                this.rocketModel.velocity.x * targetDirX +
+                this.rocketModel.velocity.y * targetDirY); // u/s
+            if (radialVelocity > 0) {
+                // Bonus proportionnel à la vitesse radiale (u/s) vers la cible
+                reward += (radialVelocity / 100) * 0.5; // Normalisé
+            }
+        }
+        
+        return reward;
     }
     
     /**
@@ -957,11 +996,11 @@ class HeadlessRocketEnvironment {
      */
     // Vitesse de la fusée en unités/s. Le modèle stocke la vélocité en échelle Matter
     // (≈ u/s × 1000/60) ; les cibles NAVIGATE_REWARDS et seuils de succès sont définis en u/s.
+    // Conversion via le point de conversion unique (cf. PHYSICS.md §1).
     _rocketSpeedUnitsPerSec() {
-        const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
         const vx = (this.rocketModel && this.rocketModel.velocity) ? (this.rocketModel.velocity.x || 0) : 0;
         const vy = (this.rocketModel && this.rocketModel.velocity) ? (this.rocketModel.velocity.y || 0) : 0;
-        return Math.sqrt(vx * vx + vy * vy) / k;
+        return PhysicsVectors.matterToGameVelocity(Math.sqrt(vx * vx + vy * vy));
     }
 
     calculateVelocityReward(targetPoint, config) {
@@ -1012,11 +1051,11 @@ class HeadlessRocketEnvironment {
             if (distance > 0) {
                 const targetDirX = dx / distance;
                 const targetDirY = dy / distance;
-                // velocity est en échelle Matter (≈ u/s × 1000/60) ; on convertit en u/s
-                // car VELOCITY_TARGET est défini en u/s (cf. _rocketSpeedUnitsPerSec()).
-                const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
-                const radialVelocity = (this.rocketModel.velocity.x * targetDirX +
-                                      this.rocketModel.velocity.y * targetDirY) / k; // u/s
+                // velocity est en échelle Matter (≈ u/s × 1000/60) ; conversion en u/s
+                // car VELOCITY_TARGET est défini en u/s (point de conversion unique).
+                const radialVelocity = PhysicsVectors.matterToGameVelocity(
+                    this.rocketModel.velocity.x * targetDirX +
+                    this.rocketModel.velocity.y * targetDirY); // u/s
                 const ratio = distance / (this._initialDistanceToTarget || 1);
                 // Bonus radial seulement quand on est loin (hors zone de freinage)
                 const brakeZoneR = config.BRAKE_ZONE_RATIO || 0.2;
@@ -1230,12 +1269,16 @@ class HeadlessRocketEnvironment {
      */
     isDone() {
         if (this.rocketModel.isDestroyed) return true;
-        
+
         // CORRECTION: Pour 'navigate', ne pas terminer si fuel <= 0 (carburant infini)
         const objective = this.config.missionConfig?.objective;
         if (objective !== 'navigate' && this.rocketModel.fuel <= 0) return true;
-        
+
         if (this.currentStep >= this.maxStepsPerEpisode) return true;
+
+        // Sortie des limites de simulation : termine l'épisode plutôt que de laisser une fusée
+        // « fugueuse » brûler tout le budget de steps loin de la cible. Voir _isOutOfBounds().
+        if (this._isOutOfBounds()) return true;
         
         // CONDITION DE CRASH ANTICIPÉ : Terminer immédiatement si crash imminent sur une planète
         // Cela accélère l'entraînement en évitant d'attendre la détection de collision par Matter.js
@@ -1247,72 +1290,104 @@ class HeadlessRocketEnvironment {
                 return true;
             }
         }
-
-        // Vérifier les conditions de succès spécifiques selon l'objectif
-        if (this.config.missionConfig && this.config.missionConfig.objective) {
-            return this.checkObjectiveSuccess();
-        }
-
-        // Autres conditions (ex: sortie des limites de simulation si pertinent)
+        
         return false;
     }
 
     /**
-     * Critère de succès de l'OBJECTIF courant (source unique, utilisée par isDone(), par le
-     * statut de fin d'épisode et par la distinction terminaison/troncature de step()).
-     * @return {boolean} True si l'objectif courant est atteint.
+     * Point cible COURANT (vivant). Pour une cible mobile, c'est la position mise à jour par
+     * _updateMovingTarget ; sinon la cible fixe de la config. Source unique consommée par les
+     * récompenses, les critères de succès et l'observation.
+     * @return {{x:number,y:number}|null}
      */
-    checkObjectiveSuccess() {
-        switch (this.config.missionConfig && this.config.missionConfig.objective) {
-            case 'navigate':
-                // Mission de navigation réussie si le point cible est atteint (et stabilisé)
-                return this.checkNavigateSuccess();
-            case 'orbit':
-                // Mission d'orbite réussie si altitude et vitesse appropriées pendant plusieurs pas
-                return this.checkOrbitSuccess();
-            case 'land':
-                // Mission d'atterrissage réussie si atterri en douceur sur la cible
-                return this.checkLandingSuccess();
-            case 'crash_moon':
-                // Mission de crash réussie si crash sur la Lune
-                return this.checkCrashMoonSuccess();
-            case 'explore':
-                // Mission d'exploration réussie si certaines zones visitées
-                return this.checkExplorationSuccess();
-            default:
-                return false;
+    _getTargetPoint() {
+        return this._targetPoint || this.config.missionConfig?.targetPoint || null;
+    }
+
+    /**
+     * Déplace la cible selon config.missionConfig.movingTarget (rôle 'intercept') et met à jour
+     * _targetVelocity (u/s). Sans movingTarget, ne fait rien (cible fixe, vitesse nulle).
+     * Patterns :
+     *   - 'linear'   : { speed, angle } → translation rectiligne à vitesse constante.
+     *   - 'circular' : { radius, angularSpeed } → orbite autour du point de départ (centre).
+     * @param {number} deltaTime - pas de temps (s)
+     */
+    _updateMovingTarget(deltaTime) {
+        const mt = this.config.missionConfig?.movingTarget;
+        if (!mt || !this._targetPoint || !this._targetBasePoint) return;
+
+        this._targetElapsed += deltaTime;
+        const t = this._targetElapsed;
+
+        if (mt.pattern === 'circular') {
+            const radius = mt.radius || 20000;
+            const w = (mt.angularSpeed != null) ? mt.angularSpeed : 0.05; // rad/s
+            const cx = this._targetBasePoint.x, cy = this._targetBasePoint.y;
+            this._targetPoint.x = cx + radius * Math.cos(w * t);
+            this._targetPoint.y = cy + radius * Math.sin(w * t);
+            // Vitesse = dérivée temporelle (u/s)
+            this._targetVelocity.x = -radius * w * Math.sin(w * t);
+            this._targetVelocity.y = radius * w * Math.cos(w * t);
+        } else {
+            // 'linear' (défaut)
+            const speed = (mt.speed != null) ? mt.speed : 800;   // u/s
+            const angle = (mt.angle != null) ? mt.angle : 0;      // rad
+            const vx = speed * Math.cos(angle);
+            const vy = speed * Math.sin(angle);
+            this._targetPoint.x = this._targetBasePoint.x + vx * t;
+            this._targetPoint.y = this._targetBasePoint.y + vy * t;
+            this._targetVelocity.x = vx;
+            this._targetVelocity.y = vy;
         }
     }
 
     /**
-     * Applique un état de fusée DÉTRUITE cohérent lors du raccourci de crash imminent.
-     *
-     * CORRECTION (item 1) : isDone() se contentait de `isDestroyed = true`, sans toucher à
-     * `health` ni dire QUEL corps allait être percuté. On observait donc des états incohérents
-     * (`isDestroyed=true, health=100, landedOn=null`) et surtout checkCrashMoonSuccess(), qui exige
-     * `landedOn === 'Lune' || attachedTo === 'Lune'`, ne pouvait JAMAIS être vrai : l'objectif
-     * 'crash_moon' était inatteignable (balayage de vitesses d'impact 100→3000 u/s : succès
-     * toujours faux, altitude finale ≈ 48). On reproduit ici l'état posé par CollisionHandler lors
-     * d'un vrai crash (landedOn/attachedTo = corps percuté, relativePosition purgée, isLanded=false,
-     * dégâts fatals), sans rien changer à la vocation du raccourci : terminer l'épisode tout de suite.
-     *
-     * @param {object} body - Le corps céleste sur le point d'être percuté.
+     * Avance le compteur de proximité (rôle 'intercept', mode succès 'proximity') UNE fois par
+     * step : +1 si la fusée est à portée de la cible vivante, remis à 0 sinon. No-op hors mode
+     * proximity. Séparé de checkNavigateSuccess() qui est en lecture seule (appelée plusieurs
+     * fois par step).
      */
-    applyImminentCrash(body) {
-        this.rocketModel.landedOn = body.name;
-        this.rocketModel.attachedTo = body.name;
-        this.rocketModel.relativePosition = null;
-        this.rocketModel.isLanded = false;
-        if (typeof this.rocketModel.applyDamage === 'function') {
-            // Dégâts fatals : pose health=0, isDestroyed=true et coupe les propulseurs.
-            this.rocketModel.applyDamage((this.ROCKET_CONSTS?.MAX_HEALTH || 100) + 1);
-        } else {
-            this.rocketModel.health = 0;
-            this.rocketModel.isDestroyed = true;
-        }
-        this._imminentCrashBody = body.name;
+    _updateProximityStreak() {
+        const mc = this.config.missionConfig || {};
+        if (mc.successMode !== 'proximity') return;
+        const tp = this._getTargetPoint();
+        if (!tp || !this.rocketModel || !this.rocketModel.position) return;
+        const dx = this.rocketModel.position.x - tp.x;
+        const dy = this.rocketModel.position.y - tp.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radius = mc.proximityRadius || 4000;
+        this._proximityStreak = (distance < radius) ? ((this._proximityStreak || 0) + 1) : 0;
     }
 
+    /**
+     * La fusée est-elle sortie des limites de simulation ?
+     * Borne PAR OBJECTIF (le vol 'navigate' est légitimement long ~127k unités) :
+     *   - navigate : max(3 × distance initiale A→B, SAFETY.MAX_SIMULATION_DISTANCE) → généreux
+     *     mais borné (une fusée à 3× a largement dépassé B).
+     *   - autres   : SAFETY.MAX_SIMULATION_DISTANCE (défaut 50000) autour de l'origine.
+     * Distance mesurée depuis l'origine (Terre à l'origine pour les objectifs planétaires ;
+     * point A = (0,0) pour navigate).
+     */
+    _isOutOfBounds() {
+        const pos = this.rocketModel && this.rocketModel.position;
+        if (!pos) return false;
+        const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
+        if (!isFinite(dist)) return true;
+
+        const SAFETY = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.SAFETY) ? AI_TRAINING.SAFETY : {};
+        const maxDist = SAFETY.MAX_SIMULATION_DISTANCE || 50000;
+        const objective = this.config.missionConfig?.objective;
+
+        let bound;
+        if (objective === 'navigate') {
+            const initial = this._initialDistanceToTarget || 130000; // ~127k (diagonale A→B)
+            bound = Math.max(3 * initial, maxDist);
+        } else {
+            bound = maxDist;
+        }
+        return dist > bound;
+    }
+    
     /**
      * Vérifie si un crash est imminent (fusée trop proche de la surface avec vitesse trop élevée)
      * @return {boolean} True si un crash est imminent, false sinon
@@ -1400,6 +1475,54 @@ class HeadlessRocketEnvironment {
      * Vérifie si la mission d'orbite est réussie
      * Utilise les constantes AI_TRAINING pour des valeurs cohérentes avec la physique du jeu
      */
+    /**
+     * Applique un état de crash COHÉRENT lors d'une terminaison par crash imminent.
+     * RESTAURÉE lors de la fusion : appelée par isDone(), sa définition se trouvait dans un bloc
+     * écarté au profit de la refonte amont. Sans elle, isDone() lève une TypeError.
+     * Le raccourci de terminaison anticipée posait `isDestroyed` sans renseigner le corps heurté
+     * ni la santé : `crash_moon` (qui exige `landedOn === 'Lune'`) était donc inatteignable, et le
+     * modèle restait dans l'état incohérent `isDestroyed=true, health=100`.
+     * @param {object} body - Le corps céleste sur le point d'être percuté.
+     */
+    applyImminentCrash(body) {
+        if (!body || !this.rocketModel) return;
+        this.rocketModel.landedOn = body.name;
+        this.rocketModel.attachedTo = body.name;
+        this.rocketModel.relativePosition = null;
+        this.rocketModel.isLanded = false;
+        if (typeof this.rocketModel.applyDamage === 'function') {
+            // Dégâts fatals : pose health=0, isDestroyed=true et coupe les propulseurs.
+            this.rocketModel.applyDamage(((this.ROCKET_CONSTS && this.ROCKET_CONSTS.MAX_HEALTH) || 100) + 1);
+        } else {
+            this.rocketModel.health = 0;
+            this.rocketModel.isDestroyed = true;
+        }
+        this._imminentCrashBody = body.name;
+    }
+
+    /**
+     * Critère de réussite de l'objectif courant.
+     * RESTAURÉE lors de la fusion (même raison qu'applyImminentCrash). Sert à isDone(), au statut
+     * rapporté et au test de troncature : sans elle, une réussite `navigate` était rapportée
+     * `unknown_done_reason`, le statut étant dérivé de missionManager.isCurrentMissionSuccessful()
+     * qui n'est jamais vrai pour la mission-jeton de navigation.
+     * @returns {boolean}
+     */
+    checkObjectiveSuccess() {
+        const objectif = this.config.missionConfig && this.config.missionConfig.objective;
+        switch (objectif) {
+            case 'navigate':   return this.checkNavigateSuccess();
+            case 'orbit':      return this.checkOrbitSuccess();
+            case 'land':       return this.checkLandingSuccess();
+            case 'crash_moon': return this.checkCrashMoonSuccess();
+            case 'explore':    return this.checkExplorationSuccess();
+            default:
+                // Rôles/objectifs ajoutés en amont : on retombe sur le gestionnaire de missions.
+                return !!(this.missionManager && typeof this.missionManager.isCurrentMissionSuccessful === 'function'
+                    && this.missionManager.isCurrentMissionSuccessful());
+        }
+    }
+
     checkOrbitSuccess() {
         if (!this.orbitSuccessCounter) this.orbitSuccessCounter = 0;
 
@@ -1497,16 +1620,25 @@ class HeadlessRocketEnvironment {
      * CORRECTION: Objectif d'entraînement = atteindre le point cible
      */
     checkNavigateSuccess() {
-        const targetPoint = this.config.missionConfig?.targetPoint;
+        const targetPoint = this._getTargetPoint(); // cible VIVANTE (mobile pour 'intercept')
         if (!targetPoint) return false;
 
         const dx = this.rocketModel.position.x - targetPoint.x;
         const dy = this.rocketModel.position.y - targetPoint.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        const speed = this._rocketSpeedUnitsPerSec(); // u/s (seuil SUCCESS_SPEED_THRESHOLD en u/s)
+        const mc = this.config.missionConfig || {};
 
-        // Succès = proche du point B ET stabilisé (vitesse quasi nulle)
+        // Mode 'proximity' (rôle 'intercept') : rester à portée d'une cible MOBILE pendant K steps
+        // consécutifs. LECTURE SEULE ici (appelée plusieurs fois par step) — le compteur
+        // _proximityStreak est avancé UNE fois par step dans _updateProximityStreak().
+        if (mc.successMode === 'proximity') {
+            const need = mc.proximitySteps || 30;
+            return (this._proximityStreak || 0) >= need;
+        }
+
+        // Mode 'stabilize' (défaut, navigate/race) : proche de la cible ET quasi immobile.
+        const speed = this._rocketSpeedUnitsPerSec(); // u/s
         const SUCCESS_DISTANCE_THRESHOLD = 3000;
         const SUCCESS_SPEED_THRESHOLD = 30; // Quasi immobile
         return distance < SUCCESS_DISTANCE_THRESHOLD && speed < SUCCESS_SPEED_THRESHOLD;

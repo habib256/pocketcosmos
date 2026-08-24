@@ -33,6 +33,14 @@ class TrainingOrchestrator {
             headlessMode: true,
             logInterval: 50,
             visualSpeed: 1, // Mode visuel : cadence de rendu (×1 = fluide … ×20 = avance rapide)
+
+            // Nom du modèle dans le model zoo (AIModelStore). Si null, dérivé de
+            // l'objectif au démarrage : '<objectif>-default'.
+            modelName: null,
+
+            // Seed de reproductibilité (null = non déterministe, Math.random). Quand défini :
+            // angles initiaux + exploration epsilon reproductibles, et jeu d'éval fixe.
+            seed: null,
             
             // Objectifs d'entraînement
             // CORRECTION (bug défaut objectif): la doc décrit 'navigate' comme objectif par
@@ -57,7 +65,13 @@ class TrainingOrchestrator {
             episodeLengths: [],
             lastEvaluationScore: 0,
             trainingStartTime: null,
-            lastCheckpointTime: null
+            lastCheckpointTime: null,
+            // Métriques de pilotage qualité (fenêtres glissantes)
+            stepsPerSecond: 0,          // Vitesse réelle du pipeline (fenêtre 20 épisodes)
+            recentSuccessRate: 0,       // Taux de succès (fenêtre 50 épisodes)
+            medianStepsToSuccess: null, // Médiane des steps des épisodes d'éval réussis
+            episodeDurations: [],       // ms, fenêtre pour stepsPerSecond
+            recentSuccesses: []         // booléens, fenêtre pour recentSuccessRate
         };
         
         // État d'entraînement
@@ -109,15 +123,28 @@ class TrainingOrchestrator {
     /**
      * Démarre l'entraînement avec la configuration fournie
      */
+    /**
+     * Budget de pas par épisode RÉELLEMENT utilisé par le run courant.
+     * RESTAURÉE lors de la fusion : appelée par la boucle d'épisode et par l'évaluation, sa
+     * définition se trouvait dans un bloc écarté. Le budget vit dans un champ dédié plutôt que
+     * réécrit dans `this.config` : sinon un run 'navigate' (4000 pas) contaminait le run suivant
+     * d'un autre objectif, qui héritait silencieusement de 4000 au lieu de 2000.
+     * @returns {number}
+     */
+    getMaxStepsPerEpisode() {
+        return this.effectiveMaxStepsPerEpisode || this.config.maxStepsPerEpisode;
+    }
+
     async startTraining(userConfig = {}) {
         if (this.isTraining) {
             return;
         }
 
-        // Nouvelle génération de session : toute finalisation asynchrone encore en vol (issue du
-        // run précédent) devient obsolète et cessera de toucher aux champs partagés.
-        this._runGeneration = (this._runGeneration || 0) + 1;
-        const runId = this._runGeneration;
+        // FILE DE RUNS (curriculum) : si userConfig.trainingRuns est fourni, exécuter les étapes
+        // en séquence (chacune = un entraînement complet), avec warm-start optionnel entre elles.
+        if (userConfig.trainingRuns && userConfig.trainingRuns.length > 0) {
+            return this.runCurriculum(userConfig);
+        }
 
         try {
         // Fusionner la configuration utilisateur avec la configuration par défaut
@@ -128,11 +155,30 @@ class TrainingOrchestrator {
             this.config.maxEpisodes = 1000; // Valeur par défaut
         }
         
-        // Mettre à jour l'objectif actuel si fourni
-        if (this.config.objectives && this.config.objectives.length > 0) {
+        // Résolution du RÔLE (facultatif) : un rôle (race/intercept/lander/orbiter) définit un
+        // objectif de base + des paramètres de mission (cible mobile, mode de succès, bonus…).
+        // Priorité au rôle ; sinon on retombe sur config.objectives[0] (rétrocompat).
+        this.trainingState.roleParams = this._resolveRole(this.config.role);
+        if (this.trainingState.roleParams) {
+            this.trainingState.currentObjective = this.trainingState.roleParams.objective;
+        } else if (this.config.objectives && this.config.objectives.length > 0) {
             this.trainingState.currentObjective = this.config.objectives[0];
         }
-        
+
+        // Nom du modèle dans le zoo : défaut dérivé du rôle ('race-default') ou de l'objectif.
+        if (!this.config.modelName) {
+            const base = this.config.role || this.trainingState.currentObjective;
+            this.config.modelName = base + '-default';
+        }
+
+        // RNG de reproductibilité. Flux séparés : entraînement (this.rng) vs évaluation
+        // (jeu d'angles fixe), pour que l'éval reste comparable quelle que soit la
+        // consommation d'aléa de l'entraînement.
+        const hasSeed = (this.config.seed !== null && this.config.seed !== undefined);
+        this.rng = hasSeed ? SeededRandom.mulberry32(this.config.seed >>> 0) : Math.random;
+        const evalSeed = hasSeed ? SeededRandom.derive(this.config.seed >>> 0, 0x5EED) : ((Math.random() * 0xFFFFFFFF) >>> 0);
+        this._evalAngles = SeededRandom.angleSet(evalSeed, 10); // 10 = numEvaluationEpisodes
+
         // CORRECTION: Réinitialiser les métriques au début de l'entraînement
         this.metrics.episode = 0;
         this.metrics.episodesCompleted = 0; // Nombre d'épisodes RÉELLEMENT terminés (voir updateMetrics)
@@ -147,23 +193,11 @@ class TrainingOrchestrator {
         this.metrics.bestAverageReward = -Infinity;
         this.metrics.trainingStartTime = Date.now();
         this.metrics.lastCheckpointTime = null;
-
-        // CORRECTION (état résiduel entre deux runs) : recentPerformance / earlyStoppingCounter /
-        // bestModelWeights survivaient d'un entraînement à l'autre — le run n°2 déclenchait donc
-        // son early stopping à partir des scores du run n°1, et les poids retenus pouvaient venir
-        // d'un modèle déjà disposé. On repart d'un état propre (en libérant les tenseurs retenus).
-        if (this.trainingState.bestModelWeights) {
-            this.trainingState.bestModelWeights.forEach(w => {
-                if (w && typeof w.dispose === 'function') {
-                    try { w.dispose(); } catch (e) { /* ignore */ }
-                }
-            });
-        }
-        this.trainingState.bestModelWeights = null;
-        this.trainingState.recentPerformance = [];
-        this.trainingState.earlyStoppingCounter = 0;
-        this._stopRequested = false;
-
+        this.metrics.stepsPerSecond = 0;
+        this.metrics.recentSuccessRate = 0;
+        this.metrics.medianStepsToSuccess = null;
+        this.metrics.episodeDurations = [];
+        this.metrics.recentSuccesses = [];
         this.isTraining = true;
             
             // Initialiser les environnements
@@ -198,7 +232,53 @@ class TrainingOrchestrator {
             }
         }
     }
-    
+
+    /**
+     * Exécute une FILE DE RUNS séquentiels (curriculum / rôles). Chaque étape est un entraînement
+     * complet indépendant, avec warm-start optionnel depuis le zoo (transfert entre étapes).
+     * @param {object} userConfig - config globale, contient trainingRuns:
+     *   [{ role?, objective?, episodes?, loadFrom?, saveAs?, seed? }]
+     *   - role/objective : rôle ou objectif de l'étape
+     *   - episodes       : nombre d'épisodes (défaut : userConfig.maxEpisodes)
+     *   - loadFrom       : nom d'un modèle du zoo à charger avant d'entraîner (warm-start)
+     *   - saveAs         : nom sous lequel sauvegarder (défaut : '<role|objective>-vN')
+     */
+    async runCurriculum(userConfig = {}) {
+        const runs = userConfig.trainingRuns || [];
+        const base = { ...userConfig };
+        delete base.trainingRuns; // éviter la récursion infinie dans startTraining
+
+        for (let i = 0; i < runs.length; i++) {
+            const stage = runs[i] || {};
+            this.eventBus.emit(window.EVENTS.AI.CURRICULUM_STAGE_STARTED, {
+                index: i, total: runs.length, stage
+            });
+
+            const stageConfig = {
+                ...base,
+                role: stage.role || base.role || null,
+                objectives: stage.objective ? [stage.objective] : base.objectives,
+                maxEpisodes: stage.episodes || base.maxEpisodes,
+                loadFrom: stage.loadFrom || null,
+                modelName: stage.saveAs || null, // null → défaut dérivé du rôle/objectif
+                seed: (stage.seed !== undefined) ? stage.seed : base.seed
+            };
+
+            // startTraining remet isTraining à false via finalizeTraining ; on peut donc
+            // enchaîner. (trainingRuns absent de stageConfig → run unique.)
+            await this.startTraining(stageConfig);
+
+            // Si l'utilisateur a stoppé en cours, ne pas enchaîner les étapes suivantes.
+            this.eventBus.emit(window.EVENTS.AI.CURRICULUM_STAGE_COMPLETED, {
+                index: i, total: runs.length, stage, modelName: this.config.modelName
+            });
+            if (this._curriculumAborted) break;
+        }
+
+        this._curriculumAborted = false;
+        this.eventBus.emit(window.EVENTS.AI.CURRICULUM_COMPLETED, { stages: runs.length });
+    }
+
     /**
      * Nettoie les ressources après une erreur pour permettre un nouveau démarrage
      */
@@ -235,12 +315,37 @@ class TrainingOrchestrator {
     }
     
     /**
-     * Budget de pas par épisode du run courant.
-     * CORRECTION : source unique pour la boucle d'entraînement, l'évaluation et le critère de
-     * succès par défaut, sans jamais muter this.config (qui survit d'un run à l'autre).
+     * Résout un nom de rôle en ses paramètres (AI_TRAINING.ROLES). Renvoie null si aucun rôle.
+     * @param {string} [roleName]
+     * @return {object|null} copie des params du rôle (objective + params de mission)
      */
-    getMaxStepsPerEpisode() {
-        return this.effectiveMaxStepsPerEpisode || this.config.maxStepsPerEpisode;
+    _resolveRole(roleName) {
+        if (!roleName) return null;
+        const roles = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.ROLES) ? AI_TRAINING.ROLES : {};
+        const r = roles[roleName];
+        if (!r) {
+            if (globalThis.DEBUG) console.warn(`[TrainingOrchestrator] Rôle inconnu: ${roleName}`);
+            return null;
+        }
+        return { ...r };
+    }
+
+    /**
+     * Injecte les paramètres du rôle courant dans un objet missionConfig (cible mobile, mode de
+     * succès, bonus de course…). Ne touche pas à objective/targetPoint déjà posés.
+     * @param {object} missionConfig
+     * @return {object} le missionConfig enrichi
+     */
+    _applyRoleToMissionConfig(missionConfig) {
+        const rp = this.trainingState.roleParams;
+        if (!rp) return missionConfig;
+        if (rp.movingTarget) missionConfig.movingTarget = { ...rp.movingTarget };
+        if (rp.successMode) missionConfig.successMode = rp.successMode;
+        if (rp.proximityRadius != null) missionConfig.proximityRadius = rp.proximityRadius;
+        if (rp.proximitySteps != null) missionConfig.proximitySteps = rp.proximitySteps;
+        if (rp.raceTimeBonus) missionConfig.raceTimeBonus = true;
+        if (rp.stepPenaltyFactor != null) missionConfig.stepPenaltyFactor = rp.stepPenaltyFactor;
+        return missionConfig;
     }
 
     /**
@@ -296,10 +401,10 @@ class TrainingOrchestrator {
                     celestialBodies: [],
                     targetPoint: pointB
                 },
-                missionConfig: {
+                missionConfig: this._applyRoleToMissionConfig({
                     objective: 'navigate',
                     targetPoint: pointB
-                }
+                })
             };
         } else {
             // Configuration par défaut avec Terre et Lune
@@ -345,9 +450,9 @@ class TrainingOrchestrator {
                         }
                     ]
                 },
-                missionConfig: {
+                missionConfig: this._applyRoleToMissionConfig({
                     objective: this.trainingState.currentObjective
-                }
+                })
             };
         }
         
@@ -361,8 +466,17 @@ class TrainingOrchestrator {
 
         const evaluationConfig = {
             ...trainingConfig,
-            // Pour l'évaluation, on peut utiliser la même config que l'entraînement
-            // ou adapter selon les besoins (pour l'instant, on copie simplement)
+            // Cloner rocketInitialState : sans ça, le spread partage la MÊME référence que
+            // trainingConfig, et l'angle initial seedé par épisode (entraînement) écraserait
+            // le jeu d'angles fixe de l'évaluation (et inversement). Voir _applyInitialAngle /
+            // _applyFixedEvalAngle.
+            rocketInitialState: trainingConfig.rocketInitialState
+                ? { ...trainingConfig.rocketInitialState,
+                    position: trainingConfig.rocketInitialState.position
+                        ? { ...trainingConfig.rocketInitialState.position } : undefined,
+                    velocity: trainingConfig.rocketInitialState.velocity
+                        ? { ...trainingConfig.rocketInitialState.velocity } : undefined }
+                : undefined
         };
 
         // Créer les environnements avec l'EventBus partagé
@@ -458,11 +572,24 @@ class TrainingOrchestrator {
         this.rocketAI.config.gamma = this.config.gamma;
         this.rocketAI.config.batchSize = this.config.batchSize;
         this.rocketAI.config.replayBufferSize = this.config.replayBufferSize;
-        // Fréquence d'entraînement (1 mise à jour tous les N pas), pilotée par l'UI.
-        // Le champ réellement lu par la boucle d'épisode est config.updateFrequency ;
-        // on ne l'écrase que si l'UI a fourni une valeur valide.
-        if (typeof this.config.updateFrequency === 'number' && this.config.updateFrequency >= 1) {
-            this.rocketAI.config.updateFrequency = Math.floor(this.config.updateFrequency);
+        
+        // Objectif et nom de modèle (zoo) : utilisés par saveModel() pour les métadonnées
+        this.rocketAI.setObjective(this.trainingState.currentObjective);
+        this.rocketAI.modelName = this.config.modelName;
+
+        // Injecter le RNG seedé pour que l'exploration epsilon soit reproductible.
+        if (this.rng) {
+            this.rocketAI.rng = this.rng;
+        }
+
+        // WARM-START (curriculum) : si config.loadFrom est défini, charger les poids d'un modèle
+        // existant du zoo dans l'agent neuf avant d'entraîner (transfert, ex: race depuis navigate).
+        // Le chargement valide la compatibilité (12 dims) ; en cas d'échec on démarre à froid.
+        if (this.config.loadFrom) {
+            try {
+                const ok = await this.rocketAI.loadModel(this.config.loadFrom);
+                if (ok && globalThis.DEBUG) console.warn(`[TrainingOrchestrator] warm-start depuis "${this.config.loadFrom}"`);
+            } catch (e) { /* démarrage à froid si incompatible/absent */ }
         }
 
         // Activer le mode entraînement
@@ -597,7 +724,11 @@ class TrainingOrchestrator {
      */
     async runTrainingEpisode(runId = this._runGeneration) {
         const startTime = Date.now();
-        
+
+        // Angle initial seedé PAR ÉPISODE (navigate) : diversité d'orientation reproductible
+        // (via this.rng) plutôt qu'un angle unique figé pour tout le run.
+        this._applyInitialAngle(this.trainingEnv, this.rng);
+
         // Réinitialiser l'environnement
         let state = this.trainingEnv.reset();
         let done = false;
@@ -785,10 +916,35 @@ class TrainingOrchestrator {
     }
     
     /**
+     * Écrit un angle initial (radians) dans la config d'un environnement, pour l'objectif
+     * 'navigate' uniquement (les autres objectifs démarrent posés à un angle fixe). L'angle
+     * sera appliqué à la fusée au prochain reset() de l'environnement.
+     * @param {HeadlessRocketEnvironment} env
+     * @param {function(): number} rng - générateur [0,1)
+     */
+    _applyInitialAngle(env, rng) {
+        if (!env || this.trainingState.currentObjective !== 'navigate') return;
+        if (!env.config || !env.config.rocketInitialState) return;
+        env.config.rocketInitialState.angle = (rng ? rng() : Math.random()) * Math.PI * 2;
+    }
+
+    /**
+     * Applique l'angle d'éval fixe n°i (jeu déterministe this._evalAngles), navigate uniquement.
+     * @param {HeadlessRocketEnvironment} env
+     * @param {number} i - index de l'épisode d'évaluation
+     */
+    _applyFixedEvalAngle(env, i) {
+        if (!env || this.trainingState.currentObjective !== 'navigate') return;
+        if (!env.config || !env.config.rocketInitialState) return;
+        if (!this._evalAngles || this._evalAngles.length === 0) return;
+        env.config.rocketInitialState.angle = this._evalAngles[i % this._evalAngles.length];
+    }
+
+    /**
      * Construit l'état au format attendu par RocketAI
      * CORRECTION (bug #4) : délègue à la source de vérité unique RocketAI.buildStateVector
-     * pour garantir une normalisation et une dimension (10) IDENTIQUES entre entraînement,
-     * évaluation et inférence. L'état est CONSCIENT DE LA CIBLE B (pour 'navigate'), sinon
+     * pour garantir une normalisation et une dimension (12, STATE_VERSION 2) IDENTIQUES entre
+     * entraînement, évaluation et inférence. L'état est CONSCIENT DE LA CIBLE B (pour 'navigate'), sinon
      * la cible vaut (0,0) (corps de référence à l'origine pour les autres objectifs headless).
      * CORRECTION (bug #2) : la cible B est lue sur l'ENVIRONNEMENT COURANT passé en argument
      * (trainingEnv en apprentissage, evaluationEnv en évaluation), et non plus toujours sur
@@ -797,17 +953,20 @@ class TrainingOrchestrator {
      * @param {HeadlessRocketEnvironment} [env] - L'environnement courant (défaut: trainingEnv)
      */
     buildAIState(environmentState, env = this.trainingEnv) {
-        const STATE_SIZE = (typeof RocketAI !== 'undefined' && RocketAI.STATE_SIZE) ? RocketAI.STATE_SIZE : 10;
+        const STATE_SIZE = (typeof RocketAI !== 'undefined' && RocketAI.STATE_SIZE) ? RocketAI.STATE_SIZE : 12;
 
         // Vérifier que environmentState existe
         if (!environmentState || typeof environmentState !== 'object') {
             return Array(STATE_SIZE).fill(0);
         }
 
-        // Récupérer la cible : point B pour 'navigate', sinon origine (0,0)
-        // Source unique : la config de l'environnement courant.
-        const targetPoint = (env && env.config?.missionConfig?.targetPoint)
-            || { x: 0, y: 0 };
+        // Cible : PRIORITÉ à l'observation (position + vitesse VIVANTES, exposées par getObservation,
+        // qui suivent une cible mobile pour le rôle 'intercept'). Repli sur la config (cible fixe),
+        // puis origine (0,0) pour les objectifs sans cible. targetVX/VY sont en u/s (dims 10-11).
+        const hasObsTarget = (typeof environmentState.targetX === 'number');
+        const targetPoint = hasObsTarget
+            ? { x: environmentState.targetX, y: environmentState.targetY }
+            : ((env && env.config?.missionConfig?.targetPoint) || { x: 0, y: 0 });
 
         return RocketAI.buildStateVector({
             positionScale: this.getPositionScale(env),
@@ -818,7 +977,9 @@ class TrainingOrchestrator {
             angle: environmentState.rocketAngle || 0,
             angularVelocity: environmentState.rocketAngularVelocity || 0,
             targetX: targetPoint.x,
-            targetY: targetPoint.y
+            targetY: targetPoint.y,
+            targetVx: hasObsTarget ? (environmentState.targetVX || 0) : 0,
+            targetVy: hasObsTarget ? (environmentState.targetVY || 0) : 0
         });
     }
 
@@ -905,7 +1066,7 @@ class TrainingOrchestrator {
         const numEvaluationEpisodes = 10;
         let totalScore = 0;
         let successCount = 0;
-        let evaluatedEpisodes = 0; // Épisodes d'évaluation réellement menés à terme
+        const stepsToSuccess = []; // steps des épisodes d'éval réussis (pour la médiane)
         
         // Sauvegarder l'état d'entraînement
         const wasTraining = this.rocketAI.isTraining;
@@ -917,16 +1078,10 @@ class TrainingOrchestrator {
                 if (!this.rocketAI || this.rocketAI.isDisposed) {
                     break;
                 }
-                // CORRECTION : honorer un arrêt/une pause demandés PENDANT l'évaluation. Sans
-                // cela, un Stop pendant l'évaluation laissait tourner les 10 épisodes restants
-                // (des milliers de pas) avant que la boucle d'entraînement ne reprenne la main.
-                if (!this.isTraining || this.isPaused) {
-                    break;
-                }
-                // Idem si un nouveau run a démarré : l'environnement d'évaluation n'est plus le nôtre.
-                if (this._runGeneration !== runId) {
-                    return;
-                }
+                
+                // Jeu d'angles FIXE pour l'éval (navigate) : mêmes conditions initiales à chaque
+                // évaluation et entre modèles → scores comparables (cf. compareModels).
+                this._applyFixedEvalAngle(this.evaluationEnv, i);
 
                 let state = this.evaluationEnv.reset();
                 let episodeReward = 0;
@@ -956,6 +1111,7 @@ class TrainingOrchestrator {
                 // CORRECTION (bug eval): évaluer le succès sur l'environnement d'évaluation
                 if (this.isEpisodeSuccessful(episodeReward, steps, this.evaluationEnv)) {
                     successCount++;
+                    stepsToSuccess.push(steps);
                 }
                 
                 // Céder le contrôle au navigateur entre les épisodes d'évaluation
@@ -975,6 +1131,17 @@ class TrainingOrchestrator {
 
             const averageScore = totalScore / numEvaluationEpisodes;
             const successRate = successCount / numEvaluationEpisodes;
+
+            // Médiane des steps jusqu'au succès (null si aucun succès à cette éval)
+            let medianStepsToSuccess = null;
+            if (stepsToSuccess.length > 0) {
+                stepsToSuccess.sort((a, b) => a - b);
+                const mid = Math.floor(stepsToSuccess.length / 2);
+                medianStepsToSuccess = (stepsToSuccess.length % 2 === 0)
+                    ? Math.round((stepsToSuccess[mid - 1] + stepsToSuccess[mid]) / 2)
+                    : stepsToSuccess[mid];
+            }
+            this.metrics.medianStepsToSuccess = medianStepsToSuccess;
 
             this.metrics.lastEvaluationScore = averageScore;
             this.trainingState.recentPerformance.push(averageScore);
@@ -1018,6 +1185,7 @@ class TrainingOrchestrator {
                 episode: this.metrics.episode,
                 averageScore,
                 successRate,
+                medianStepsToSuccess,
                 bestScore: this.metrics.bestAverageReward
             });
             
@@ -1096,6 +1264,25 @@ class TrainingOrchestrator {
         // Métriques moyennes (sur les 100 derniers épisodes)
         this.metrics.averageRewards.push(episodeResult.totalReward);
         this.metrics.episodeLengths.push(episodeResult.steps);
+
+        // Vitesse réelle du pipeline : steps/s sur une fenêtre glissante de 20 épisodes
+        // (durée = simulation + apprentissage, c'est bien le débit utile qu'on mesure).
+        this.metrics.episodeDurations.push({ steps: episodeResult.steps, durationMs: episodeResult.duration });
+        if (this.metrics.episodeDurations.length > 20) {
+            this.metrics.episodeDurations.shift();
+        }
+        const totalSteps = this.metrics.episodeDurations.reduce((s, e) => s + e.steps, 0);
+        const totalMs = this.metrics.episodeDurations.reduce((s, e) => s + e.durationMs, 0);
+        this.metrics.stepsPerSecond = totalMs > 0 ? Math.round(totalSteps / (totalMs / 1000)) : 0;
+
+        // Taux de succès récent : fenêtre glissante de 50 épisodes (le taux global
+        // successfulEpisodes/episode masque la progression en fin d'entraînement).
+        this.metrics.recentSuccesses.push(!!episodeResult.success);
+        if (this.metrics.recentSuccesses.length > 50) {
+            this.metrics.recentSuccesses.shift();
+        }
+        this.metrics.recentSuccessRate =
+            this.metrics.recentSuccesses.filter(Boolean).length / this.metrics.recentSuccesses.length;
 
         // Protection : vérifier que l'agent existe et n'est pas disposé
         const currentEpsilon = (this.rocketAI && !this.rocketAI.isDisposed)
@@ -1193,9 +1380,15 @@ class TrainingOrchestrator {
         if (!this.rocketAI || this.rocketAI.isDisposed) {
             return;
         }
-        
+
         try {
-            const saved = await this.rocketAI.saveModel();
+            // Sauvegarde dans le model zoo avec métadonnées d'entraînement à jour
+            const saved = await this.rocketAI.saveModel(this.config.modelName, {
+                objective: this.trainingState.currentObjective,
+                episodes: this.metrics.episode,
+                bestEvalScore: isFinite(this.metrics.bestAverageReward) ? this.metrics.bestAverageReward : null,
+                successRate: this.metrics.recentSuccessRate
+            });
             if (saved) {
                 this.metrics.lastCheckpointTime = Date.now();
             }
@@ -1342,6 +1535,7 @@ class TrainingOrchestrator {
         }
         this.isTraining = false;
         this.isPaused = false;
+        this._curriculumAborted = true; // interrompt aussi une file de runs (curriculum) en cours
         this.eventBus.emit(window.EVENTS.AI.TRAINING_STOPPED, this.metrics);
     }
 

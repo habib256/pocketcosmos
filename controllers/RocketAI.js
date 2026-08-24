@@ -3,8 +3,10 @@
 class RocketAI {
     // CORRECTION (bug #4) : dimension unique du vecteur d'état, partagée par le builder
     // (buildStateVector), la construction du modèle (inputShape) et le replay buffer.
-    // Toute modification de cette valeur reste cohérente partout via cette constante.
-    static get STATE_SIZE() { return 10; }
+    // La valeur vit dans AI_TRAINING.STATE (constants.js), source unique des échelles.
+    static get STATE_SIZE() {
+        return (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.STATE) ? AI_TRAINING.STATE.STATE_SIZE : 12;
+    }
 
     // TABLE D'ACTIONS CANONIQUE (source unique, partagée jeu <-> entraînement).
     // L'index dans ACTION_NAMES est l'index de sortie du DQN ; ACTION_THRUSTERS donne, pour
@@ -105,6 +107,19 @@ class RocketAI {
 
         // Objectif actuel de l'agent
         this.currentObjective = 'orbit'; // 'orbit', 'land', 'takeoff'
+
+        // Nom du modèle courant dans le model zoo (AIModelStore). Utilisé par la
+        // sauvegarde automatique et comme défaut de saveModel()/loadModel().
+        this.modelName = 'default';
+
+        // Un modèle entraîné a-t-il été explicitement chargé ? Tant que non, le pilotage en
+        // jeu utilise l'heuristique maintainOrbit (le réseau à poids aléatoires ne pilote pas).
+        // Après loadModel(), l'inférence réseau prend le relais (posture PNJ).
+        this._modelLoaded = false;
+
+        // Générateur aléatoire injectable (reproductibilité). Défaut : Math.random.
+        // TrainingOrchestrator injecte un RNG seedé quand config.seed est défini.
+        this.rng = Math.random;
         
         // Configuration du modèle DQN
         this.config = {
@@ -356,16 +371,13 @@ class RocketAI {
     updateRocketData(data) {
         this.rocketData = data.rocket;
         this.celestialBodyData = data.celestialBody;
-        
-        // Si l'agent est actif, prendre une décision
+
+        // En jeu, RocketAI fait UNIQUEMENT de l'inférence (posture PNJ) : il n'apprend jamais
+        // en direct. L'apprentissage se fait exclusivement dans HeadlessRocketEnvironment via
+        // TrainingOrchestrator, avec la récompense unique de l'environnement. On délègue donc
+        // toujours à la politique gloutonne du réseau (buildState -> act -> emitControl).
         if (this.isActive && this.rocketData) {
-            if (this.isTraining) {
-                // Mode apprentissage par renforcement
-                this.step();
-            } else {
-                // Mode manuel ou prédiction sans apprentissage
-                this.makeDecision();
-            }
+            this.makeDecision();
         }
     }
     
@@ -385,59 +397,16 @@ class RocketAI {
         return true;
     }
     
-    // Étape d'apprentissage par renforcement
-    step() {
-        // Construire l'état actuel
-        const currentState = this.buildState();
-        
-        // Si nous avons un état précédent et une action, calculer la récompense
-        if (this.lastState !== null && this.lastAction !== null) {
-            const reward = this.calculateReward();
-            
-            // Stocker l'expérience dans le replay buffer
-            this.replayBuffer.push({
-                state: this.lastState,
-                action: this.lastAction,
-                reward: reward,
-                nextState: currentState,
-                done: false
-            });
-            
-            // Limiter la taille du replay buffer
-            if (this.replayBuffer.length > this.config.replayBufferSize) {
-                this.replayBuffer.shift();
-            }
-            
-            // Entraîner le modèle périodiquement (ignorer silencieusement si disposed)
-            if (this.totalSteps % this.config.updateFrequency === 0 && this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
-                this.train().catch(() => {});
-            }
-            
-            // NOTE: la synchro du target network est désormais faite dans train() (compteur
-            // trainUpdateCounter), seul point commun aux chemins orchestré et en jeu.
+    // NOTE: l'ancienne méthode step() (boucle d'apprentissage par renforcement EN JEU) et
+    // calculateReward() (récompense d'orbite codée en dur, divergente de celle de
+    // l'environnement) ont été SUPPRIMÉES. L'IA en jeu est désormais en inférence pure
+    // (posture PNJ). L'apprentissage se fait exclusivement dans HeadlessRocketEnvironment
+    // via TrainingOrchestrator, avec la récompense UNIQUE de l'environnement (plus de double
+    // définition de récompense). Voir CHANGELOG (phase 2).
 
-            // Sauvegarder le modèle périodiquement
-            this.autoSaveIfNeeded();
-        }
-        
-        // Choisir une action pour l'état actuel
-        const actionIndex = this.act(currentState);
-        const action = this.actions[actionIndex];
-        
-        // Exécuter l'action
-        this.emitControl(action);
-        
-        // Mettre à jour l'état et l'action précédents
-        this.lastState = currentState;
-        this.lastAction = actionIndex;
-        
-        // Incrémenter les compteurs
-        this.episodeSteps++;
-        this.totalSteps++;
-    }
-    
     // CORRECTION (bug #4 - état incohérent training/inférence) :
-    // SOURCE DE VÉRITÉ UNIQUE pour la construction du vecteur d'état (10 dimensions).
+    // SOURCE DE VÉRITÉ UNIQUE pour la construction du vecteur d'état (12 dimensions,
+    // STATE_VERSION 2 — dimensions et échelles dans AI_TRAINING.STATE).
     // Cette fonction statique est appelée par :
     //   - RocketAI.buildState() (inférence en jeu)
     //   - TrainingOrchestrator.buildAIState() (apprentissage / évaluation)
@@ -445,61 +414,55 @@ class RocketAI {
     // Le vecteur est CONSCIENT DE LA CIBLE (target) : pour 'navigate' on passe le point B,
     // sinon on passe la position du corps céleste de référence. Les dimensions et les
     // échelles sont IDENTIQUES quel que soit l'appelant, garantissant la cohérence
-    // entre entraînement et inférence (10 dims = inputShape du DQN).
+    // entre entraînement et inférence (12 dims = inputShape du DQN).
     //
-    // @param {object} p - { x, y, vx, vy, angle, angularVelocity, targetX, targetY }
-    // @return {number[]} Vecteur d'état de dimension RocketAI.STATE_SIZE (10)
+    // CONVENTION D'UNITÉS : p.vx/p.vy sont en échelle Matter (≈ u/s × 1000/60, tels que
+    // stockés dans rocketModel.velocity) ; p.targetVx/p.targetVy sont en u/s (vélocités
+    // cinématiques des corps/points cibles, déjà en u/s dans les modèles). Les dims 10-11
+    // encodent la vitesse PROPRE de la cible : exactement 0 pour une cible fixe (point B,
+    // corps immobile), donc sans effet sur l'entraînement navigate actuel, mais prêtes pour
+    // les cibles mobiles (intercept/escorte) sans nouvelle rupture de compatibilité.
+    //
+    // @param {object} p - { x, y, vx, vy, angle, angularVelocity, targetX, targetY,
+    //                       targetVx?, targetVy? }
+    // @return {number[]} Vecteur d'état de dimension RocketAI.STATE_SIZE (12)
     static buildStateVector(p) {
         const STATE_SIZE = RocketAI.STATE_SIZE;
         if (!p) return Array(STATE_SIZE).fill(0);
 
-        // Échelles de normalisation (cohérentes pour tous les appelants)
-        // CORRECTION (item 9 : échelle calibrée pour 'navigate' seulement) : POSITION_SCALE et
-        // DISTANCE_SCALE valaient 150000 en dur, ce qui convient à la diagonale A→B (~127k) mais
-        // écrase les objectifs 'orbit'/'land', qui vivent à des rayons de 820 à 2220 unités : les
-        // features 0/1/7/8 restaient coincées dans [0,005 ; 0,015] pendant que les features 4/5/9
-        // sont d'ordre 1, soit un déséquilibre de conditionnement d'entrée d'un facteur ~200 — en
-        // amont de la première layerNormalization, donc jamais corrigé.
-        // L'appelant fournit désormais une DISTANCE DE RÉFÉRENCE propre à la tâche
-        // (`positionScale`) : distance initiale A→B pour 'navigate', rayon du corps + altitude
-        // orbitale max pour orbit/land/crash_moon/explore. Longueur et ORDRE du vecteur inchangés.
-        const POSITION_SCALE = (typeof p.positionScale === 'number' && isFinite(p.positionScale) && p.positionScale > 0)
-            ? p.positionScale
-            : RocketAI.DEFAULT_POSITION_SCALE;  // ~150k unités (diagonale A-B ~127k sans saturer)
-        // CORRECTION : 1000 saturait les features de vitesse dès 2000 u/s (clamp ±2), alors que
-        // NAVIGATE_REWARDS.VELOCITY_TARGET = 2500 et VELOCITY_MAX = 10000 : le réseau ne voyait
-        // aucune différence entre croisière et survitesse. 5000 × clamp ±2 -> ±10000 u/s observables.
-        const VELOCITY_SCALE = 5000;       // 5000 unités/s (plage observable ±2 -> ±VELOCITY_MAX)
-        // CORRECTION (même classe de bug que VELOCITY_SCALE ci-dessous) : `angularVelocity` est
-        // exprimée en ÉCHELLE MATTER (≈ rad/s × MATTER_BASE_DELTA), comme la vélocité linéaire —
-        // et non en rad/s malgré l'annotation historique. Mesuré : ×16,7 par rapport à la rotation
-        // réelle. Avec l'ancien pré-clamp ±50 et une échelle de 10, la plage observable s'arrêtait
-        // à 1/8 du seuil de crash (PHYSICS.CRASH_ANGULAR_VELOCITY = 400, même échelle) : le réseau
-        // ne pouvait pas distinguer une rotation sûre d'une rotation fatale. On calibre donc la
-        // plage observable sur le seuil de crash lui-même.
+        // Échelles de normalisation — source unique AI_TRAINING.STATE (constants.js)
+        const S = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.STATE) ? AI_TRAINING.STATE : {};
+        const POSITION_SCALE = S.POSITION_SCALE || 150000;
+        const VELOCITY_SCALE = S.VELOCITY_SCALE || 2500;
+        const VELOCITY_CLAMP = S.VELOCITY_CLAMP || 4;
+        const ANGULAR_VEL_SCALE = S.ANGULAR_VEL_SCALE || 80;
+        // Pré-clamp de la vitesse angulaire, calibré sur le seuil de crash (même échelle Matter).
+        // Défini ici car référencé plus bas : sans lui, buildStateVector lève une ReferenceError
+        // à CHAQUE pas de l'IA.
         const ANGULAR_VEL_LIMIT = (typeof PHYSICS !== 'undefined' && PHYSICS.CRASH_ANGULAR_VELOCITY)
             ? PHYSICS.CRASH_ANGULAR_VELOCITY
-            : 400;                          // échelle Matter
-        const ANGULAR_VEL_SCALE = ANGULAR_VEL_LIMIT / 5;   // clamp ±5 -> ±seuil de crash observable
-        const DISTANCE_SCALE = POSITION_SCALE;   // même échelle que POSITION_SCALE (distance non saturée)
+            : 400;
+        const DISTANCE_SCALE = S.DISTANCE_SCALE || 150000;
+        const TARGET_VEL_SCALE = S.TARGET_VEL_SCALE || 2500;
 
         // Sécurisation des entrées
         const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : 0;
         const x = num(p.x);
         const y = num(p.y);
         // Le modèle stocke la vélocité en échelle Matter (≈ u/s × 1000/60). On la ramène en u/s
-        // (cohérent avec VELOCITY_SCALE) pour ne plus saturer : auparavant clampée à ±2000 puis
-        // /1000 -> toujours ±2, le réseau ne "voyait" jamais la magnitude de vitesse réelle.
-        const VK = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
-        // Garde-fou en u/s : borné à VELOCITY_MAX (10000) pour rester cohérent avec
-        // VELOCITY_SCALE ci-dessus (sinon le pré-clamp saturait avant le clamp de sortie).
-        const V_LIMIT = 10000;
-        const vx = Math.max(-V_LIMIT, Math.min(V_LIMIT, num(p.vx) / VK));
-        const vy = Math.max(-V_LIMIT, Math.min(V_LIMIT, num(p.vy) / VK));
+        // via le point de conversion unique (PhysicsVectors.matterToGameVelocity). Le clamp brut
+        // couvre VELOCITY_CLAMP × VELOCITY_SCALE (= ±10000 u/s = VELOCITY_MAX) : plus de
+        // saturation à la vitesse de croisière (2500 u/s ≈ 1.0 après normalisation).
+        const vMaxRaw = VELOCITY_CLAMP * VELOCITY_SCALE;
+        const vx = Math.max(-vMaxRaw, Math.min(vMaxRaw, PhysicsVectors.matterToGameVelocity(num(p.vx))));
+        const vy = Math.max(-vMaxRaw, Math.min(vMaxRaw, PhysicsVectors.matterToGameVelocity(num(p.vy))));
         const angle = num(p.angle);
         const angularVelocity = Math.max(-ANGULAR_VEL_LIMIT, Math.min(ANGULAR_VEL_LIMIT, num(p.angularVelocity)));
         const targetX = num(p.targetX);
         const targetY = num(p.targetY);
+        // Vitesse propre de la cible (u/s, PAS en échelle Matter — cf. convention ci-dessus)
+        const targetVx = num(p.targetVx);
+        const targetVy = num(p.targetVy);
 
         // Vecteur vers la cible
         const dx = targetX - x;
@@ -521,18 +484,21 @@ class RocketAI {
         const radialVelocity = vx * dirX + vy * dirY;
 
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const VC = VELOCITY_CLAMP;
 
         const state = [
             clamp(dx / POSITION_SCALE, -10, 10),                 // 0: dx vers cible
             clamp(dy / POSITION_SCALE, -10, 10),                 // 1: dy vers cible
-            clamp(vx / VELOCITY_SCALE, -2, 2),                   // 2: vitesse X
-            clamp(vy / VELOCITY_SCALE, -2, 2),                   // 3: vitesse Y
+            clamp(vx / VELOCITY_SCALE, -VC, VC),                 // 2: vitesse X
+            clamp(vy / VELOCITY_SCALE, -VC, VC),                 // 3: vitesse Y
             Math.sin(angle),                                      // 4: orientation (sin) [-1, 1]
             Math.cos(angle),                                      // 5: orientation (cos) [-1, 1]
             clamp(angularVelocity / ANGULAR_VEL_SCALE, -5, 5),   // 6: vitesse angulaire
             clamp(distance / DISTANCE_SCALE, 0, 10),             // 7: distance à la cible (non saturée)
-            clamp(radialVelocity / VELOCITY_SCALE, -2, 2),       // 8: vitesse radiale vers cible
-            clamp(headingAlignment, -1, 1)                       // 9: alignement du cap vers la cible
+            clamp(radialVelocity / VELOCITY_SCALE, -VC, VC),     // 8: vitesse radiale vers cible
+            clamp(headingAlignment, -1, 1),                      // 9: alignement du cap vers la cible
+            clamp(targetVx / TARGET_VEL_SCALE, -VC, VC),         // 10: vitesse propre cible X (0 si fixe)
+            clamp(targetVy / TARGET_VEL_SCALE, -VC, VC)          // 11: vitesse propre cible Y (0 si fixe)
         ];
 
         // Validation finale (toute valeur aberrante => état neutre)
@@ -579,21 +545,41 @@ class RocketAI {
         });
     }
     
-    // Choisir une action en fonction de l'état courant
+    // Choisir une action en fonction de l'état courant.
+    // Les tirages aléatoires utilisent this.rng (seedable) pour la reproductibilité.
+    /**
+     * Décroissance d'epsilon (exploration) en fin d'épisode, bornée par `epsilonMin`.
+     *
+     * RÉTABLIE lors de la fusion : `TrainingOrchestrator` l'appelle à chaque fin d'épisode
+     * (`this.rocketAI.decayEpsilon()`). Sans elle, l'appel lève une TypeError et l'agent reste
+     * à epsilon = 1.0, c'est-à-dire 100 % d'actions aléatoires pour tout l'entraînement.
+     * Le drapeau `epsilonDecayManagedExternally` existe pour éviter une double décroissance si un
+     * autre chemin venait à la déclencher aussi.
+     */
+    decayEpsilon() {
+        if (this.isDisposed) return;
+        if (this.config.epsilon > this.config.epsilonMin) {
+            this.config.epsilon = Math.max(
+                this.config.epsilonMin,
+                this.config.epsilon * this.config.epsilonDecay
+            );
+        }
+    }
+
     act(state) {
         // Vérifier que le modèle existe, n'est pas dispose et est prêt
         if (!this.model || this.isDisposed || !this.modelReady) {
             // Action aléatoire si pas de modèle, modèle dispose ou pas encore prêt
-            return Math.floor(Math.random() * this.actions.length);
+            return Math.floor(this.rng() * this.actions.length);
         }
-        
+
         // Stratégie epsilon-greedy
         // N'explorer (action aléatoire) QUE pendant l'entraînement. En évaluation/inférence
         // (isTraining === false), on force la politique gloutonne pour mesurer la vraie
         // performance et sélectionner les bons poids "best".
-        if (this.isTraining && Math.random() < this.config.epsilon) {
+        if (this.isTraining && this.rng() < this.config.epsilon) {
             // Exploration: action aléatoire
-            return Math.floor(Math.random() * this.actions.length);
+            return Math.floor(this.rng() * this.actions.length);
         } else {
             // Exploitation: meilleure action selon le modèle
             try {
@@ -608,196 +594,24 @@ class RocketAI {
         }
     }
     
-    // Calculer la récompense en fonction de l'état actuel
-    calculateReward() {
-        // CORRECTION (bug #9) : cette fonction implémente une récompense ORBITE codée en dur.
-        // Elle n'est utilisée qu'en mode jeu (step()). Pour ne pas tromper l'agent lorsqu'un
-        // autre objectif est actif (ex: 'navigate'), on ne l'applique QUE si currentObjective
-        // est 'orbit'. Pour les autres objectifs, l'entraînement réel passe par
-        // HeadlessRocketEnvironment.calculateReward (récompense spécifique à l'objectif),
-        // donc ici on renvoie une récompense neutre.
-        if (this.currentObjective !== 'orbit') {
-            return 0;
-        }
-
-        // Vérifier que les données nécessaires sont disponibles
-        if (!this.rocketData || !this.celestialBodyData) {
-            return -1;
-        }
-        
-        // Vérifier que les propriétés nécessaires existent
-        if (typeof this.rocketData.x !== 'number' || typeof this.rocketData.y !== 'number' ||
-            typeof this.celestialBodyData.x !== 'number' || typeof this.celestialBodyData.y !== 'number') {
-            return -1;
-        }
-        
-        // Calculer la distance au corps céleste
-        const dx = this.rocketData.x - this.celestialBodyData.x;
-        const dy = this.rocketData.y - this.celestialBodyData.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Vérifier que la distance est valide
-        if (!isFinite(distance) || distance < 0) {
-            return -10;
-        }
-        
-        // Distance orbitale cible (surface + altitude sécuritaire)
-        const targetOrbitDistance = (this.celestialBodyData.radius || 6371000) + 100000; // 100km au-dessus
-        const distanceFromTarget = Math.abs(distance - targetOrbitDistance);
-        const relativeError = distanceFromTarget / targetOrbitDistance;
-        
-        // CORRECTION CRITIQUE : Reward shaping MASSIF avec signaux positifs forts
-        let reward = 0;
-        
-        // Zone parfaite : récompense énorme pour encourager l'apprentissage
-        if (relativeError < 0.01) {
-            reward = 100.0;  // ÉNORME récompense pour orbite parfaite
-        } else if (relativeError < 0.02) {
-            reward = 50.0;   // Très grosse récompense pour zone excellente
-        } else if (relativeError < 0.05) {
-            reward = 20.0;   // Grosse récompense pour zone bonne
-        } else if (relativeError < 0.1) {
-            reward = 5.0;    // Récompense modérée pour zone acceptable
-        } else if (relativeError < 0.2) {
-            reward = 1.0;    // Petite récompense pour zone approchante
-        } else if (relativeError < 0.5) {
-            reward = 0.0;    // Neutre pour zone éloignée
-        } else {
-            reward = -5.0;   // Pénalité pour être très loin
-        }
-        
-        // Bonus pour stabilité supplémentaire
-        if (typeof this.rocketData.angle === 'number' && typeof this.rocketData.angularVelocity === 'number') {
-            // Angle tangent à l'orbite.
-            // Le nez / axe de poussée est à (angle - π/2) : pour que le nez pointe selon la
-            // tangente, l'angle de la fusée doit valoir tangentAngle + π/2 (même convention que
-            // buildStateVector et maintainOrbit). Comparer tangentAngle à `angle` directement
-            // récompensait une orientation à 90° de la bonne.
-            const angleToBody = Math.atan2(dy, dx);
-            const tangentAngle = angleToBody + Math.PI / 2;
-            const targetRocketAngle = tangentAngle + Math.PI / 2;
-
-            // Calculer la différence d'angle
-            let angleDiff = (targetRocketAngle - this.rocketData.angle) % (2 * Math.PI);
-            if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-            if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-            
-            // GROS bonus pour orientation parfaite
-            if (relativeError < 0.05 && Math.abs(angleDiff) < 0.1) {
-                reward += 25.0;  // GROS bonus pour bonne orientation + position
-            } else if (relativeError < 0.1 && Math.abs(angleDiff) < 0.2) {
-                reward += 10.0;  // Bonus modéré
-            }
-            
-            // Bonus pour vitesse angulaire stable.
-            // `angularVelocity` est en échelle Matter (≈ rad/s × MATTER_BASE_DELTA) : comparer à
-            // 0.05 brut revenait à exiger ~0,003 rad/s réel, condition quasi jamais satisfaite.
-            // On convertit en rad/s avant de comparer au seuil (exprimé, lui, en rad/s).
-            const VK_ANG = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
-            if (Math.abs(this.rocketData.angularVelocity / VK_ANG) < this.thresholds.angularVelocity) {
-                reward += 5.0;   // Bonus pour stabilité rotationnelle
-            }
-        }
-        
-        // Collision avec le corps céleste : pénalité terminale
-        const bodyRadius = this.celestialBodyData.radius || 6371000;
-        if (distance < bodyRadius * 1.01) { // Légère marge
-            return -1000;  // Pénalité massive pour crash
-        }
-        
-        // Éjection très loin : pénalité progressive
-        if (distance > targetOrbitDistance * 5) {
-            return -50;  // Pénalité pour éjection
-        }
-        
-        // Bonus de survie pour encourager les épisodes longs
-        reward += 0.1;
-        
-        // S'assurer que la récompense est un nombre fini
-        if (!isFinite(reward)) {
-            return -1;
-        }
-        
-        return reward;
-    }
     
-    // Gestion d'un crash
+    // Gestion d'un crash / d'un succès (en jeu). L'apprentissage in-game ayant été retiré
+    // (IA = inférence pure, cf. suppression de step()/calculateReward), ces handlers ne
+    // poussent plus d'expériences terminales ni ne déclenchent train() : ils se contentent de
+    // réinitialiser l'état d'inférence. L'apprentissage sur les transitions terminales se fait
+    // uniquement dans HeadlessRocketEnvironment/TrainingOrchestrator (done propagé par l'env).
     handleCrash() {
-        if (!this.isActive || !this.isTraining || this.isDisposed) return;
-        
-        // Si nous avons un état et une action précédents, ajouter une expérience terminale
-        if (this.lastState !== null && this.lastAction !== null) {
-            // Forte pénalité pour un crash
-            this.replayBuffer.push({
-                state: this.lastState,
-                action: this.lastAction,
-                reward: -100,
-                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
-                done: true
-            });
-            
-            // Entraîner immédiatement (ignorer silencieusement si disposed)
-            if (this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
-                this.train().catch(() => {});
-            }
-        }
-        
-        // Réinitialiser l'état
-        this.lastState = null;
-        this.lastAction = null;
-        this.episodeSteps = 0;
-
-        // Fin d'épisode : décroissance d'epsilon. Ignorée si un TrainingOrchestrator pilote
-        // l'agent (il la fait déjà une fois par épisode, timeouts compris) -> pas de double
-        // décroissance ; sinon (entraînement en jeu, sans orchestrateur) epsilon restait figé.
-        if (!this.epsilonDecayManagedExternally) {
-            this.decayEpsilon();
-        }
+        this._resetEpisodeState();
     }
 
-    // Décroissance d'epsilon (exploration) en fin d'épisode, bornée par epsilonMin.
-    // Point unique : appelée par handleCrash/handleSuccess (jeu) et par TrainingOrchestrator
-    // (entraînement orchestré, qui pose epsilonDecayManagedExternally pour éviter le doublon).
-    decayEpsilon() {
-        if (this.isDisposed) return;
-        if (this.config.epsilon > this.config.epsilonMin) {
-            this.config.epsilon = Math.max(
-                this.config.epsilonMin,
-                this.config.epsilon * this.config.epsilonDecay
-            );
-        }
-    }
-
-    // Gestion d'un succès
     handleSuccess() {
-        if (!this.isActive || !this.isTraining || this.isDisposed) return;
-        
-        // Si nous avons un état et une action précédents, ajouter une expérience terminale
-        if (this.lastState !== null && this.lastAction !== null) {
-            // Forte récompense pour un succès
-            this.replayBuffer.push({
-                state: this.lastState,
-                action: this.lastAction,
-                reward: 100,
-                nextState: Array(RocketAI.STATE_SIZE).fill(0),  // État terminal
-                done: true
-            });
-            
-            // Entraîner immédiatement (ignorer silencieusement si disposed)
-            if (this.replayBuffer.length >= this.config.batchSize && !this.isDisposed) {
-                this.train().catch(() => {});
-            }
-        }
-        
-        // Réinitialiser l'état
+        this._resetEpisodeState();
+    }
+
+    _resetEpisodeState() {
         this.lastState = null;
         this.lastAction = null;
         this.episodeSteps = 0;
-
-        // Fin d'épisode : même décroissance d'epsilon que handleCrash (voir decayEpsilon).
-        if (!this.epsilonDecayManagedExternally) {
-            this.decayEpsilon();
-        }
     }
 
     // Entraîner le modèle avec un batch du replay buffer
@@ -830,6 +644,7 @@ class RocketAI {
         let ys = null;
         let qValues = null;
         let nextQValues = null;
+        let nextQValuesOnline = null; // Double DQN : Q(next) du modèle ONLINE pour l'argmax
         
         try {
             // Sélectionner un batch aléatoire du replay buffer
@@ -894,39 +709,45 @@ class RocketAI {
                 return;
             }
             
+            // DOUBLE DQN : l'ACTION du prochain état est choisie par le modèle ONLINE (argmax),
+            // mais sa VALEUR est lue sur le modèle TARGET. Cela découple sélection et évaluation
+            // et réduit la surestimation systématique du max du DQN standard (qui utilise le même
+            // réseau pour les deux). Coût : une prédiction supplémentaire par batch (négligeable
+            // devant model.fit).
             nextQValues = tf.tidy(() => localTargetModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, STATE_SIZE])));
-            
+            nextQValuesOnline = tf.tidy(() => localModel.predict(tf.tensor2d(nextStates, [this.config.batchSize, STATE_SIZE])));
+
             // Extraire les valeurs dans JavaScript
             const qValuesData = qValues.arraySync();
-            const nextQValuesData = nextQValues.arraySync();
-            
+            const nextQValuesData = nextQValues.arraySync();          // valeurs (target)
+            const nextQValuesOnlineData = nextQValuesOnline.arraySync(); // pour l'argmax (online)
+
             // Libérer immédiatement les tenseurs de prédiction
             qValues.dispose();
             qValues = null;
             nextQValues.dispose();
             nextQValues = null;
-            
+            nextQValuesOnline.dispose();
+            nextQValuesOnline = null;
+
             // Créer les cibles Q
             const qTargets = qValuesData.map(qRow => [...qRow]);
-            
-            // Mettre à jour les valeurs Q pour les actions prises.
-            // CORRECTION (item 8) : `done` recouvrait DEUX choses très différentes — un état
-            // ABSORBANT (crash, panne sèche, objectif atteint), où Q vaut bien la seule récompense
-            // terminale, et une TRONCATURE par le budget de pas, où l'état suivant est parfaitement
-            // ordinaire et où il faut continuer à bootstrapper (γ·maxQ'). Sans cette distinction,
-            // le dernier pas de CHAQUE épisode enseignait Q ≈ récompense du pas (mesuré ≈ -53)
-            // contre un Q stationnaire ≈ 2000, injectant une discontinuité de ~2000 une fois par
-            // épisode dans une MSE sans clipping de gradient. `truncated` est posé par
-            // HeadlessRocketEnvironment.step() et propagé par TrainingOrchestrator ; absent
-            // (expériences du chemin en jeu), on retombe sur l'ancien comportement.
+
+            // Mettre à jour les valeurs Q pour les actions prises
             for (let i = 0; i < this.config.batchSize; i++) {
                 const experience = batch[i];
                 const isAbsorbing = experience.done && !experience.truncated;
                 if (isAbsorbing) {
                     qTargets[i][experience.action] = experience.reward;
                 } else {
-                    const maxNextQ = Math.max(...nextQValuesData[i]);
-                    qTargets[i][experience.action] = experience.reward + this.config.gamma * maxNextQ;
+                    // argmax_a' Q_online(next, a')  →  puis valeur Q_target(next, a*)
+                    const online = nextQValuesOnlineData[i];
+                    let bestA = 0;
+                    for (let a = 1; a < online.length; a++) {
+                        if (online[a] > online[bestA]) bestA = a;
+                    }
+                    const doubleQ = nextQValuesData[i][bestA];
+                    qTargets[i][experience.action] = experience.reward + this.config.gamma * doubleQ;
                 }
             }
             
@@ -995,6 +816,7 @@ class RocketAI {
             if (ys) { try { ys.dispose(); } catch (e) {} }
             if (qValues) { try { qValues.dispose(); } catch (e) {} }
             if (nextQValues) { try { nextQValues.dispose(); } catch (e) {} }
+            if (nextQValuesOnline) { try { nextQValuesOnline.dispose(); } catch (e) {} }
             
             // Toujours libérer le flag de concurrence
             this.isTrainingInProgress = false;
@@ -1084,96 +906,43 @@ class RocketAI {
         }
     }
     
-    // Sauvegarder le modèle
-    async saveModel() {
+    // Sauvegarder le modèle dans le model zoo (AIModelStore, IndexedDB + registre).
+    // @param {string} [name] - Nom dans le zoo (défaut : this.modelName)
+    // @param {object} [metadata] - Métadonnées à jour (episodes, bestEvalScore, successRate…)
+    async saveModel(name = this.modelName, metadata = {}) {
         // Vérifier que le modèle existe et n'est pas disposé avant de sauvegarder
         if (!this.model || this.isDisposed) {
             // Ne pas logger si c'est un cas attendu (dispose)
             return false;
         }
-        
+
         try {
-            await this.model.save('localstorage://' + RocketAI.MODEL_STORAGE_KEY);
-            // Métadonnées de compatibilité stockées À CÔTÉ du modèle : elles permettent de
-            // détecter au chargement un modèle périmé (architecture ou normalisation d'état
-            // différentes). Sans elles, des poids invalides étaient rechargés silencieusement.
-            try {
-                if (typeof localStorage !== 'undefined') {
-                    localStorage.setItem(RocketAI.MODEL_META_KEY, JSON.stringify({
-                        stateSize: RocketAI.STATE_SIZE,
-                        actionCount: this.actions.length,
-                        scaleVersion: RocketAI.STATE_SCALE_VERSION,
-                        savedAt: Date.now()
-                    }));
-                }
-            } catch (metaError) { /* quota/localStorage indisponible : la sauvegarde reste valide */ }
+            const entry = await AIModelStore.save(this.model, name, {
+                objective: this.currentObjective,
+                ...metadata
+            });
+            this.modelName = entry.name;
+            if (this.eventBus && window.EVENTS) {
+                this.eventBus.emit(window.EVENTS.AI.MODEL_SAVED, { name: entry.name, metadata: entry });
+            }
             return true;
         } catch (error) {
-            // Ignorer silencieusement
+            console.warn('[RocketAI] Échec de sauvegarde du modèle :', (error && error.message) || error);
             return false;
         }
     }
 
-    // Charger le modèle
-    // CORRECTION : le chargement remplaçait le modèle courant SANS vérifier que l'architecture
-    // correspondait (un modèle d'une autre dimension d'état installait un réseau inutilisable, et
-    // targetModel restait celui d'avant -> updateTargetModel échouait en silence). On valide
-    // désormais la forme d'entrée/sortie ET les métadonnées de version avant de remplacer quoi
-    // que ce soit ; en cas d'incompatibilité, le modèle en place est conservé intact.
-    async loadModel() {
-        // CORRECTION (modèle disposé sous les pieds de model.fit) : loadModel() dispose l'ancien
-        // modèle ET le target network. Si un entraînement est en vol, train() détient une référence
-        // locale au modèle courant à travers son `await localModel.fit(...)` : le disposer fait
-        // échouer le fit, et l'erreur est avalée par le filtre /dispos/i. On refuse donc le
-        // chargement tant qu'un entraînement est en cours (l'UI désactive aussi le bouton).
-        if (this.isTrainingInProgress) {
-            console.error('[RocketAI.loadModel] Chargement refusé : un entraînement (model.fit) est en cours. Arrêtez l\'entraînement avant de charger un modèle.');
-            return false;
-        }
-
-        let loaded = null;
+    // Charger un modèle du model zoo (IndexedDB, sinon assets/models/<nom>/).
+    // La compatibilité (stateVersion/stateSize) est validée par AIModelStore ; un modèle
+    // incompatible est refusé. L'ancien scheme v1 (localstorage://rocket-ai-model, 10 dims)
+    // est détecté pour avertir qu'il est obsolète, mais jamais chargé.
+    async loadModel(name = this.modelName) {
         try {
-            loaded = await tf.loadLayersModel('localstorage://' + RocketAI.MODEL_STORAGE_KEY);
-        } catch (error) {
-            return false; // Aucun modèle sauvegardé (ou stockage illisible)
-        }
-
-        const disposeLoaded = () => { try { loaded.dispose(); } catch (e) {} };
-
-        try {
-            // 1. Validation de l'architecture (dimension d'entrée = vecteur d'état, sortie = actions)
-            const inShape = (loaded.inputs && loaded.inputs[0] && loaded.inputs[0].shape) || null;
-            const inputSize = inShape ? inShape[inShape.length - 1] : null;
-            const outShape = (loaded.outputs && loaded.outputs[0] && loaded.outputs[0].shape) || null;
-            const outputSize = outShape ? outShape[outShape.length - 1] : null;
-
-            if (inputSize !== RocketAI.STATE_SIZE || outputSize !== this.actions.length) {
-                console.error(`[RocketAI.loadModel] Modèle incompatible : entrée=${inputSize}/sortie=${outputSize}, attendu entrée=${RocketAI.STATE_SIZE}/sortie=${this.actions.length}. Modèle NON chargé, le modèle courant est conservé.`);
-                disposeLoaded();
-                return false;
-            }
-
-            // 2. Validation des métadonnées (version d'échelle du vecteur d'état).
-            //    VELOCITY_SCALE est passée de 1000 à 5000 dans buildStateVector : les poids
-            //    sauvegardés avant ce changement sont silencieusement invalides (même
-            //    architecture, distribution d'entrée différente).
-            let meta = null;
-            try {
-                if (typeof localStorage !== 'undefined') {
-                    const raw = localStorage.getItem(RocketAI.MODEL_META_KEY);
-                    if (raw) meta = JSON.parse(raw);
-                }
-            } catch (e) { meta = null; }
-
-            if (!meta || meta.scaleVersion !== RocketAI.STATE_SCALE_VERSION || meta.stateSize !== RocketAI.STATE_SIZE) {
-                console.error(`[RocketAI.loadModel] Modèle périmé : métadonnées ${meta ? 'scaleVersion=' + meta.scaleVersion + ', stateSize=' + meta.stateSize : 'absentes'} (attendu scaleVersion=${RocketAI.STATE_SCALE_VERSION}, stateSize=${RocketAI.STATE_SIZE}). Les poids ne correspondent plus à la normalisation actuelle de l'état — modèle NON chargé, entraînez un nouveau modèle.`);
-                disposeLoaded();
-                return false;
-            }
-
-            // 3. Installation : on ne dispose l'ancien modèle qu'une fois le nouveau validé.
-            const previousModel = this.model;
-            this.model = loaded;
+            const { model, metadata } = await AIModelStore.load(name);
+            // Disposer le modèle existant avant de le remplacer pour éviter de fuiter
+            // ses variables/tenseurs de poids dans TF.js.
+            if (this.model && !this.isDisposed) { try { this.model.dispose(); } catch (e) {} }
+            this.model = model;
             this.model.compile({
                 optimizer: tf.train.adam(this.config.learningRate),
                 loss: 'meanSquaredError'
@@ -1187,12 +956,22 @@ class RocketAI {
             } catch (e) { /* déjà disposé */ }
             this.targetModel = this.createModel();
             this.updateTargetModel();
-
+            this.modelName = name;
+            this._modelLoaded = true; // le réseau entraîné pilote désormais l'inférence en jeu
+            if (this.eventBus && window.EVENTS) {
+                this.eventBus.emit(window.EVENTS.AI.MODEL_LOADED, { name, metadata });
+            }
             return true;
         } catch (error) {
-            const _msg = (error && error.message) ? error.message : String(error);
-            console.error('[RocketAI.loadModel] Échec du chargement du modèle :', _msg);
-            if (this.model !== loaded) disposeLoaded();
+            // Fallback informatif : signaler un éventuel modèle v1 (lecture seule, obsolète).
+            try {
+                const legacy = await tf.loadLayersModel('localstorage://rocket-ai-model');
+                const shape = legacy.inputs[0].shape;
+                const inSize = shape[shape.length - 1];
+                legacy.dispose();
+                console.warn(`[RocketAI] Un modèle v1 (localstorage://rocket-ai-model, ${inSize} dims) existe mais est obsolète depuis STATE_VERSION 2 (${RocketAI.STATE_SIZE} dims). Ré-entraînez puis sauvegardez sous un nom via le model zoo.`);
+            } catch (e) { /* pas de modèle v1 */ }
+            console.warn('[RocketAI] Chargement du modèle échoué :', (error && error.message) || error);
             return false;
         }
     }
@@ -1238,8 +1017,18 @@ class RocketAI {
         this.currentObjective = objective;
     }
     
-    // Algorithme de prise de décision principal (pour le mode non-entraînement)
+    // Prise de décision en jeu (inférence pure — aucun apprentissage).
+    // Si un modèle entraîné a été chargé, la politique gloutonne du réseau pilote (posture PNJ).
+    // Sinon, repli sur l'heuristique maintainOrbit (le réseau à poids aléatoires ne pilote pas).
     makeDecision() {
+        if (this._modelLoaded && this.model && this.modelReady && !this.isDisposed) {
+            // act() force le glouton hors entraînement (isTraining === false en jeu).
+            const state = this.buildState();
+            const actionIndex = this.act(state);
+            this.emitControl(this.actions[actionIndex]);
+            return;
+        }
+        // Repli heuristique (aucun modèle chargé)
         switch (this.currentObjective) {
             case 'orbit':
                 this.maintainOrbit();
@@ -1378,10 +1167,10 @@ class RocketAI {
 
         // PARITÉ D'UNITÉS (critique) : en entraînement, HeadlessRocketEnvironment.getObservation()
         // expose rocketVX/VY = rocketModel.velocity.x/y BRUT (échelle Matter ≈ u/s × MATTER_BASE_DELTA),
-        // et c'est RocketAI.buildStateVector qui divise par MATTER_BASE_DELTA pour obtenir des u/s.
-        // On reproduit EXACTEMENT ce chemin : on passe ici la vitesse BRUTE (non convertie) pour que
-        // buildStateVector applique la même conversion qu'à l'entraînement (sinon double division ->
-        // vitesses 16,7× trop petites, état hors-distribution pour le réseau).
+        // et c'est RocketAI.buildStateVector qui convertit en u/s (via le point de conversion unique
+        // PhysicsVectors.matterToGameVelocity). On reproduit EXACTEMENT ce chemin : on passe ici la
+        // vitesse BRUTE (non convertie) pour que buildStateVector applique la même conversion qu'à
+        // l'entraînement (sinon double division -> vitesses 16,7× trop petites, état hors-distribution).
         const rocket = {
             x: pos.x,
             y: pos.y,

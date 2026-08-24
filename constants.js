@@ -384,6 +384,29 @@ const PARTICLES = {
 // Ces valeurs sont calculées pour être cohérentes avec la physique du jeu (PHYSICS.G et masses)
 // Formule vitesse orbitale : v = sqrt(G * M / r)
 const AI_TRAINING = {
+    // Vecteur d'état du DQN — SOURCE UNIQUE des dimensions et échelles de normalisation.
+    // Consommé par RocketAI.buildStateVector (seul endroit qui construit l'état) et par
+    // AIModelStore (validation de compatibilité des modèles sauvegardés).
+    // STATE_VERSION 2 : passage 10 -> 12 dims (vitesse propre de la cible, dims 10-11,
+    // = 0 pour une cible fixe ; prépare les cibles mobiles type intercept/escorte) et
+    // correction de la saturation vitesse (VELOCITY_SCALE 1000 -> 2500, clamp ±2 -> ±4).
+    // Les modèles v1 (10 dims, localStorage) sont obsolètes et refusés au chargement.
+    STATE: {
+        STATE_VERSION: 2,
+        STATE_SIZE: 12,
+        POSITION_SCALE: 150000,   // ~150k unités (couvre la diagonale A-B ~127k sans saturer)
+        DISTANCE_SCALE: 150000,   // même échelle que POSITION_SCALE
+        VELOCITY_SCALE: 2500,     // u/s — aligné sur NAVIGATE_REWARDS.VELOCITY_TARGET (croisière ≈ 1.0)
+        VELOCITY_CLAMP: 4,        // clamp ±4 après normalisation (couvre VELOCITY_MAX = 10000 u/s)
+        TARGET_VEL_SCALE: 2500,   // u/s — échelle de la vitesse propre de la cible (dims 10-11)
+        // ⚠️ `angularVelocity` est en ÉCHELLE MATTER (≈ rad/s × MATTER_BASE_DELTA ≈ ×16,7), PAS en
+        // rad/s (cf. PHYSICS.md §1.2). Avec 10 et le clamp ±5 du vecteur d'état, la plage
+        // observable s'arrêtait à ±50, soit 1/8 de PHYSICS.CRASH_ANGULAR_VELOCITY (400) : le
+        // réseau ne pouvait pas distinguer une rotation sûre d'une rotation fatale.
+        // 80 × clamp ±5 -> ±400 observables, soit exactement la plage « sûr → fatal ».
+        ANGULAR_VEL_SCALE: 80,    // échelle Matter (= CRASH_ANGULAR_VELOCITY / 5)
+    },
+
     // Configuration de l'environnement d'entraînement
     ENVIRONMENT: {
         // Position de la Terre (centre du système d'entraînement)
@@ -513,6 +536,42 @@ const AI_TRAINING = {
     SAFETY: {
         MIN_SAFE_ALTITUDE: 50,       // Altitude minimale avant alerte crash
         MAX_SIMULATION_DISTANCE: 50000, // Distance max du centre avant reset
+    },
+
+    // RÔLES DE PNJ/ADVERSAIRES — chaque rôle est une variation d'un objectif de base, résolue par
+    // TrainingOrchestrator en (objective + missionConfig). C'est le catalogue des pilotes IA
+    // entraînables et livrables (assets/models/). Ajouter un rôle = une entrée ici, sans toucher
+    // au réseau (le vecteur d'état 12 dims couvre déjà les cibles mobiles via les dims 10-11).
+    ROLES: {
+        // Course : navigation A→B avec bonus terminal proportionnel au temps restant (le plus
+        // rapide gagne). STEP_PENALTY accru pour pousser à la vitesse.
+        race: {
+            label: 'Course',
+            objective: 'navigate',
+            raceTimeBonus: true,
+            stepPenaltyFactor: 3,        // multiplie NAVIGATE_REWARDS.STEP_PENALTY
+        },
+        // Interception : rejoindre une cible MOBILE (dims 10-11 du vecteur d'état actives).
+        // Succès = rester à portée pendant K steps (pas de stabilisation à l'arrêt).
+        intercept: {
+            label: 'Interception',
+            objective: 'navigate',
+            movingTarget: { pattern: 'linear', speed: 800, angle: 0 }, // u/s, direction +x
+            successMode: 'proximity',
+            proximityRadius: 4000,       // unités
+            proximitySteps: 30,          // steps consécutifs à portée
+        },
+        // Atterrisseur : atterrissage en douceur (objectif 'land').
+        lander: {
+            label: 'Atterrisseur',
+            objective: 'land',
+        },
+        // Orbiteur : mise en orbite stable (objectif 'orbit').
+        // ⚠️ Cibles ORBIT à recalibrer empiriquement (voir TODO.md / commentaire ORBIT ci-dessus).
+        orbiter: {
+            label: 'Orbiteur',
+            objective: 'orbit',
+        },
     }
 };
 

@@ -567,6 +567,217 @@ async function testUpdateFrequency() {
 }
 
 // Exportation pour utilisation dans la console du navigateur
+/**
+ * Évalue un modèle du zoo sur un jeu d'angles initiaux FIXE (objectif 'navigate'),
+ * en politique gloutonne (ε=0). Renvoie { avgReward, successRate, medianStepsToSuccess }.
+ * Le jeu d'angles fixe rend les scores comparables entre modèles.
+ * @param {string} modelName - nom dans AIModelStore
+ * @param {number[]} angles - angles initiaux (radians)
+ * @param {object} pointB - cible { x, y }
+ */
+async function evaluateModelNavigate(modelName, angles, pointB = { x: 90000, y: 90000 }) {
+    const eventBus = new EventBus();
+    const rocketAI = new RocketAI(eventBus);
+    if (typeof rocketAI.waitForReady === 'function') await rocketAI.waitForReady();
+
+    const loaded = await rocketAI.loadModel(modelName);
+    if (!loaded) throw new Error(`Modèle "${modelName}" introuvable ou incompatible`);
+    rocketAI.isTraining = false; // politique gloutonne (pas d'exploration)
+
+    const env = new HeadlessRocketEnvironment({
+        maxStepsPerEpisode: 4000,
+        infiniteFuel: true,
+        rocketInitialState: {
+            position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 },
+            angle: 0, fuel: ROCKET.FUEL_MAX, health: 100, isLanded: false, landedOn: null
+        },
+        universeConfig: { celestialBodies: [], targetPoint: pointB },
+        missionConfig: { objective: 'navigate', targetPoint: pointB }
+    });
+
+    let totalReward = 0, successCount = 0;
+    const stepsToSuccess = [];
+    for (let i = 0; i < angles.length; i++) {
+        env.config.rocketInitialState.angle = angles[i];
+        let state = env.reset();
+        let done = false, reward = 0, steps = 0;
+        while (!done && steps < 4000) {
+            const aiState = RocketAI.buildStateVector({
+                x: state.rocketX || 0, y: state.rocketY || 0,
+                vx: state.rocketVX || 0, vy: state.rocketVY || 0,
+                angle: state.rocketAngle || 0, angularVelocity: state.rocketAngularVelocity || 0,
+                targetX: pointB.x, targetY: pointB.y
+            });
+            const actions = [
+                { mainThruster: 1.0, rotationInput: 0 },
+                { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 },
+                { mainThruster: 0, rotationInput: 1.0 },
+                { mainThruster: 0, rotationInput: -1.0 },
+                { mainThruster: 0, rotationInput: 0 }
+            ];
+            const r = env.step(actions[rocketAI.act(aiState)] || actions[4]);
+            state = r.observation; reward += r.reward; done = r.done; steps++;
+        }
+        totalReward += reward;
+        if (typeof env.checkNavigateSuccess === 'function' && env.checkNavigateSuccess()) {
+            successCount++; stepsToSuccess.push(steps);
+        }
+    }
+    rocketAI.cleanup();
+
+    let median = null;
+    if (stepsToSuccess.length) {
+        stepsToSuccess.sort((a, b) => a - b);
+        const m = Math.floor(stepsToSuccess.length / 2);
+        median = stepsToSuccess.length % 2 ? stepsToSuccess[m]
+            : Math.round((stepsToSuccess[m - 1] + stepsToSuccess[m]) / 2);
+    }
+    return {
+        avgReward: totalReward / angles.length,
+        successRate: successCount / angles.length,
+        medianStepsToSuccess: median
+    };
+}
+
+/**
+ * Compare deux modèles 'navigate' du zoo sur le MÊME jeu d'évaluation (seed fixe).
+ * Usage console : compareModels('navigate-v2', 'race-v1')
+ * @param {string} nameA
+ * @param {string} nameB
+ * @param {number} [seed=1234] - seed du jeu d'angles fixe
+ * @param {number} [n=10] - nombre d'épisodes d'évaluation
+ */
+async function compareModels(nameA, nameB, seed = 1234, n = 10) {
+    console.log(`⚖️  Comparaison "${nameA}" vs "${nameB}" (seed=${seed}, ${n} épisodes)`);
+    const angles = SeededRandom.angleSet(seed >>> 0, n);
+    try {
+        const [a, b] = await Promise.all([
+            evaluateModelNavigate(nameA, angles),
+            evaluateModelNavigate(nameB, angles)
+        ]);
+        const fmt = (m) => `récompense=${m.avgReward.toFixed(1)}  succès=${(m.successRate * 100).toFixed(0)}%  médiane steps=${m.medianStepsToSuccess ?? '—'}`;
+        console.log(`   ${nameA} : ${fmt(a)}`);
+        console.log(`   ${nameB} : ${fmt(b)}`);
+        const winner = a.successRate !== b.successRate
+            ? (a.successRate > b.successRate ? nameA : nameB)
+            : (a.avgReward >= b.avgReward ? nameA : nameB);
+        console.log(`   🏆 Meilleur : ${winner}`);
+        return { [nameA]: a, [nameB]: b, winner };
+    } catch (error) {
+        console.error('❌ compareModels :', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Affiche la marche à suivre pour livrer un modèle du zoo dans le dépôt (assets/models/),
+ * afin qu'il soit chargeable au démarrage du jeu par un PNJ.
+ * @param {string} name - nom du modèle (celui exporté via downloads://)
+ */
+function printDeliveryInstructions(name) {
+    console.log(
+`
+📦 LIVRAISON — pour rendre "${name}" chargeable au démarrage du jeu (PNJ) :
+   1. Crée le dossier :   assets/models/${name}/
+   2. Déplace-y les 3 fichiers téléchargés, en RENOMMANT deux d'entre eux :
+        ${name}.json         →  assets/models/${name}/model.json
+        ${name}.weights.bin  →  assets/models/${name}/${name}.weights.bin   (⚠️ garde ce nom exact :
+                                  il est référencé à l'intérieur de model.json)
+        ${name}.meta.json    →  assets/models/${name}/meta.json
+   3. Commit le dossier. Le modèle se charge ensuite via  AIModelStore.load('${name}')
+      (ou automatiquement s'il n'est pas déjà en IndexedDB).
+`);
+}
+
+/**
+ * Exporte un modèle DÉJÀ présent dans le zoo (entraîné via l'UI ou trainAndDeliver) vers des
+ * fichiers téléchargés, et affiche la notice de livraison. Usage console : deliverModel('navigate-v1')
+ * @param {string} name
+ */
+async function deliverModel(name) {
+    try {
+        await AIModelStore.exportToFile(name);
+        printDeliveryInstructions(name);
+        return true;
+    } catch (error) {
+        console.error(`❌ deliverModel("${name}") :`, error.message,
+            '\n   (Le modèle existe-t-il dans le zoo ? Vérifie avec AIModelStore.list().)');
+        return false;
+    }
+}
+
+/**
+ * ENTRAÎNE puis LIVRE un premier modèle, en headless, depuis la console (index.html ou
+ * training-interface.html). Garde l'onglet actif pendant l'entraînement.
+ *
+ * Usage :
+ *   await trainAndDeliver()                                  // navigate, 800 ép., seed 1234, nom 'navigate-v1'
+ *   await trainAndDeliver({ role: 'race', episodes: 1200 })  // rôle course
+ *   await trainAndDeliver({ objective: 'navigate', name: 'navigate-v1', export: false })
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.objective='navigate'] - objectif brut (si pas de rôle)
+ * @param {string} [opts.role=null]            - rôle PNJ (race/intercept/lander/orbiter)
+ * @param {number} [opts.episodes=800]         - nombre d'épisodes
+ * @param {number} [opts.seed=1234]            - seed de reproductibilité
+ * @param {string} [opts.name]                 - nom du modèle (défaut '<rôle|objectif>-v1')
+ * @param {boolean}[opts.export=true]          - exporter les fichiers en fin d'entraînement
+ * @return {Promise<{name:string, finalStats:object|null}>}
+ */
+async function trainAndDeliver(opts = {}) {
+    const objective = opts.objective || 'navigate';
+    const role = opts.role || null;
+    const episodes = opts.episodes || 800;
+    const seed = (opts.seed != null) ? opts.seed : 1234;
+    const name = opts.name || ((role || objective) + '-v1');
+    const doExport = (opts.export !== false);
+
+    console.log(`🚀 Entraînement "${name}" — ${role ? 'rôle ' + role : 'objectif ' + objective}, ${episodes} épisodes, seed ${seed}`);
+    console.log('   Headless. GARDE CET ONGLET ACTIF (le passage en arrière-plan ralentit fortement TF.js).');
+
+    const eventBus = new EventBus();
+    const orchestrator = new TrainingOrchestrator(eventBus);
+
+    // Journal de progression (toutes les ~50 épisodes)
+    let lastLogged = -Infinity;
+    eventBus.subscribe(window.EVENTS.AI.TRAINING_PROGRESS, (d) => {
+        const ep = (d && d.episode) || 0;
+        if (ep - lastLogged >= 50) {
+            lastLogged = ep;
+            const m = (d && d.metrics) || {};
+            const sr = (m.recentSuccessRate != null) ? (m.recentSuccessRate * 100).toFixed(0) : '?';
+            console.log(`   ép ${ep}/${d.totalEpisodes}  succès≈${sr}%  steps/s ${m.stepsPerSecond || 0}`);
+        }
+    });
+    let finalStats = null;
+    eventBus.subscribe(window.EVENTS.AI.TRAINING_COMPLETED, (s) => { finalStats = s; });
+
+    await orchestrator.startTraining({
+        objectives: [objective],
+        role: role,
+        maxEpisodes: episodes,
+        headlessMode: true,
+        seed: seed,
+        modelName: name
+    });
+
+    console.log(`✅ Entraînement terminé. Modèle "${name}" sauvegardé dans le zoo (IndexedDB).`);
+    if (finalStats) {
+        console.log(`   Succès final: ${((finalStats.finalSuccessRate || 0) * 100).toFixed(1)}%  |  meilleur score éval: ${(finalStats.bestAverageReward || 0).toFixed(1)}`);
+    }
+
+    if (typeof orchestrator.cleanup === 'function') orchestrator.cleanup();
+
+    if (doExport) {
+        console.log('⬇️  Export des fichiers (3 téléchargements)…');
+        const ok = await deliverModel(name);
+        if (!ok) console.warn('   Export échoué — réessaie avec  deliverModel("' + name + '")');
+    } else {
+        console.log(`ℹ️  Pour livrer plus tard :  deliverModel('${name}')`);
+    }
+    return { name, finalStats };
+}
+
 if (typeof window !== 'undefined') {
     window.demonstrateTraining = demonstrateTraining;
     window.quickTraining = quickTraining;
@@ -574,6 +785,10 @@ if (typeof window !== 'undefined') {
     window.testEvaluationMode = testEvaluationMode;
     window.diagnosticComplet = diagnosticComplet;
     window.testUpdateFrequency = testUpdateFrequency;
+    window.compareModels = compareModels;
+    window.evaluateModelNavigate = evaluateModelNavigate;
+    window.trainAndDeliver = trainAndDeliver;
+    window.deliverModel = deliverModel;
     
     // Instructions pour l'utilisateur
     console.log('\n🎮 Commandes disponibles dans la console:');
@@ -583,6 +798,9 @@ if (typeof window !== 'undefined') {
     console.log('   testEvaluationMode() - Test ε=0 pour détecter l\'apprentissage réel');
     console.log('   diagnosticComplet() - Diagnostic complet du système');
     console.log('   testUpdateFrequency() - Test du nombre d\'updates réels');
+    console.log('   compareModels(a, b) - Compare 2 modèles du zoo sur un jeu d\'éval fixe');
+    console.log('   trainAndDeliver() - Entraîne PUIS exporte un premier modèle (livraison assets/models/)');
+    console.log('   deliverModel(name) - Exporte un modèle du zoo déjà entraîné (+ notice de livraison)');
 }
 
 // Exportation pour Node.js (si applicable)
@@ -594,6 +812,10 @@ if (typeof module !== 'undefined' && module.exports) {
         testEvaluationMode,
         diagnosticComplet,
         testUpdateFrequency,
+        compareModels,
+        evaluateModelNavigate,
+        trainAndDeliver,
+        deliverModel,
         TRAINING_DEMO_CONFIG
     };
 } 
