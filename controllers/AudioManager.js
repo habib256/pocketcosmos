@@ -70,6 +70,7 @@ class AudioManager {
         const entry = this.cache.get(key);
         if (!entry) return;
         const { audio } = entry;
+        entry._pausedByMute = false;
         try {
             audio.pause();
             audio.currentTime = 0;
@@ -81,6 +82,9 @@ class AudioManager {
         for (const [, entry] of this.cache) {
             if (entry && entry.loop && entry.audio) {
                 try {
+                    // Mémoriser les boucles réellement en cours : leurs appelants ne les
+                    // relancent pas (garde `mainThrusterSoundPlaying` dans ThrusterPhysics).
+                    entry._pausedByMute = !entry.audio.paused;
                     entry.audio.pause();
                     entry.audio.currentTime = 0;
                 } catch (e) {}
@@ -98,6 +102,18 @@ class AudioManager {
         this.enabled = !!enabled;
         if (!this.enabled) {
             this.stopAllLoops();
+            return;
+        }
+        // Reprendre les boucles que la coupure avait interrompues : personne d'autre ne le
+        // fera (ThrusterPhysics ne rappelle startLoop qu'au prochain appui sur la touche).
+        for (const [, entry] of this.cache) {
+            if (entry && entry.loop && entry.audio && entry._pausedByMute) {
+                entry._pausedByMute = false;
+                try {
+                    entry.audio.loop = true;
+                    entry.audio.play().catch(() => {});
+                } catch (e) {}
+            }
         }
     }
 }

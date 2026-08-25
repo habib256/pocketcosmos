@@ -598,7 +598,7 @@ class GameController {
                 // Pendant l'écran rouge crashé (GAME_OVER), on continue de lire les entrées du gamepad
                 // pour permettre la relance via le même bouton que les propulseurs.
                 if (this.inputController) {
-                    this.inputController.update();
+                    this.inputController.update(deltaTime);
                 }
                 break;
             case GameStates.PAUSED:
@@ -606,7 +606,7 @@ class GameController {
                 // sans cet appel, un joueur 100% manette ne peut plus jamais reprendre la
                 // partie après une mise en pause (Start et boost ne sont plus lus).
                 if (this.inputController) {
-                    this.inputController.update();
+                    this.inputController.update(deltaTime);
                 }
                 // La scène est désormais dessinée sous le voile de pause : la caméra doit donc
                 // rester vivante. Sans cette mise à jour, le lissage de zoom et de suivi restait
@@ -833,7 +833,7 @@ class GameController {
      */
     update(deltaTime) {
         if (this.inputController) {
-            this.inputController.update();
+            this.inputController.update(deltaTime);
         }
 
         if (this.universeModel) {
@@ -925,16 +925,6 @@ class GameController {
         // Important : Utiliser window.controllerContainer.destroy() pour nettoyer tous les abonnements suivis
         // Ceci est géré globalement par controllerContainer.
         // console.log("GameController cleanup executed.");
-    }
-
-    /**
-     * Bascule l'affichage des positions des propulseurs sur la vue de la fusée.
-     * (Méthode potentiellement utilisée pour le débogage ou des options d'affichage).
-     */
-    toggleThrusterPositions() {
-        if (this.rocketView) {
-            this.rocketView.setShowThrusterPositions(!this.rocketView.showThrusterPositions);
-        }
     }
 
     /**
@@ -1066,11 +1056,15 @@ class GameController {
                     });
                     if (match) {
                         // Rechargement complet du carburant
+                        const fuelAvant = this.rocketModel.fuel;
                         this.rocketModel.fuel = ROCKET.FUEL_MAX;
                         // Émettre les événements de station
                         if (window.EVENTS && window.EVENTS.STATION) {
                             this.eventBus.emit(EVENTS.STATION.DOCKED, { host: hostName, station: match.name });
-                            this.eventBus.emit(EVENTS.STATION.REFUELED, { host: hostName, station: match.name });
+                            // Émis inconditionnellement, REFUELED se déclenchait aussi réservoir déjà plein.
+                            if (this.rocketModel.fuel > fuelAvant) {
+                                this.eventBus.emit(EVENTS.STATION.REFUELED, { host: hostName, station: match.name, added: this.rocketModel.fuel - fuelAvant });
+                            }
                         }
                     }
                 }

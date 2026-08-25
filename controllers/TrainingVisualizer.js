@@ -17,7 +17,7 @@ class TrainingVisualizer {
         this.maxTrajectoryPoints = 5000; // Points max par trajectoire
         this.trajectoryStepCounter = 0; // Compteur de steps pour l'échantillonnage
         this.trajectorySampleRate = 1; // Enregistrer 1 point tous les N steps (ajusté dynamiquement)
-        this.maxTrajectoriesCount = 100; // Nombre max de trajectoires à conserver
+        this.maxTrajectoriesCount = 10; // au-delà, alpha est déjà plafonné à 0,2 : ces traces coûtent sans rien montrer
         this.cameraInitialized = false; // Flag pour savoir si la caméra a déjà été initialisée
 
         // CORRECTION (objectif 'navigate' invisible) : objectif du run courant, mis à jour depuis
@@ -122,6 +122,7 @@ class TrainingVisualizer {
         this.startPoint = null;
         this.targetPoint = null;
         this.navPointsFramed = false;
+        this.allTrajectories = []; // les traces du run précédent ne sont plus pertinentes
         if (this.isNavigateMode()) {
             this.celestialBodies = [];
         }
@@ -142,7 +143,11 @@ class TrainingVisualizer {
     onEpisodeStarted(data) {
         // Sauvegarder la trajectoire actuelle si elle existe
         if (this.rocketTrajectory.length > 0) {
-            this.allTrajectories.push([...this.rocketTrajectory]);
+            // Décimation à l'archivage : une trace fantôme n'a pas besoin de la résolution
+            // complète (jusqu'à 5000 points), et renderTrajectory() les retrace TOUTES à chaque
+            // frame, sur le thread qui exécute aussi model.fit().
+            const pasArchivage = Math.max(1, Math.ceil(this.rocketTrajectory.length / 300));
+            this.allTrajectories.push(this.rocketTrajectory.filter((_, i) => i % pasArchivage === 0));
             
             // Limiter le nombre de trajectoires conservées
             if (this.allTrajectories.length > this.maxTrajectoriesCount) {
@@ -295,12 +300,7 @@ class TrainingVisualizer {
         
         // CORRECTION: Vue absolue - ne pas centrer sur la Terre
         // Si on ne suit pas la fusée, maintenir la vue absolue (pas de mouvement automatique)
-        // CORRECTION: Zoom fixe - ne pas interpoler automatiquement
-        if (!this.camera.followRocket && this.camera.manualZoomControl) {
-            // Interpolation du zoom vers la valeur cible seulement si l'utilisateur l'a modifié
-            const zoomSpeed = this.camera.zoomSpeed || 0.15;
-            this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
-        }
+        // L'interpolation du zoom a été déplacée dans render() (cf. commentaire là-bas).
     }
     
     /**
@@ -323,25 +323,9 @@ class TrainingVisualizer {
         
         // CORRECTION: Zoom fixe - ne pas interpoler le zoom automatiquement
         // Le zoom reste à sa valeur initiale sauf si l'utilisateur le modifie manuellement
-        // Interpolation du zoom seulement si l'utilisateur a modifié manuellement
-        if (this.camera.manualZoomControl) {
-            const zoomSpeed = this.camera.zoomSpeed || 0.15;
-            this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
-        }
+        // L'interpolation du zoom a été déplacée dans render() (cf. commentaire là-bas).
     }
-    
-    /**
-     * Maintenir la vue absolue (ne plus utilisé - remplacé par la logique dans updateVisualization)
-     * Conservé pour compatibilité mais ne fait rien car on utilise maintenant une vue absolue
-     */
-    maintainEarthCenteredView() {
-        // CORRECTION: Vue absolue - ne plus centrer sur la Terre
-        // Cette méthode n'est plus utilisée, la vue reste fixe à sa position absolue
-        // Interpolation du zoom vers la valeur cible
-        const zoomSpeed = this.camera.zoomSpeed || 0.15;
-        this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
-    }
-    
+
     /**
      * Zoom avant (grossir)
      */
@@ -584,7 +568,16 @@ class TrainingVisualizer {
         
         // Sauvegarder le contexte
         this.ctx.save();
-        
+
+        // Interpolation du zoom : elle doit vivre dans la boucle de RENDU (rAF), qui tourne dès que
+        // le visualiseur est actif. Placée dans updateVisualization(), elle n'avançait qu'à la
+        // réception d'un AI.TRAINING_STEP : ➕/➖ n'avaient aucun effet avant le 1er run, en pause,
+        // ou après la fin d'un entraînement.
+        if (this.camera.manualZoomControl && isFinite(this.camera.targetZoom)) {
+            const zoomSpeed = this.camera.zoomSpeed || 0.15;
+            this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * zoomSpeed;
+        }
+
         // Appliquer la transformation de la caméra
         this.applyCamera();
         

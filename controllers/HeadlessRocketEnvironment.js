@@ -88,6 +88,23 @@ class HeadlessRocketEnvironment {
     }
 
     /**
+     * Libère l'environnement : désabonne ses sous-contrôleurs du bus (PARTAGÉ quand il vient de
+     * TrainingOrchestrator) et retire les écouteurs Matter beforeUpdate/afterUpdate. Sans cela,
+     * chaque environnement abandonné reste vivant et reçoit toutes les commandes de l'actif.
+     * Idempotent : ne PAS appeler sur l'environnement en cours d'utilisation.
+     */
+    cleanup() {
+        if (this.rocketController && typeof this.rocketController.unsubscribeAll === 'function') {
+            this.rocketController.unsubscribeAll();
+        }
+        if (this.missionManager && typeof this.missionManager.unsubscribeAll === 'function') {
+            this.missionManager.unsubscribeAll();
+        }
+        const sm = this.physicsController && this.physicsController.synchronizationManager;
+        if (sm && typeof sm.cleanup === 'function') sm.cleanup();
+    }
+
+    /**
      * Réinitialise l'environnement à un état initial défini par la configuration ou une nouvelle config.
      * @param {object} [newConfig=null] - Optionnel, une nouvelle configuration pour cette réinitialisation.
      * @return {object} L'observation initiale après réinitialisation.
@@ -704,7 +721,10 @@ class HeadlessRocketEnvironment {
                         const successReward = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.NAVIGATE_REWARDS)
                             ? AI_TRAINING.NAVIGATE_REWARDS.SUCCESS_REWARD
                             : 1000;
-                        reward += successReward;
+                        // Crédit temporel : le succès TERMINE l'épisode, il faut donc payer les pas
+                        // non consommés au tarif du meilleur shaping par pas, sinon flâner hors du
+                        // rayon de succès rapporte plus que réussir (cf. successTimeCredit()).
+                        reward += successReward + this.successTimeCredit();
 
                         // BONUS DE COURSE (rôle 'race') : récompense supplémentaire proportionnelle
                         // au budget de steps RESTANT → pousse à atteindre la cible le plus vite
@@ -754,10 +774,16 @@ class HeadlessRocketEnvironment {
                         reward += 0.02; // Encourager le mouvement
                     }
                     
-                    // Récompense pour visiter de nouveaux corps
+                    // Récompense pour visiter de nouveaux corps. C'est ICI qu'on enregistre le
+                    // corps : la garde d'entrée de step() et isDone() appellent
+                    // checkExplorationSuccess() AVANT la récompense, donc tout enregistrement en
+                    // amont rendait ce bonus structurellement inatteignable.
                     if (this.rocketModel.isLanded && this.rocketModel.landedOn) {
                         if (!this.visitedBodies.has(this.rocketModel.landedOn)) {
-                            reward += 10; // Bonus pour nouveau lieu
+                            reward += (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.REWARDS &&
+                                       typeof AI_TRAINING.REWARDS.EXPLORATION_NEW_BODY === 'number')
+                                ? AI_TRAINING.REWARDS.EXPLORATION_NEW_BODY : 10; // Bonus pour nouveau lieu
+                            this.visitedBodies.add(this.rocketModel.landedOn);
                         }
                     }
                     
@@ -1687,12 +1713,11 @@ class HeadlessRocketEnvironment {
      */
     checkExplorationSuccess() {
         if (!this.visitedBodies) this.visitedBodies = new Set();
-        
-        // Marquer les corps visités
-        if (this.rocketModel.isLanded && this.rocketModel.landedOn) {
-            this.visitedBodies.add(this.rocketModel.landedOn);
-        }
-        
+
+        // LECTURE SEULE : appelée plusieurs fois par pas (garde de step(), isDone(), récompense).
+        // L'enregistrement du corps visité se fait UNE fois, dans calculateReward() (case
+        // 'explore'), au moment où le bonus EXPLORATION_NEW_BODY est versé.
+
         // Succès si au moins 2 corps différents visités
         return this.visitedBodies.size >= 2;
     }

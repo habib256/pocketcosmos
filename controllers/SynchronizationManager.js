@@ -77,15 +77,19 @@ class SynchronizationManager {
 
         // CORRECTION: S'abonner à UNIVERSE_STATE_UPDATED pour réinitialiser les références après rechargement
         if (this.eventBus && window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
-            window.controllerContainer.track(
+            // Conservé sur l'instance EN PLUS du suivi global : le container n'est purgé qu'au
+            // teardown de l'application, alors qu'un entraînement headless crée et détruit un
+            // environnement par épisode. Sans désabonnement par instance, cet abonnement était le
+            // dernier à fuir (mesuré : +1 écouteur UNIVERSE_STATE_UPDATED par environnement).
+            this._universeStateUnsubscribe =
                 this.eventBus.subscribe(window.EVENTS.UNIVERSE.STATE_UPDATED, () => {
                     // Les références sont relues via physicsController.celestialBodies à chaque update.
                     // On réinitialise l'état d'émission d'atterrissage : sinon, après un reload où la
                     // fusée respawn posée sur le MÊME corps que précédemment, ROCKET.LANDED ne serait
                     // pas ré-émis (ravitaillement / complétion de mission "déjà posé" manqués).
                     this._lastLandedEventBody = null;
-                })
-            );
+                });
+            window.controllerContainer.track(this._universeStateUnsubscribe);
         }
 
         // Détection d'atterrissage gérée périodiquement via checkRocketLandedStatusPeriodically et CollisionHandler
@@ -150,6 +154,15 @@ class SynchronizationManager {
                 this.Events.off(this.engine, 'afterUpdate', this._afterUpdateHandler);
                 this._afterUpdateHandler = null;
             }
+        }
+        // Abonnement EventBus de l'instance (cf. son commentaire à la souscription).
+        if (typeof this._universeStateUnsubscribe === 'function') {
+            try {
+                this._universeStateUnsubscribe();
+            } catch (error) {
+                console.warn('[SynchronizationManager] Échec du désabonnement UNIVERSE_STATE_UPDATED:', error);
+            }
+            this._universeStateUnsubscribe = null;
         }
     }
 
@@ -264,7 +277,13 @@ class SynchronizationManager {
                 // à la transition). Combiné à isRocketLanded qui renvoie false pendant la grâce, cela
                 // empêche toute re-détection d'atterrissage / ré-ancrage pendant tout le décollage et
                 // 500 ms après l'arrêt de la poussée — y compris sur un corps en mouvement (Âtrebois).
-                rocketModel.startLiftoffGracePeriod(500);
+                // Ne prolonger la grâce que pour un VRAI décollage : soit la fusée était posée (la
+                // transition ci-dessus vient de l'armer), soit la grâce court déjà. En vol libre,
+                // une poussée > seuil n'a aucune raison d'armer une grâce de décollage — cela
+                // désactivait la détection de crash d'une fusée qui n'avait jamais touché le sol.
+                if (rocketModel.isLanded || rocketModel.isInLiftoffGracePeriod()) {
+                    rocketModel.startLiftoffGracePeriod(500);
+                }
                 return; // Ne pas appliquer la stabilisation si on essaie de décoller
             }
         }

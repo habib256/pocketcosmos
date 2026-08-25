@@ -84,6 +84,27 @@ class MissionManager {
     }
 
     /**
+     * Désabonne tous les écouteurs enregistrés par subscribeToEvents().
+     * Symétrique de `RocketController.unsubscribeAll()` et appelée par
+     * `HeadlessRocketEnvironment.cleanup()` : sans elle, les abonnements MISSION des
+     * environnements d'entraînement successifs s'accumulaient sur le même EventBus.
+     */
+    unsubscribeAll() {
+        if (!Array.isArray(this._subscriptions)) {
+            this._subscriptions = [];
+            return;
+        }
+        for (const unsub of this._subscriptions) {
+            try {
+                if (typeof unsub === 'function') unsub();
+            } catch (error) {
+                console.warn('[MissionManager] Échec du désabonnement:', error);
+            }
+        }
+        this._subscriptions = [];
+    }
+
+    /**
      * Crée une nouvelle mission et l'ajoute à la liste des missions.
      * @param {string} from - Planète ou lieu de départ de la mission.
      * @param {string} to - Planète ou lieu de destination de la mission.

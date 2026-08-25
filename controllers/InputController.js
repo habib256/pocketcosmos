@@ -163,7 +163,15 @@ class InputController {
          * @type {number}
          * @private
          */
-        this.axisThreshold = 0.1; 
+        this.axisThreshold = 0.1;
+        /**
+         * Zone morte dédiée à l'axe de zoom : une dérive résiduelle du stick ne doit produire
+         * AUCUN zoom (au seuil général de 0,1, une manette usée emmenait la vue au zoom minimal
+         * toute seule en ~3 s).
+         * @type {number}
+         * @private
+         */
+        this.zoomAxisThreshold = 0.25;
         /**
          * Stocke les valeurs des axes qui sont actuellement maintenus au-delà du seuil.
          * @type {Object<number, number>}
@@ -837,8 +845,11 @@ class InputController {
      * le compare avec l'état précédent stocké dans `this.gamepadState`,
      * et émet des événements sémantiques via l'EventBus en conséquence.
      * Gère les seuils pour les axes et la détection des appuis/relâchements de boutons.
+     * @param {number} [deltaTime=1/60] - Le temps écoulé (en secondes) depuis la dernière frame,
+     *   relayé aux commandes analogiques continues (zoom au stick) pour qu'elles soient
+     *   indépendantes du framerate.
      */
-    update() {
+    update(deltaTime = 1 / 60) {
         if (!this.gamepad) {
             if (!this.noGamepadLogged) {
                 // console.log("[InputController] Aucun gamepad connecté ou actif."); // Optionnel
@@ -864,7 +875,14 @@ class InputController {
                 } else if (action === 'zoomAxis') {
                     // Pour le zoom via axe, on envoie une commande continue.
                     // CameraController devra interpréter cette valeur.
-                    this.eventBus.emit(EVENTS.INPUT.ZOOM_COMMAND, { value: axisValue });
+                    // Zone morte dédiée + remise à l'échelle après seuil : une manette dont l'axe
+                    // dérive au repos ne doit plus emmener la vue au zoom minimal toute seule.
+                    const seuil = this.zoomAxisThreshold;
+                    const amplitude = Math.abs(axisValue);
+                    if (amplitude > seuil) {
+                        const v = Math.sign(axisValue) * (amplitude - seuil) / (1 - seuil);
+                        this.eventBus.emit(EVENTS.INPUT.ZOOM_COMMAND, { value: v, deltaTime });
+                    }
                 }
                 // Note: Aucune autre action d'axe n'est actuellement gérée pour l'émission d'événements directs ici.
                 this.heldAxes[index] = axisValue;
@@ -980,17 +998,30 @@ class InputController {
     
     /**
      * Gère les événements de la molette de la souris (`wheel`).
-     * Empêche le défilement par défaut de la page et émet des événements
-     * `EVENTS.CAMERA.ZOOM_IN` ou `EVENTS.CAMERA.ZOOM_OUT` en fonction de la direction du défilement.
+     * Empêche le défilement par défaut de la page et émet un `EVENTS.CAMERA.CAMERA_ZOOM_ADJUST`
+     * dont le facteur est proportionnel à l'amplitude du défilement (et non au nombre d'événements).
      * @param {WheelEvent} event - L'objet événement wheel.
      */
     handleWheel(event) {
         event.preventDefault(); // Empêcher le défilement de la page et le zoom par défaut du navigateur
-        if (event.deltaY < 0) { // Scroll vers le haut ou vers l'avant
-            this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
-        } else if (event.deltaY > 0) { // Scroll vers le bas ou vers l'arrière
-            this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT);
-        }
+        const brut = event.deltaY;
+        if (typeof brut !== 'number' || !isFinite(brut) || brut === 0) return;
+
+        // Le pas de zoom doit être proportionnel à l'AMPLITUDE du défilement, pas au NOMBRE
+        // d'événements : un trackpad envoie des dizaines d'événements de |deltaY| ≈ 1..3 px là où
+        // une molette à crans en envoie un seul de ~100 px. Sans cette normalisation, un simple
+        // glissement à deux doigts saturait le zoom (10 événements suffisaient pour 1 -> MAX_ZOOM).
+        const parUnite = event.deltaMode === 1
+            ? 16                                                    // DOM_DELTA_LINE : ~16 px par ligne
+            : event.deltaMode === 2
+                ? (window.innerHeight || RENDER.CANVAS_HEIGHT)      // DOM_DELTA_PAGE
+                : 1;                                                // DOM_DELTA_PIXEL
+        const cran = (RENDER.WHEEL_NOTCH_DELTA || 100);             // |deltaY| (px) d'un cran de molette classique
+        const borne = 4 * cran;                                     // un seul événement ne vaut jamais plus de ~4 crans
+        const px = Math.max(-borne, Math.min(borne, brut * parUnite));
+        // Calibrage : |px| = cran redonne exactement le facteur (1 + ZOOM_SPEED).
+        const parPixel = Math.log(1 + RENDER.ZOOM_SPEED) / cran;
+        this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: Math.exp(-px * parPixel) });
     }
     
     // Les méthodes isKeyDown et isActionActive ont été supprimées car leur logique

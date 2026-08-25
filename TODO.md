@@ -8,6 +8,125 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
+## Chasse aux bugs 8 (2026‑08‑25) — correctifs restés partiels & arbitrages
+
+> Ces points viennent de la 8ᵉ passe (voir [CHANGELOG.md](CHANGELOG.md)). Chacun a été **mesuré au
+> banc** ; ce qui manque est indiqué précisément, avec l'effet observé de son absence.
+
+### ✅ ~~`RocketController.unsubscribeAll` / `MissionManager.unsubscribeAll` manquantes~~ — fait le 2026‑08‑25
+Les deux méthodes ont été ajoutées, et l'abonnement `UNIVERSE_STATE_UPDATED` de
+`SynchronizationManager` — jusque‑là confié au seul `controllerContainer` global, purgé uniquement au
+teardown de l'application — est désormais aussi désabonné par instance dans `cleanup()`. C'était la
+dernière fuite résiduelle. Mesuré sur 5 cycles création/nettoyage d'environnement : **14 → 1 → 2 →
+3 → 4 → 5** écouteurs avant, **14 → 0** à chaque cycle après. Voir [CHANGELOG.md](CHANGELOG.md).
+
+### 🔴 `RocketAI._navigateTravelDistance` n'est assigné nulle part
+`RocketAI.js` le lit (passage à `positionScaleForTask`) mais un balayage du dépôt ne renvoie que
+cette lecture : la propriété vaut toujours `undefined` et le jeu retombe sur
+`DEFAULT_POSITION_SCALE = 150000` alors que `TrainingOrchestrator.getPositionScale` calcule
+|B−A| = 127 279,22 — **17,85 % d'écart** mesuré sur les dims 0/1/7. Pas une régression (c'était déjà
+le cas), mais la parité annoncée n'est pas atteinte sur `navigate`. Latent aujourd'hui :
+`setObjective` n'est appelé que par l'orchestrateur, donc en jeu `currentObjective` vaut toujours
+`'orbit'` et la branche `'navigate'` est inatteignable. *Action :* assigner la distance de trajet
+quand un objectif `navigate` est posé en jeu, ou retirer le paramètre et documenter le repli.
+
+### ✅ ~~`GameController` ne passe pas `deltaTime` à `inputController.update()`~~ — fait le 2026‑08‑25
+Les trois appels (états `GAME_OVER`, `PAUSED`, et `update(deltaTime)`) transmettent désormais le pas
+de temps, achevant le correctif du zoom analogique. Le consommateur était déjà prouvé indépendant du
+framerate dès que `data.deltaTime` est fourni (1 s simulée : même zoom à 60 et 144 Hz, écart 8e‑15).
+
+### 🟠 `constants.js` — `STATE_VERSION` doit passer de 2 à 3
+La dim 7 (distance à la cible) suit désormais l'échelle positionnelle effective au lieu de
+`DISTANCE_SCALE` fixe. `AI_TRAINING.STATE.STATE_VERSION` est le **seul** champ réellement vérifié par
+`AIModelStore` au chargement : sans ce bump, un modèle entraîné avant le changement se charge alors
+que ses entrées ont changé d'échelle. Sans risque (`assets/models/` ne contient qu'un README).
+Corriger dans la foulée le commentaire de `DISTANCE_SCALE` (« même échelle que POSITION_SCALE »,
+faux : la clé n'est plus lue par `buildStateVector`) sans supprimer la clé.
+
+### 🟠 `views/UIView.js` — trois consommateurs manquants
+- **Stations** : `STATION_DOCKED` et `STATION_REFUELED` sont émis (le second est désormais honnête et
+  porte `added` = carburant réellement ajouté) mais **n'ont toujours aucun abonné** : le ravitaillement
+  reste totalement silencieux pour le joueur. *Action :* texte fugace type « ⛽ Accostage / Ravitaillement
+  — <station> », sur le modèle de `_renderMissionSuccessText`.
+- **Contrôle IA** : `AI_CONTROL_CHANGED` est émis par `RocketAI` sans abonné — la touche `I` n'a aucun
+  retour visuel. Le témoin 🤓 de l'aide au pilotage (touche `H`) est en place et peut servir de patron.
+  Ne **pas** décommenter `setAssistedControlsActive` : rien ne l'appelle, le chemin est l'événement.
+- **Cargo** : la seconde occurrence de `ctx.fillText("Cargo:", …)` dans `_renderCargoSection` (branche
+  où `rocketModel.cargo` est garanti non nul) peut afficher `getCurrentLoad()/getMaxCapacity()`.
+  Laisser inchangée l'occurrence de la branche « Vide », où `rocketModel`/`cargo` peuvent être absents.
+
+### 🟠 Objectif `explore` : le corps de DÉPART n'est plus crédité
+Effet de bord du correctif du bonus « nouveau corps » : l'enregistrement se fait maintenant au
+versement du bonus, c'est‑à‑dire **après** le pas physique. Une politique qui décolle dès le pas 0
+n'est donc plus posée au moment de l'enregistrement et perd le corps de départ ; `checkExplorationSuccess()`
+exigeant 2 corps distincts, elle doit réussir **deux** atterrissages au lieu d'un. *A/B mesuré* :
+en passif, `visites=["Terre"]` et `r[0] = 9,99` (base : `-0,01`) — le correctif marche ; au décollage
+immédiat, `visites=[]` (base : `["Terre"]`). Non corrigé volontairement : enregistrer dans `reset()`
+reprivatiserait le bonus du corps de départ, donc annulerait le correctif. Arbitrage de conception.
+
+### 🟠 Masse de la cargaison non câblée dans la physique
+`RocketCargo.getTotalMass()` (1 unité = 10 kg) n'est appelée nulle part ; `RocketModel.mass` et
+`momentOfInertia` sont figés sur `ROCKET.MASS`, et `BodyFactory` crée le corps Matter avec
+`mass`/`inertia` constants. **Aucun `Matter.Body.setMass` / `setInertia` n'existe dans le dépôt.**
+Câbler la masse imposerait ces deux appels à chaque `add`/`remove`/`clearCargo` et rééquilibrerait la
+poussée utile (~−6 % d'accélération à pleine charge, 100 kg sur 1500) : décision de conception, pas
+correctif de bug. `getTotalMass()` est conservée comme point d'accroche et son JSDoc le dit
+désormais.
+
+### 🟠 Reproductibilité : poids initiaux et `model.fit()` non seedés (option A à trancher)
+La graine rend déterministes l'angle initial par épisode, l'exploration epsilon et l'échantillonnage
+du minibatch — **pas** les poids initiaux du réseau ni le rebrassage interne de `model.fit()`. Un run
+seedé n'est donc pas rejouable bit à bit. *Action possible :* dériver une graine du RNG injecté vers
+`tf.initializers.glorotUniform({ seed })` (+ `biasInitializer: 'zeros'`) sur les quatre couches
+denses, passer `shuffle: false, batchSize` à `fit()`, et remonter l'injection `rocketAI.rng = this.rng`
+avant `waitForReady()` dans `initializeAgent` (les trois vont ensemble ; la troisième seule est sans
+effet).
+
+### 🟢 `constants.js` — annotations de constantes devenues (in)actives
+- `PHYSICS.RESTITUTION` (0,2) : **plus aucun lecteur** depuis que `BodyFactory` a cessé de la passer
+  à `Bodies.circle` (elle était de toute façon écrasée par `Body.setStatic`, mesuré `rest=0 fric=1`).
+  Soit la supprimer, soit la re‑commenter comme inerte. Ne **pas** toucher à `IMPACT_DAMAGE_FACTOR`
+  (1,0), `CRASH_SPEED_THRESHOLD` (2500) ni `LANDING_MAX_SPEED` (2500) : leur commentaire décrit
+  désormais le comportement réel, le chemin de dégâts en u/s étant enfin actif.
+- `RENDER.GRAVITY_SCALE_FACTOR` (3000) et `GRAVITY_MAX_LENGTH` (120) sont **redevenues lues** par
+  `VectorsView` (branche du vecteur `g`) : ne pas les supprimer. `GRAVITY_VECTOR_SCALE` (150) et
+  `GRAVITY_ARROW_SIZE` (15) restent non lues : les annoter `// NON LU`.
+- Ajouts facultatifs, **non bloquants** (les deux sites utilisent déjà un repli, comportement
+  identique avec ou sans) : `RENDER.WHEEL_NOTCH_DELTA: 100` (normalisation de la molette) et
+  `RENDER.ZOOM_RATE_PER_SECOND: 1.0` (gain du zoom analogique).
+
+### 🟢 Divers, non bloquant
+- **`main.js`** : ajouter la ligne « H — Aide au pilotage (stabilisation de la rotation) » au tableau
+  des contrôles, après la ligne « C ». Le témoin 🤓 du HUD est déjà branché.
+- **`main.js`** : le cas « canvas absent » reste **silencieux** (garde propre qui fait `return` sans
+  lever) — l'overlay d'erreur ne le couvre pas.
+- **`TrainingOrchestrator.getPositionScale`** : peut déléguer à `RocketAI.positionScaleForTask` (les
+  deux chemins donnent aujourd'hui la même valeur, 2220 — déduplication de règle, pas correctif).
+- **`RocketAI.train()`** : les deux gardes qui remplacent silencieusement une expérience de dimension
+  invalide par `Array(STATE_SIZE).fill(0)` mériteraient un avertissement throttlé (c'est ce silence
+  qui rendait `testUpdateFrequency()` faussement rassurant).
+- **Piège de banc, pas un bug produit** : `CustomEvent` est absent du sandbox du harnais, ce qui fait
+  lever `CollisionHandler` sur tout chemin de crash en headless. Pré‑existant (ligne identique dans
+  `HEAD`), global présent dans tout navigateur. Combler avec un stub (`sb.CustomEvent = class {}`) —
+  à ne pas confondre avec une régression lors des prochaines passes.
+- **`initializeEnvironments` force `navigateMaxSteps = max(config.maxStepsPerEpisode, 4000)`** : un
+  `maxStepsPerEpisode` plus petit est ignoré sur `navigate` (~48 s par épisode au banc). Comportement
+  d'exploitation à connaître, pas un bug.
+
+### Deux faux positifs écartés par la mesure — ne pas les re‑chasser
+- **« Le throttle du champ de gravité ne réutilise jamais sa grille (terme `bodiesHash`) »** : faux.
+  88 réutilisations sur 120 frames à zoom 0,2, 115 sur 119 à zoom 0,05. |Δ`bodiesHash`|/frame = 3,42
+  pour un quantum de 8 : la somme varie **moins** que le quantum. L'invalidation vient du déplacement
+  réel d'un corps rapide (Phobos, 15,6 u/frame ≈ 2 quanta) ; sans Phobos ni Deimos les recalculs à
+  zoom 1 tombent de 118/120 à 57/120. Le critère (demi‑cellule) est donc légitime ; le « correctif »
+  proposé le relâcherait d'un facteur 20.
+- **« Le bouton audio affiche 🔇 au lancement alors que le son est actif »** : faux. `setupAudioUnlock()`
+  (`index.html`, posé sur `load`) écrit `🔊` au premier geste utilisateur, obligatoirement le clic
+  « Prêt ! » (qui ne stoppe pas la propagation). Avant ce geste le panneau d'options est
+  `display:none` et aucun son ne peut être déclenché. Coder `🔊` en dur ferait mentir le bouton.
+
+---
+
 ## Constats de la passe du 2026‑08‑25 (non corrigés — décision à prendre)
 
 ### 🟠 Aucun pilote PNJ n'est réellement chargé au démarrage
@@ -29,10 +148,17 @@ diviserait le coût par 4), ce qui change l'aspect visuel — d'où l'arbitrage 
 Le coût est opt‑in (touche G).
 
 ### 🟢 Code mort laissé en place volontairement
-- `RocketAI.STATE_SCALE_VERSION`, `MODEL_STORAGE_KEY`, `MODEL_META_KEY` : plus aucun lecteur.
-  `STATE_SCALE_VERSION` documente encore la convention d'échelle — voir la mise en garde dans
-  CLAUDE.md (§ vecteur d'état) : un modèle sauvegardé sous une ancienne convention se charge malgré
-  tout, seuls `stateVersion`/`stateSize`/`actionCount` étant validés.
+- `RocketAI.STATE_SCALE_VERSION` (= **5** depuis le 2026‑08‑25), `MODEL_STORAGE_KEY`,
+  `MODEL_META_KEY` : plus aucun lecteur. `STATE_SCALE_VERSION` documente encore la convention
+  d'échelle — voir la mise en garde dans CLAUDE.md (§ vecteur d'état) : un modèle sauvegardé sous une
+  ancienne convention se charge malgré tout, seuls `stateVersion`/`stateSize`/`actionCount` étant
+  validés. ⇒ d'où le bump `STATE_VERSION` 2 → 3 réclamé plus haut.
+- `PHYSICS.RESTITUTION` : plus aucun lecteur depuis le 2026‑08‑25 (cf. section « Chasse aux bugs 8 »).
+- `RENDER.GRAVITY_VECTOR_SCALE` et `GRAVITY_ARROW_SIZE` : non lues. En revanche
+  `GRAVITY_SCALE_FACTOR` et `GRAVITY_MAX_LENGTH` sont **redevenues lues** (vecteur `g` de
+  `VectorsView`) — ne pas les supprimer. Le mode flèches du champ de gravité n'utilise, lui, aucune
+  de ces quatre constantes : il encode désormais l'intensité en échelle **log relative à la plage de
+  la vue**, plus par seuils absolus.
 - `RocketAI.autoSaveIfNeeded()` : aucun appelant ; sa condition porte sur `this.totalSteps`, qui
   n'est plus incrémenté depuis le retrait de `step()`.
 - `RocketAI.epsilonDecayManagedExternally` : écrit par l'orchestrateur, lu par personne (sa garde
@@ -45,12 +171,14 @@ Le coût est opt‑in (touche G).
 - `PhysicsVectors.calculateEarthAttractionVector` / `calculateLunarAttractionVector` : conservées,
   mais plus appelées — leurs deux branches d'affichage dans `VectorsView` sont inatteignables.
 
-### 🟢 Diagnostics de `train.js` construits sur 10 dimensions
-`diagnosticComplet()` fabrique des tenseurs à 10 dimensions et appelle `model.predict` sur un réseau
-à 12 entrées : l'appel lève à chaque fois (l'exception est attrapée et affichée « ❌ Erreur lors du
-diagnostic »). `testUpdateFrequency()` empile des expériences à 10 dimensions que `RocketAI.train()`
-remplace silencieusement par des vecteurs nuls — son verdict est donc dénué de sens. Antérieur à la
-fusion (identique dans les deux parents).
+### ✅ RÉSOLU (2026‑08‑25) — Diagnostics de `train.js` construits sur 10 dimensions
+`diagnosticComplet()` fabriquait des tenseurs à 10 dimensions pour un réseau à 12 entrées : l'appel
+levait à chaque fois (exception attrapée et affichée « ❌ Erreur lors du diagnostic »), et
+`testUpdateFrequency()` empilait des expériences que `RocketAI.train()` remplaçait silencieusement
+par des vecteurs nuls. Les deux utilisent désormais `RocketAI.STATE_SIZE`. *Mesuré* : le diagnostic
+va jusqu'au bout (le test 5 n'apparaissait jamais). **Reste** : les gardes silencieuses de
+`RocketAI.train()` mériteraient un avertissement throttlé — c'est ce silence qui rendait
+`testUpdateFrequency()` faussement rassurant (cf. section « Chasse aux bugs 8 »).
 
 ### 🟢 `_initialDistanceToTarget` et l'écriture `a - b || 0`
 `HeadlessRocketEnvironment` utilise `a - b || 0`, qui écrase un delta légitimement nul. Pour le rôle
@@ -181,7 +309,10 @@ fusion (identique dans les deux parents).
   mise en pause pendant la reconstruction, mais le même `rocketModel` était réutilisé sans purge :
   propulseurs encore actifs → redécollage immédiat du nouveau spawn ; `relativePosition`/`attachedTo`
   périmés → téléport ; grâce active → atterrissage non détecté. Fix : `buildWorldFromData` appelle
-  `rocketModel.reset()` avant d'appliquer le spawn. Vérifié headless (reload en tenant la poussée :
+  `rocketModel.reset()` avant d'appliquer le spawn — **inconditionnellement depuis le 2026‑08‑25** :
+  l'appel était enfermé dans le garde `if (data.rocket.spawn)`, donc un preset sans spawn laissait
+  survivre l'épave d'un crash (retour immédiat en `CRASH_ANIMATION`) et les propulseurs allumés.
+  Vérifié headless (reload en tenant la poussée :
   avant = redécollage `power=1000` ; après = reste posé `power=0`). `SynchronizationManager` efface
   déjà `isLanded/landedOn/relativePosition` si le corps `landedOn` est introuvable.
 - 🟢 **`relativePosition` recalculée une seule fois** à l'atterrissage sur corps mobile ; dérive
@@ -195,14 +326,18 @@ fusion (identique dans les deux parents).
 > A1 tracé IA) est **corrigé** — voir [CHANGELOG.md](CHANGELOG.md). Ci-dessous : trouvailles réelles
 > mais à traiter avec prudence (balance/tuning non validable sans playtest/entraînement) ou mineures.
 
-- 🟠 **P3 — Échelle des dégâts de collision.** `IMPACT_DAMAGE_FACTOR` (10) et `COLLISION_THRESHOLD`
-  (2,5) sont restés à l'ancienne échelle alors qu'`impactVelocity` est en échelle Matter (×16,67) :
-  tout contact non-atterrissage (ex. angle 30–45°) inflige des centaines de dégâts → destruction
-  quasi systématique. **Sensible au gameplay** → recalibrer + playtester (diviser `impactVelocity`
-  par `MATTER_BASE_DELTA` avant les dégâts, ou rescaler les deux constantes).
-- 🟠 **A2 — Isolation des environnements d'entraînement.** `RocketController.subscribeToEvents` n'est
-  pas idempotent et l'`EventBus` est partagé entre `trainingEnv`/`evaluationEnv` → double-abonnement
-  / cross-talk (impact borné). *Action :* désabonner avant de réabonner, ou isoler les bus.
+- 🟠 **P3 — Échelle des dégâts de collision — à REVALIDER en jeu (2026‑08‑25).** Les constantes sont
+  maintenant cohérentes (`IMPACT_DAMAGE_FACTOR` = 1,0 exprimé en u/s, `COLLISION_THRESHOLD` = 2,5) et,
+  surtout, le chemin de dégâts partiels est **atteignable pour la première fois** : jusqu'au
+  2026‑08‑25 `collisionStart` lisait une vitesse ~1000× trop petite, donc aucun contact n'appelait
+  jamais `applyDamage`. Mesures au banc après correctif (vol rasant, 240 frames) : 20 u/s + 50 % de
+  poussée → 40,7 dmg ; 50 u/s + 50 % → 60,2 ; 120 u/s + 50 % → destruction. Décollage normal : 0 dmg.
+  **Sensible au gameplay** → playtester avant de retoucher les deux constantes.
+- ✅ **A2 — Isolation des environnements d'entraînement — traité le 2026‑08‑25.** L'`EventBus` reste
+  partagé entre `trainingEnv`/`evaluationEnv`, mais `HeadlessRocketEnvironment.cleanup()` est
+  désormais effectif : `unsubscribeAll()` existe côté `RocketController` et `MissionManager`, et
+  `SynchronizationManager.cleanup()` désabonne aussi son écouteur `UNIVERSE_STATE_UPDATED`.
+  Mesuré : 14 écouteurs créés puis **0** résiduels à chaque cycle création/nettoyage.
 - 🔴 **Apprentissage IA inactif (`successfulTrainings = 0`).** `RocketAI.train()` est appelé ~1,5M
   fois mais n'aboutit JAMAIS à une mise à jour des poids (perte plate à 0 ; la hausse de récompense est
   un artefact de la décroissance d'epsilon). Instrumentation throttlée ajoutée (`_diagTrain` + `catch`
@@ -285,10 +420,11 @@ fusion (identique dans les deux parents).
   corps. Les petites lunes, les plus dures à viser, ont la fenêtre la plus étroite.
 - 🟢 **Pas d'économie** : les crédits n'ont aucun puits (le ravitaillement est gratuit), et `R` offre
   un plein + une téléportation gratuits depuis n'importe où, ce qui rend les stations redondantes.
-- 🟢 **Fuite connue non résolue** : `TrainingOrchestrator.finalizeTraining` ne fait que déréférencer
-  les environnements ; `HeadlessRocketEnvironment` n'a pas de `cleanup()`, ses sous-contrôleurs
-  restent abonnés au bus partagé et `SynchronizationManager` garde ses écouteurs Matter. Après N
-  cycles arrêt/relance, chaque commande de propulseur est distribuée aux environnements morts.
+- ✅ **Fuite d'abonnements — refermée le 2026‑08‑25** : `HeadlessRocketEnvironment.cleanup()` est
+  appelé par `TrainingOrchestrator` avant de recréer les environnements, dans `cleanupAfterError` et
+  dans `finalizeTraining`, et il agit désormais réellement — `RocketController.unsubscribeAll`,
+  `MissionManager.unsubscribeAll` et le désabonnement `UNIVERSE_STATE_UPDATED` de
+  `SynchronizationManager.cleanup()` sont en place. Mesuré : 14 écouteurs créés, 0 résiduel.
 
 ---
 

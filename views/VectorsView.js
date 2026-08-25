@@ -23,6 +23,8 @@ class VectorsView {
         this._gridComputeIntervalMs = 150; // Throttle léger
         /** @private */
         this._lastCameraSignature = null; // Pour cache basique (zoom/offset)
+        /** @private @type {{min: number, max: number} | null} Plage d'amplitude d'accélération réellement présente dans la grille, pour l'encodage relatif des flèches. */
+        this._accelRange = null;
     }
 
     /**
@@ -90,6 +92,10 @@ class VectorsView {
         this.gravityFieldGrid = [];
         let minPotential = Infinity;
         let maxPotential = -Infinity;
+        // Plage d'amplitude d'accélération : les flèches sont encodées RELATIVEMENT à ce qui est
+        // réellement présent dans la vue (cf. renderGravityFieldArrows), pas sur des seuils absolus.
+        let minAccel = Infinity;
+        let maxAccel = 0;
 
         for (let ix = 0; ix < gridX; ix++) {
             this.gravityFieldGrid[ix] = [];
@@ -120,6 +126,13 @@ class VectorsView {
                 }
                 this.gravityFieldGrid[ix][iy] = { ax, ay, wx, wy, potential };
 
+                // Suivi min/max de l'amplitude du champ, pour l'échelle logarithmique relative
+                const aMag = Math.hypot(ax, ay);
+                if (isFinite(aMag) && aMag > 0) {
+                    if (aMag < minAccel) minAccel = aMag;
+                    if (aMag > maxAccel) maxAccel = aMag;
+                }
+
                 // Suivi min/max potentiel pour la normalisation/coloration des lignes équipotentielles.
                 // Ignorer les potentiels infinis qui peuvent survenir au centre exact d'un corps (r ~ 0)
                 // — sans ce garde-fou côté min, log10(-minPotential) divergerait en aval.
@@ -127,6 +140,7 @@ class VectorsView {
                 if (potential > maxPotential && isFinite(potential)) maxPotential = potential;
             }
         }
+        this._accelRange = { min: minAccel, max: maxAccel };
         // Log de la plage de potentiel retiré (anciennement [DEBUG][Grid])
     }
 
@@ -140,6 +154,7 @@ class VectorsView {
      * @param {boolean} [options.showTotalThrustVector] - Afficher le vecteur de poussée totale résultante.
      * @param {boolean} [options.showVelocityVector] - Afficher le vecteur vitesse.
      * @param {boolean} [options.showTotalAccelerationVector] - Afficher le vecteur d'accélération totale (F/m).
+     * @param {boolean} [options.showGravityVector] - Afficher le vecteur d'attraction gravitationnelle résultante.
      * @param {boolean} [options.showLunarAttractionVector] - Afficher le vecteur d'attraction lunaire.
      * @param {boolean} [options.showEarthAttractionVector] - Afficher le vecteur d'attraction terrestre.
      * @param {boolean} [options.showMissionStartVector] - Afficher le vecteur vers le départ de la mission.
@@ -204,6 +219,14 @@ class VectorsView {
             let length = mag * scale;
             length = Math.max(20, Math.min(length, 100)); // Limiter la longueur
             this.drawVector(ctx, rocketState.accelerationVector, '#FFA500', 'a=F/m', length, null, rocketScreen);
+        }
+
+        // Vecteur d'attraction gravitationnelle résultante (somme des corps célestes)
+        if (options.showGravityVector && rocketState.gravityVector) {
+            const mag = Math.sqrt(rocketState.gravityVector.x ** 2 + rocketState.gravityVector.y ** 2);
+            let length = mag * RENDER.GRAVITY_SCALE_FACTOR;
+            length = Math.max(20, Math.min(length, RENDER.GRAVITY_MAX_LENGTH));
+            this.drawVector(ctx, rocketState.gravityVector, '#FF00FF', 'g', length, null, rocketScreen);
         }
 
         // // Vecteur d'attraction lunaire (supprimé à la demande)
@@ -366,6 +389,18 @@ class VectorsView {
         ctx.save();
         ctx.lineWidth = 1; // Lignes fines pour le champ
 
+        // Encodage RELATIF à la plage réellement présente dans la vue, sur une échelle
+        // logarithmique. Les anciens seuils absolus (5e-5 à 3e-3) et le facteur d'échelle 2000
+        // étaient 2 à 7 ordres de grandeur sous les accélérations réelles (G·M/r² avec G = 0.001
+        // et des masses de 1e8 à 1e13) : 100 % des flèches sortaient rouges et saturées en
+        // longueur, à TOUS les zooms autorisés — la visualisation ne montrait donc plus aucune
+        // variation du champ.
+        const maxLengthFactor = 0.8; // Pourcentage max de la taille de la maille
+        const range = this._accelRange || { min: 0, max: 0 };
+        const logMin = (range.min > 0 && isFinite(range.min)) ? Math.log10(range.min) : 0;
+        const logMax = (range.max > 0 && isFinite(range.max)) ? Math.log10(range.max) : 0;
+        const logSpan = (logMax - logMin) > 1e-6 ? (logMax - logMin) : 0;
+
         for (let ix = 0; ix < gridX; ix++) {
             for (let iy = 0; iy < gridY; iy++) {
                 // Coordonnées écran du centre de la maille
@@ -385,34 +420,27 @@ class VectorsView {
                 const dirX = ax / a;
                 const dirY = ay / a;
 
-                // Longueur de la flèche : proportionnelle à 'a', mais limitée par la taille de la maille
-                const scaleFactor = 2000; // Facteur d'échelle arbitraire pour la visibilité
-                const maxLengthFactor = 0.8; // Pourcentage max de la taille de la maille
-                const length = Math.min(scaleFactor * a, Math.min(stepX, stepY) * maxLengthFactor);
+                // Position de 'a' dans la plage de la vue (0 = champ le plus faible, 1 = le plus fort)
+                const t = logSpan ? Math.max(0, Math.min(1, (Math.log10(a) - logMin) / logSpan)) : 1;
+
+                // Longueur de la flèche : proportionnelle à 't', limitée par la taille de la maille
+                const length = t * Math.min(stepX, stepY) * maxLengthFactor;
 
                 // Position de fin de la flèche (en pixels écran)
                 const ex = sx + dirX * length;
                 const ey = sy + dirY * length;
 
-                // Déterminer la couleur en fonction de l'intensité 'a' (gradient vert -> jaune -> rouge)
+                // Déterminer la couleur à partir du même 't' (gradient vert -> jaune -> rouge)
                 let color;
-                // Seuils ajustés pour une meilleure visualisation des variations
-                const threshold1 = 0.00005;
-                const threshold2 = 0.0003;
-                const threshold3 = 0.001;
-                const threshold4 = 0.003;
-
-                if (a < threshold1) {
-                    color = 'rgba(0,255,0,0.35)'; // Vert faible
-                } else if (a < threshold2) {
-                    const t = (a - threshold1) / (threshold2 - threshold1); // Interpolation 0..1
-                    color = `rgba(${Math.round(255 * t)}, 255, 0, 0.35)`; // Vert -> Jaune
-                } else if (a < threshold3) {
-                    const t = (a - threshold2) / (threshold3 - threshold2);
-                    color = `rgba(255, ${Math.round(255 * (1 - t) + 165 * t)}, 0, 0.45)`; // Jaune -> Orange
-                } else if (a < threshold4) {
-                    const t = (a - threshold3) / (threshold4 - threshold3);
-                    color = `rgba(255, ${Math.round(165 * (1 - t))}, 0, 0.55)`; // Orange -> Rouge
+                if (t < 0.25) {
+                    const u = t / 0.25; // Interpolation 0..1 dans le quart
+                    color = `rgba(${Math.round(255 * u)}, 255, 0, 0.35)`; // Vert -> Jaune
+                } else if (t < 0.5) {
+                    const u = (t - 0.25) / 0.25;
+                    color = `rgba(255, ${Math.round(255 * (1 - u) + 165 * u)}, 0, 0.45)`; // Jaune -> Orange
+                } else if (t < 0.75) {
+                    const u = (t - 0.5) / 0.25;
+                    color = `rgba(255, ${Math.round(165 * (1 - u))}, 0, 0.55)`; // Orange -> Rouge
                 } else {
                     color = 'rgba(255,0,0,0.65)'; // Rouge fort
                 }

@@ -222,8 +222,16 @@ class UniverseView {
                 console.warn("Corps céleste invalide ou sans position:", body);
                 continue;
             }
-            // Vérifie la visibilité avant de déléguer le rendu
-            if (this.isVisible(body.position.x, body.position.y, body.radius, camera)) {
+            // Vérifie la visibilité avant de déléguer le rendu.
+            // Le culling doit porter sur l'étendue RÉELLEMENT peinte, pas sur le seul rayon :
+            // les anneaux vont jusqu'à 2,1 R (ellipse rx = 2 R + la moitié du lineWidth = 0,1 R,
+            // cf. CelestialBodyView.drawRings) et l'atmosphère jusqu'à R + height. Sinon le bord
+            // extérieur de l'anneau surgit d'un coup au lieu d'entrer progressivement.
+            const rayonPeint = Math.max(
+                body.radius * (body.hasRings ? 2.1 : 1),
+                body.radius + ((body.atmosphere && body.atmosphere.exists && body.atmosphere.height) || 0)
+            );
+            if (this.isVisible(body.position.x, body.position.y, rayonPeint, camera)) {
                  this.celestialBodyView.render(ctx, body, camera, sunBody);
             }
         }

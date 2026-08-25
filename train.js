@@ -281,6 +281,11 @@ async function testEvaluationMode() {
                 // CORRECTION (bug #8 / #4) : utiliser le builder d'état UNIFIÉ pour que
                 // le diagnostic reflète exactement la normalisation vue à l'entraînement.
                 const aiState = RocketAI.buildStateVector({
+                    // Échelle positionnelle du corps de référence (env planétaire par défaut) :
+                    // sans elle, buildStateVector retombe sur 150000 alors que l'entraînement
+                    // orbit/land utilise positionScaleForBody — état hors distribution.
+                    positionScale: RocketAI.positionScaleForBody(
+                        (testEnv.universeModel.celestialBodies[0] || {}).radius),
                     x: state.rocketX || 0,
                     y: state.rocketY || 0,
                     vx: state.rocketVX || 0,
@@ -414,14 +419,18 @@ async function diagnosticComplet() {
         console.log('\n4️⃣ TEST DE CALCUL DES CIBLES Q:');
         
         // Créer des données de test
-        const testStates = [Array(10).fill(0.5), Array(10).fill(-0.5)];
-        const testNextStates = [Array(10).fill(0.3), Array(10).fill(-0.3)];
+        // Dimension lue à la source (AI_TRAINING.STATE.STATE_SIZE) : ce diagnostic présentait des
+        // états à 10 dims (v1 du vecteur d'état) à un réseau en attendant 12, ce qui levait et
+        // faisait sauter les tests 4 et 5.
+        const N = RocketAI.STATE_SIZE;
+        const testStates = [Array(N).fill(0.5), Array(N).fill(-0.5)];
+        const testNextStates = [Array(N).fill(0.3), Array(N).fill(-0.3)];
         const testActions = [0, 1];
         const testRewards = [1.0, -1.0];
         
         // Simuler le calcul des Q-values
-        const qValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testStates, [2, 10])));
-        const nextQValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testNextStates, [2, 10])));
+        const qValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testStates, [2, N])));
+        const nextQValues = tf.tidy(() => rocketAI.model.predict(tf.tensor2d(testNextStates, [2, N])));
         
         const qValuesData = qValues.arraySync();
         const nextQValuesData = nextQValues.arraySync();
@@ -520,10 +529,10 @@ async function testUpdateFrequency() {
         console.log('Remplissage du buffer...');
         for (let i = 0; i < rocketAI.config.batchSize + 10; i++) {
             rocketAI.replayBuffer.push({
-                state: Array(10).fill(Math.random() * 0.1),
+                state: Array(RocketAI.STATE_SIZE).fill(Math.random() * 0.1),
                 action: Math.floor(Math.random() * 5),
                 reward: Math.random() * 2 - 1,
-                nextState: Array(10).fill(Math.random() * 0.1),
+                nextState: Array(RocketAI.STATE_SIZE).fill(Math.random() * 0.1),
                 done: false
             });
         }
@@ -610,6 +619,10 @@ async function evaluateModelNavigate(modelName, angles, pointB = { x: 90000, y: 
         missionConfig: { objective: 'navigate', targetPoint: pointB }
     });
 
+    // Échelle positionnelle de la TÂCHE (|B−A|), identique à TrainingOrchestrator.getPositionScale :
+    // sans elle, buildStateVector retombe sur 150000 et le modèle est noté hors de sa distribution.
+    const positionScale = Math.hypot(pointB.x - 0, pointB.y - 0);
+
     let totalReward = 0, successCount = 0;
     const stepsToSuccess = [];
     for (let i = 0; i < angles.length; i++) {
@@ -618,6 +631,7 @@ async function evaluateModelNavigate(modelName, angles, pointB = { x: 90000, y: 
         let done = false, reward = 0, steps = 0;
         while (!done && steps < 4000) {
             const aiState = RocketAI.buildStateVector({
+                positionScale,
                 x: state.rocketX || 0, y: state.rocketY || 0,
                 vx: state.rocketVX || 0, vy: state.rocketVY || 0,
                 angle: state.rocketAngle || 0, angularVelocity: state.rocketAngularVelocity || 0,
