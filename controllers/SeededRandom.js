@@ -15,7 +15,11 @@ class SeededRandom {
      * @return {function(): number}
      */
     static mulberry32(seed) {
-        let a = (seed >>> 0) || 1; // éviter l'état nul
+        // Pas de `|| 1` : mulberry32 est un mélangeur à compteur, pas un LCG — l'état 0 est
+        // parfaitement valide (le premier pas ajoute 0x6D2B79F5). Le garde-fou hérité repliait
+        // silencieusement la graine 0, pourtant saisissable dans l'interface, sur la graine 1 :
+        // deux runs « distincts » produisaient la même séquence.
+        let a = seed >>> 0;
         return function () {
             a |= 0;
             a = (a + 0x6D2B79F5) | 0;

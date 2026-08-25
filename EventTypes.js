@@ -134,6 +134,9 @@ window.EVENTS = {
     MODEL_SAVED: 'AI_MODEL_SAVED',       // payload: { name, metadata }
     MODEL_LOADED: 'AI_MODEL_LOADED',     // payload: { name, metadata }
     MODEL_DELETED: 'AI_MODEL_DELETED',   // payload: { name }
+    // Émis quand un point de sauvegarde échoue (quota IndexedDB, navigation privée, stockage
+    // refusé…). Sans lui, un entraînement complet pouvait ne rien persister sans le moindre signe.
+    MODEL_SAVE_FAILED: 'AI_MODEL_SAVE_FAILED', // payload: { name, reason }
     MODEL_EXPORTED: 'AI_MODEL_EXPORTED', // payload: { name }
 
     // File de runs séquentiels (curriculum / rôles)

@@ -123,20 +123,16 @@ class CameraController {
     /**
      * Gère l'action de zoom avant (agrandissement).
      * Augmente le niveau de zoom actuel du modèle de caméra.
-     * Ne fait rien si le jeu est en pause.
      */
     handleZoomIn() {
-        if (this.isSystemPaused) return;
         this.cameraModel.setZoom(this.cameraModel.zoom * (1 + RENDER.ZOOM_SPEED));
     }
 
     /**
      * Gère l'action de zoom arrière (réduction).
      * Diminue le niveau de zoom actuel du modèle de caméra.
-     * Ne fait rien si le jeu est en pause.
      */
     handleZoomOut() {
-        if (this.isSystemPaused) return;
         this.cameraModel.setZoom(this.cameraModel.zoom / (1 + RENDER.ZOOM_SPEED));
     }
 
@@ -149,7 +145,7 @@ class CameraController {
      *                               Un facteur > 1 zoome (agrandit), un facteur < 1 dézoome (réduit).
      */
     handleCameraZoomAdjust(data) {
-        if (this.isSystemPaused || !data || typeof data.factor !== 'number') return;
+        if (!data || typeof data.factor !== 'number') return;
 
         // Le facteur est appliqué directement. Il est attendu que InputController
         // envoie un facteur correct : > 1 pour zoomer, < 1 pour dézoomer.
@@ -168,7 +164,7 @@ class CameraController {
      *                            Une valeur négative est interprétée comme un zoom avant, positive comme un zoom arrière.
      */
     handleZoomCommand(data) {
-        if (!this.cameraModel || this.isSystemPaused) return;
+        if (!this.cameraModel) return;
         
         const zoomValue = data.value; // Valeur brute de l'axe du joystick
         const zoomSpeed = (RENDER.ZOOM_SPEED || 0.01); // Vitesse de zoom de base
@@ -196,10 +192,8 @@ class CameraController {
      * Gère la demande de centrage de la caméra.
      * Si la caméra suit déjà la fusée, elle la détache et passe en mode 'free'.
      * Sinon, elle cible la fusée et passe en mode de suivi 'rocket'.
-     * Ne fait rien si le jeu est en pause.
      */
     handleCenterCamera() {
-        if (this.isSystemPaused) return;
 
         const rocketModel = this.gameController && this.gameController.rocketModel;
         if (this.cameraModel && rocketModel) {
@@ -219,13 +213,11 @@ class CameraController {
     /**
      * Gère le début du glissement de la caméra.
      * Enregistre la position de départ du glissement et la position actuelle de la caméra.
-     * Ne fait rien si le jeu est en pause.
      * @param {object} data - Les données de l'événement de début de glissement.
      * @param {number} data.x - La coordonnée X du pointeur au début du glissement.
      * @param {number} data.y - La coordonnée Y du pointeur au début du glissement.
      */
     handleCameraStartDrag(data) {
-        if (this.isSystemPaused) return;
         
         this.isDragging = true;
         this.dragStartX = data.x;
@@ -244,13 +236,13 @@ class CameraController {
      * Gère le mouvement de la caméra pendant un glissement.
      * Calcule le déplacement de la caméra en fonction du mouvement du pointeur
      * et du niveau de zoom actuel, puis met à jour la position de la caméra.
-     * Ne fait rien si aucun glissement n'est en cours ou si le jeu est en pause.
+     * Ne fait rien si aucun glissement n'est en cours.
      * @param {object} data - Les données de l'événement de glissement.
      * @param {number} data.x - La coordonnée X actuelle du pointeur.
      * @param {number} data.y - La coordonnée Y actuelle du pointeur.
      */
     handleCameraDrag(data) {
-        if (!this.isDragging || this.isSystemPaused) return;
+        if (!this.isDragging) return;
 
         if (this.cameraModel) {
             // Si un drag est détecté ET que la caméra est toujours en mode 'rocket' 

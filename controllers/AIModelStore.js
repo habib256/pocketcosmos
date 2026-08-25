@@ -53,9 +53,15 @@ class AIModelStore {
 
     static _currentStateSpec() {
         const S = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.STATE) ? AI_TRAINING.STATE : {};
+        // actionCount vient de la table d'actions canonique de RocketAI (source unique), et non
+        // d'une constante dupliquée : c'est elle qui définit la largeur de sortie du réseau.
+        const actionCount = (typeof RocketAI !== 'undefined' && Array.isArray(RocketAI.ACTION_NAMES))
+            ? RocketAI.ACTION_NAMES.length
+            : null;
         return {
             stateVersion: S.STATE_VERSION || 2,
-            stateSize: S.STATE_SIZE || 12
+            stateSize: S.STATE_SIZE || 12,
+            actionCount
         };
     }
 
@@ -156,6 +162,18 @@ class AIModelStore {
             console.warn(`[AIModelStore] Modèle "${name}" refusé : stateVersion ${metadata.stateVersion} ≠ ${spec.stateVersion} (sémantique du vecteur d'état différente malgré une dimension identique).`);
             throw new Error(`[AIModelStore] Modèle "${name}" incompatible (stateVersion ${metadata.stateVersion} ≠ ${spec.stateVersion})`);
         }
+
+        // Largeur de SORTIE = nombre d'actions. save() enregistre déjà `actionCount`, mais rien ne
+        // le vérifiait au chargement : un modèle à 6 sorties se chargeait sans bruit, puis
+        // argMax(1) renvoyait un indice ≥ 5, `this.actions[indice]` valait undefined et
+        // emitControl(undefined) retombait sur la branche par défaut — une fusée qui ne répond
+        // plus, sans le moindre message.
+        const outputShape = (model.outputs && model.outputs[0] && model.outputs[0].shape) ? model.outputs[0].shape : null;
+        const outputSize = outputShape ? outputShape[outputShape.length - 1] : null;
+        if (outputSize !== null && spec.actionCount && outputSize !== spec.actionCount) {
+            console.warn(`[AIModelStore] Modèle "${name}" refusé : sortie réseau ${outputSize} actions ≠ ${spec.actionCount} actions attendues.`);
+            throw new Error(`[AIModelStore] Modèle "${name}" incompatible (actionCount ${outputSize} ≠ ${spec.actionCount})`);
+        }
     }
 
     /**
@@ -214,11 +232,22 @@ class AIModelStore {
             await model.save('downloads://' + n);
             const meta = metadata || { name: n, ...AIModelStore._currentStateSpec() };
             const blob = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
+            a.href = url;
             a.download = n + '.meta.json';
+            // L'ancre doit être DANS le document : Firefox ignore un click() programmatique sur un
+            // élément détaché. Et la révocation de l'URL doit être différée, sinon elle court
+            // contre le démarrage du téléchargement sur Chromium. Résultat des deux défauts : le
+            // meta.json manquait silencieusement à l'export — or c'est justement lui qui porte
+            // stateVersion, sans lequel l'import ne peut plus valider la compatibilité.
+            a.style.display = 'none';
+            document.body.appendChild(a);
             a.click();
-            URL.revokeObjectURL(a.href);
+            setTimeout(() => {
+                try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+                if (a.parentNode) { a.parentNode.removeChild(a); }
+            }, 5000);
         } finally {
             try { model.dispose(); } catch (e) { /* ignore */ }
         }
@@ -240,10 +269,28 @@ class AIModelStore {
         if (!jsonFile || weightFiles.length === 0) {
             throw new Error('[AIModelStore] importFromFiles : sélectionnez le fichier .json du modèle ET son .weights.bin');
         }
+        // Le .meta.json accompagnant l'export porte stateVersion/role/objective/episodes… Il était
+        // écarté de la recherche du modèle mais jamais LU : _validateCompatibility ne recevait donc
+        // aucune stateVersion et n'en vérifiait aucune, puis save() estampillait la version
+        // COURANTE. Un modèle 12 dims entraîné sous une autre sémantique d'état était ainsi
+        // réétiqueté « compatible » en silence, et le rôle/les statistiques d'un aller-retour
+        // export→import étaient perdus.
+        const metaFile = files.find(f => f.name.endsWith('.meta.json'));
+        let metaFichier = {};
+        if (metaFile) {
+            try {
+                metaFichier = JSON.parse(await metaFile.text()) || {};
+            } catch (e) {
+                console.warn(`[AIModelStore] ${metaFile.name} illisible (${e.message}) : import sans métadonnées.`);
+            }
+        }
+        // Les métadonnées explicitement passées par l'appelant priment sur celles du fichier.
+        const metaFusionnee = { ...metaFichier, ...metadata };
+
         const model = await tf.loadLayersModel(tf.io.browserFiles([jsonFile, ...weightFiles]));
         try {
-            AIModelStore._validateCompatibility(model, metadata, n);
-            const entry = await AIModelStore.save(model, n, { notes: 'importé depuis fichiers', ...metadata });
+            AIModelStore._validateCompatibility(model, metaFusionnee, n);
+            const entry = await AIModelStore.save(model, n, { notes: 'importé depuis fichiers', ...metaFusionnee });
             return entry;
         } finally {
             try { model.dispose(); } catch (e) { /* ignore */ }

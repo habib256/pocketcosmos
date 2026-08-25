@@ -229,7 +229,7 @@ class UIView {
         // Ne pas afficher si un écran modal est actif (géré par les return ci-dessus) 
         // ou si le menu pause doit cacher ces infos (actuellement, il ne le fait pas)
         if (rocketModel) {
-            this._renderRocketInfo(ctx, rocketModel, totalAcceleration);
+            this._renderRocketInfo(ctx, rocketModel, totalAcceleration, universeModel);
         }
 
         // Afficher l'état d'atterrissage ou de crash
@@ -305,7 +305,7 @@ class UIView {
     }
 
     /** @private Affiche les informations principales de la fusée. */
-    _renderRocketInfo(ctx, rocketModel, totalAcceleration) {
+    _renderRocketInfo(ctx, rocketModel, totalAcceleration, universeModel = null) {
         ctx.save();
         ctx.font = this.font;
         ctx.fillStyle = this.colors.white;
@@ -330,7 +330,7 @@ class UIView {
 
         // --- Vitesse ---
         const speedY = 80;
-        const speed = this._calculateSpeed(rocketModel);
+        const speed = this._calculateSpeed(rocketModel, universeModel);
         ctx.fillText(`🚀:`, labelX, speedY);
         this._renderSpeedBar(ctx, speed, barX, speedY + 5, barWidth, barHeight);
 
@@ -375,12 +375,52 @@ class UIView {
         ctx.fillRect(x, y, filledWidth, height);
     }
 
-    /** @private Calcule la vitesse scalaire de la fusée. */
-    _calculateSpeed(rocketModel) {
+    /**
+     * @private Vitesse scalaire de la fusée RELATIVE au corps de référence (celui sur lequel elle
+     * est posée, sinon le plus proche), en échelle Matter comme `rocketModel.velocity`.
+     *
+     * La jauge colore ensuite cette valeur en la comparant à `PHYSICS.CRASH_SPEED_THRESHOLD` — or
+     * `CollisionHandler` applique ce seuil à la vitesse RELATIVE au corps (cf. PHYSICS.md §5.1).
+     * Avec la vitesse absolue, une fusée parfaitement immobile posée sur Phobos (vitesse orbitale
+     * 960 u/s ≈ 16 000 en échelle Matter, soit 640 % du seuil) affichait une jauge ROUGE pleine,
+     * pendant qu'une approche réellement fatale sur une Terre immobile s'affichait en vert. La
+     * seule jauge qui renseigne le joueur sur la survie d'un atterrissage était inversée
+     * précisément sur les corps où elle compte.
+     */
+    _calculateSpeed(rocketModel, universeModel = null) {
         if (!rocketModel || !rocketModel.velocity) return 0;
         const vx = rocketModel.velocity.x;
         const vy = rocketModel.velocity.y;
+
+        const corps = this._corpsDeReference(rocketModel, universeModel);
+        if (corps && corps.velocity) {
+            // Les vitesses des corps célestes sont en u/s ; celle de la fusée en échelle Matter.
+            const k = (typeof PHYSICS !== 'undefined' && PHYSICS.MATTER_BASE_DELTA) ? PHYSICS.MATTER_BASE_DELTA : (1000 / 60);
+            const rvx = vx - (corps.velocity.x || 0) * k;
+            const rvy = vy - (corps.velocity.y || 0) * k;
+            return Math.sqrt(rvx * rvx + rvy * rvy);
+        }
         return Math.sqrt(vx * vx + vy * vy);
+    }
+
+    /**
+     * @private Corps céleste servant de référence de vitesse : celui sur lequel la fusée est posée
+     * ou amarrée, sinon le plus proche. Renvoie null si l'univers n'est pas disponible.
+     */
+    _corpsDeReference(rocketModel, universeModel) {
+        const corpsListe = universeModel && universeModel.celestialBodies;
+        if (!corpsListe || corpsListe.length === 0) return null;
+
+        const nomAncre = rocketModel.landedOn || rocketModel.attachedTo;
+        if (nomAncre) {
+            const ancre = corpsListe.find(cb => cb && cb.name === nomAncre);
+            if (ancre) return ancre;
+        }
+        if (typeof universeModel.findNearestBody === 'function' && rocketModel.position) {
+            const proche = universeModel.findNearestBody(rocketModel.position);
+            return (proche && proche.body) || null;
+        }
+        return null;
     }
 
     /** @private Dessine la barre de vitesse avec une échelle non linéaire. */

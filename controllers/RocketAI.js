@@ -432,7 +432,17 @@ class RocketAI {
 
         // Échelles de normalisation — source unique AI_TRAINING.STATE (constants.js)
         const S = (typeof AI_TRAINING !== 'undefined' && AI_TRAINING.STATE) ? AI_TRAINING.STATE : {};
-        const POSITION_SCALE = S.POSITION_SCALE || 150000;
+        // Échelle POSITIONNELLE adaptée à la tâche. La valeur par défaut (150 000) est calibrée
+        // pour 'navigate' (trajet A→B de ~127 000 unités). Pour 'orbit'/'land' — et donc les rôles
+        // 'orbiter'/'lander' — la fusée évolue entre r=720 et r≈2220 : avec l'échelle fixe, les
+        // dims 0/1/7 restaient confinées dans [0,005 ; 0,015] pendant que les dims 4/5/9 étaient
+        // d'ordre 1, soit un déséquilibre de conditionnement d'environ 200× EN AMONT de la
+        // première layerNormalization. Les deux appelants (RocketAI.buildState et
+        // TrainingOrchestrator.buildAIState via getPositionScale) calculent déjà cette valeur ;
+        // l'ignorer rendait leur code mort.
+        const POSITION_SCALE = (typeof p.positionScale === 'number' && isFinite(p.positionScale) && p.positionScale > 0)
+            ? p.positionScale
+            : (S.POSITION_SCALE || 150000);
         const VELOCITY_SCALE = S.VELOCITY_SCALE || 2500;
         const VELOCITY_CLAMP = S.VELOCITY_CLAMP || 4;
         const ANGULAR_VEL_SCALE = S.ANGULAR_VEL_SCALE || 80;
@@ -541,6 +551,13 @@ class RocketAI {
             angularVelocity: this.rocketData.angularVelocity,
             targetX,
             targetY,
+            // Vitesse propre de la cible (u/s) : celle de la cible de mission si elle est
+            // fournie, sinon celle du corps de référence. Ces deux dimensions étaient
+            // structurellement nulles en jeu (cf. update()).
+            targetVx: (typeof this.rocketData.targetVx === 'number')
+                ? this.rocketData.targetVx : (this.celestialBodyData.vx || 0),
+            targetVy: (typeof this.rocketData.targetVy === 'number')
+                ? this.rocketData.targetVy : (this.celestialBodyData.vy || 0),
             positionScale
         });
     }
@@ -589,7 +606,9 @@ class RocketAI {
                     return prediction.argMax(1).dataSync()[0];
                 });
             } catch (error) {
-                return Math.floor(Math.random() * this.actions.length);
+                // this.rng (et non Math.random) : ce repli fait partie des tirages du run et doit
+                // rester reproductible sous une graine donnée.
+                return Math.floor(this.rng() * this.actions.length);
             }
         }
     }
@@ -651,8 +670,11 @@ class RocketAI {
             const batch = [];
             const indices = new Set();
             
+            // this.rng : l'échantillonnage du minibatch est le plus gros consommateur d'aléa de
+            // l'entraînement. Le laisser sur Math.random rendait un run seedé irreproductible même
+            // une fois l'exploration epsilon seedée.
             while (indices.size < this.config.batchSize) {
-                indices.add(Math.floor(Math.random() * this.replayBuffer.length));
+                indices.add(Math.floor(this.rng() * this.replayBuffer.length));
             }
             
             indices.forEach(index => {
@@ -937,6 +959,12 @@ class RocketAI {
     // incompatible est refusé. L'ancien scheme v1 (localstorage://rocket-ai-model, 10 dims)
     // est détecté pour avertir qu'il est obsolète, mais jamais chargé.
     async loadModel(name = this.modelName) {
+        // Charger remplace ET dispose this.model. Si model.fit() est en vol, TF.js perdrait ses
+        // tenseurs de poids sous les pieds de l'optimiseur ("Tensor is disposed").
+        if (this.isTrainingInProgress) {
+            console.warn(`[RocketAI] Chargement de "${name}" refusé : un pas d'entraînement est en cours. Mettez l'entraînement en pause puis réessayez.`);
+            return false;
+        }
         try {
             const { model, metadata } = await AIModelStore.load(name);
             // Disposer le modèle existant avant de le remplacer pour éviter de fuiter
@@ -947,7 +975,7 @@ class RocketAI {
                 optimizer: tf.train.adam(this.config.learningRate),
                 loss: 'meanSquaredError'
             });
-            if (previousModel && previousModel !== loaded) { try { previousModel.dispose(); } catch (e) {} }
+            // (L'ancien modèle a déjà été disposé juste avant d'être remplacé, ci-dessus.)
 
             // 4. Reconstruire le target network : setWeights() échoue si l'ancien target a une
             //    architecture différente, et un target obsolète fausserait toutes les cibles Q.
@@ -1192,6 +1220,14 @@ class RocketAI {
                 celestialBody = {
                     x: body.position.x,
                     y: body.position.y,
+                    // Vitesse PROPRE du corps (u/s). Les corps sont cinématiques et se déplacent
+                    // réellement : sans elle, les dims 10-11 du vecteur d'état restaient à zéro en
+                    // jeu alors qu'elles sont actives à l'entraînement du rôle 'intercept'
+                    // (≈ ±0,32). Un modèle entraîné à intercepter voyait donc, à l'inférence, une
+                    // caractéristique constamment nulle — exactement la divergence
+                    // entraînement/jeu que le vecteur à 12 dimensions devait supprimer.
+                    vx: (body.velocity && body.velocity.x) || 0,
+                    vy: (body.velocity && body.velocity.y) || 0,
                     radius: body.radius,
                     mass: body.mass,
                     name: body.name
@@ -1209,6 +1245,8 @@ class RocketAI {
         if (missionTarget) {
             rocket.targetX = missionTarget.x;
             rocket.targetY = missionTarget.y;
+            rocket.targetVx = missionTarget.vx;
+            rocket.targetVy = missionTarget.vy;
         }
 
         // Un seul chemin de code : updateRocketData() affecte rocketData/celestialBodyData puis
@@ -1229,7 +1267,13 @@ class RocketAI {
 
         const body = this.universeModel.celestialBodies.find(b => b && b.name === mission.to);
         if (body && body.position) {
-            return { x: body.position.x, y: body.position.y };
+            // vx/vy en u/s : la cible d'une mission est un corps céleste, qui orbite réellement.
+            return {
+                x: body.position.x,
+                y: body.position.y,
+                vx: (body.velocity && body.velocity.x) || 0,
+                vy: (body.velocity && body.velocity.y) || 0
+            };
         }
         return null;
     }

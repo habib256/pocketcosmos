@@ -306,18 +306,30 @@
             updateOptionLabels();
         });
         
-        // Gestion du bouton mute/unmute
+        // Gestion du bouton mute/unmute.
+        // Le bouton ne pilotait QUE la musique d'ambiance : la boucle des propulseurs et les
+        // impacts, joués via window.audioManager, restaient audibles après un « mute ».
+        // AudioManager.setEnabled() existait pour cela mais n'était appelé de nulle part.
+        const appliquerSourdine = (coupe) => {
+            if (window.audioManager && typeof window.audioManager.setEnabled === 'function') {
+                window.audioManager.setEnabled(!coupe);
+            }
+        };
         toggleButton.addEventListener('click', () => {
             if (audioElement.paused) {
                 // N'afficher 🔊 que si la lecture DÉMARRE réellement : play() renvoie une promesse
                 // qui peut être rejetée (politique d'autoplay, fichier illisible). L'ancien code
                 // laissait ce rejet non géré et affichait 🔊 inconditionnellement — le bouton
                 // prétendait que la musique jouait alors que tout était silencieux.
+                // Les effets sont rétablis dans tous les cas : même si la politique d'autoplay
+                // refuse la musique, l'intention du joueur est bien de réactiver le son.
+                appliquerSourdine(false);
                 audioElement.play()
                     .then(() => { toggleButton.textContent = '🔊'; })
                     .catch(() => { toggleButton.textContent = '🔇'; });
             } else {
                 audioElement.pause();
+                appliquerSourdine(true);
                 toggleButton.textContent = '🔇';
             }
         });

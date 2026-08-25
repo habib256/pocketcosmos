@@ -129,8 +129,12 @@ class HeadlessRocketEnvironment {
         // aléatoire n'était tiré qu'une fois (dans TrainingOrchestrator.initializeEnvironments)
         // puis figé dans rocketInitialState : tous les épisodes d'un run partaient du MÊME angle,
         // ce qui supprimait la variété d'orientation que l'objectif 'navigate' est censé apprendre.
+        // Utilise le RNG seedé quand il est fourni (config.rng), sinon Math.random. Sans cela,
+        // un run seedé restait irreproductible : cette ligne écrasait, à chaque épisode et avec
+        // de l'aléa non seedé, l'angle que TrainingOrchestrator venait de poser.
         if (this.config.randomizeInitialAngle) {
-            this.rocketModel.angle = Math.random() * Math.PI * 2;
+            const tirage = (typeof this.config.rng === 'function') ? this.config.rng : Math.random;
+            this.rocketModel.angle = tirage() * Math.PI * 2;
         }
 
         this.universeModel.reset(this.config.universeConfig || {}); // UniverseModel.reset accepte une config
@@ -497,7 +501,15 @@ class HeadlessRocketEnvironment {
             missionStatus: this.missionManager.getCurrentMissionStatus() // Supposer une telle méthode
         };
         if (done) {
+            // `objectiveSuccess` (calculé plus haut) doit primer : les missions à jeton
+            // ('NavigateToken' & co.) ont un cargo volontairement inobtenable, donc
+            // isCurrentMissionSuccessful() n'est JAMAIS vrai pour les objectifs d'entraînement.
+            // Sans cette branche, une réussite franche en navigate/orbit/land était rapportée
+            // comme 'max_steps_reached' — un journal et des métriques qui annoncent l'échec de ce
+            // que l'agent vient de réussir.
+            info.objectiveSuccess = objectiveSuccess;
             info.status = this.rocketModel.isDestroyed ? 'crashed' :
+                          objectiveSuccess ? 'objective_success' :
                           this.rocketModel.fuel <= 0 ? 'out_of_fuel' :
                           this.missionManager.isCurrentMissionSuccessful() ? 'mission_success' :
                           outOfBounds ? 'out_of_bounds' :
@@ -902,7 +914,14 @@ class HeadlessRocketEnvironment {
         const distRatio = currentDistance / (this._initialDistanceToTarget || 1);
         const stabilizeZone = config.STABILIZE_ZONE_RATIO || 0.1;
         const stabilizeSpeedRef = config.STABILIZE_SPEED_REF || 100;
-        if (distRatio < stabilizeZone) {
+        // PAS de stabilisation en mode de succès 'proximity' (rôle 'intercept'). Le critère y est
+        // de RESTER à portée d'une cible qui fuit à 800 u/s : récompenser la vitesse basse paie
+        // exactement le comportement qui fait échouer la mission. Mesuré : se garer sur l'ancienne
+        // position de la cible rapportait ≈ +950 (la cible met ~16 s à sortir de la zone des 10 %,
+        // soit ~950 pas dans la zone) contre SUCCESS_REWARD = 1000 pour réussir — même ordre de
+        // grandeur, donc un optimum local très attractif.
+        const modeProximite = this.config.missionConfig && this.config.missionConfig.successMode === 'proximity';
+        if (distRatio < stabilizeZone && !modeProximite) {
             // Proche du point B : forte récompense pour vitesse basse
             const stabilWeight = (typeof config.STABILIZE_REWARD_WEIGHT === 'number') ? config.STABILIZE_REWARD_WEIGHT : 10;
             const stabilReward = Math.max(0, 1 - speed / stabilizeSpeedRef) * stabilWeight;
@@ -972,21 +991,17 @@ class HeadlessRocketEnvironment {
         // alignment = 1 si parfaitement aligné, -1 si opposé
         
         // Récompense basée sur l'alignement
-        let reward = alignment * config.HEADING_ALIGNMENT;
-        
-        // Bonus si la fusée se déplace vers la cible (vitesse radiale positive)
-        if (this.rocketModel.velocity) {
-            // velocity est stockée en échelle Matter (≈ u/s × 1000/60) ; conversion en u/s
-            // via le point de conversion unique (cf. PHYSICS.md §1).
-            const radialVelocity = PhysicsVectors.matterToGameVelocity(
-                this.rocketModel.velocity.x * targetDirX +
-                this.rocketModel.velocity.y * targetDirY); // u/s
-            if (radialVelocity > 0) {
-                // Bonus proportionnel à la vitesse radiale (u/s) vers la cible
-                reward += (radialVelocity / 100) * 0.5; // Normalisé
-            }
-        }
-        
+        const reward = alignment * config.HEADING_ALIGNMENT;
+
+        // PAS de bonus de vitesse radiale ici. Il en existait un, `(radialVelocity / 100) * 0.5`,
+        // dont le /100 datait d'une époque où VELOCITY_TARGET valait 30 u/s. La cible de croisière
+        // est désormais 2500 u/s : ce seul terme payait ~12,5 par pas (jusqu'à 50 à VELOCITY_MAX)
+        // face à HEADING_ALIGNMENT dont le maximum est 1,0, et face à DISTANCE_DELTA plafonné à
+        // 3000 pour l'épisode ENTIER. La politique optimale devenait un yo-yo (foncer sur la cible,
+        // dériver, recommencer) rapportant ~10⁵ contre 1000 pour réussir. Mesuré avant retrait :
+        // 30 551 points, soit 64,8 % de la composante d'alignement et 55,5 % du retour d'épisode.
+        // Le bonus radial LÉGITIME, correctement mis à l'échelle par VELOCITY_TARGET et neutralisé
+        // dans la zone de freinage, vit dans calculateVelocityReward().
         return reward;
     }
     
@@ -1021,8 +1036,12 @@ class HeadlessRocketEnvironment {
             // Ratio : 1.0 = au point A, 0.0 = au point B
             const ratio = Math.min(1, distance / this._initialDistanceToTarget);
 
-            // Phase de freinage : en dessous du seuil, réduire la vitesse cible
-            const brakeZone = config.BRAKE_ZONE_RATIO || 0.2;
+            // Phase de freinage : en dessous du seuil, réduire la vitesse cible.
+            // Désactivée en mode de succès 'proximity' (rôle 'intercept') : il faut y ÉGALER la
+            // vitesse d'une cible mobile, pas s'arrêter dessus. Faire tendre la vitesse cible vers
+            // 0 à l'approche contredisait directement le critère de réussite.
+            const modeProximite = this.config.missionConfig && this.config.missionConfig.successMode === 'proximity';
+            const brakeZone = modeProximite ? 0 : (config.BRAKE_ZONE_RATIO || 0.2);
             if (ratio < brakeZone) {
                 const brakeRatio = ratio / brakeZone; // 1 au seuil, 0 au point B
                 adaptiveTarget = config.VELOCITY_TARGET * brakeRatio;
@@ -1220,8 +1239,13 @@ class HeadlessRocketEnvironment {
             if (altitude < 100) {
                 reward += 0.2; // Très proche
                 
-                // Récompense supplémentaire pour vitesse d'approche lente
-                const speed = Math.sqrt(this.rocketModel.velocity.x ** 2 + this.rocketModel.velocity.y ** 2);
+                // Récompense supplémentaire pour vitesse d'approche lente.
+                // En u/s via le point de conversion unique : la comparaison se faisait sur la
+                // vitesse BRUTE en échelle Matter, contre un seuil de 5 qui ne vaut que 0,3 u/s —
+                // soit un critère ~16,7× trop strict, quasi inatteignable. Ce sous-bonus est sur
+                // le chemin chaud du rôle 'lander' et fait partie des termes contre lesquels
+                // SUCCESS_TIME_CREDIT.land est calibré.
+                const speed = this._rocketSpeedUnitsPerSec(); // u/s
                 if (speed < 5) {
                     reward += 0.1; // Approche lente et contrôlée
                 }
@@ -1290,7 +1314,21 @@ class HeadlessRocketEnvironment {
                 return true;
             }
         }
-        
+
+        // TERMINAISON SUR SUCCÈS. Perdue à la fusion (absente des DEUX parents), avec trois
+        // conséquences mesurées :
+        //  1. successTimeCredit() paie `pas restants × crédit` EN COMPENSATION d'un épisode qui
+        //     s'arrête — sans arrêt, l'agent touche le crédit ET continue d'encaisser le shaping
+        //     de chaque pas restant, exactement le double-comptage que SUCCESS_TIME_CREDIT existe
+        //     pour empêcher (cf. constants.js §SUCCESS_TIME_CREDIT).
+        //  2. isEpisodeSuccessful() exige `steps < 0.8 × budget` pour orbit/land/explore : un
+        //     épisode réussi consommant tout le budget était compté ÉCHEC, d'où un taux de
+        //     réussite de 0 % pour les rôles 'orbiter' et 'lander' quelles que soient leurs
+        //     performances (et checkConvergence() neutralisé).
+        //  3. Le succès n'était évalué qu'au pas de timeout : une fusée stabilisée sur B puis
+        //     repartie à la dérive était notée en échec.
+        if (this.checkObjectiveSuccess()) return true;
+
         return false;
     }
 

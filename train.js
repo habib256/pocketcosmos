@@ -4,6 +4,29 @@
  * Utilise l'environnement headless pour un entraînement rapide
  */
 
+/**
+ * Convertit un indice d'action du DQN en objet action pour HeadlessRocketEnvironment, à partir de
+ * la table CANONIQUE `RocketAI.ACTION_THRUSTERS` — seule source de vérité partagée par le jeu,
+ * l'entraînement et les diagnostics de ce fichier.
+ *
+ * Les QUATRE propulseurs sont toujours spécifiés : `step()` ne remet à zéro que les propulseurs
+ * présents dans l'objet, si bien qu'une table partielle laisse un propulseur allumé indéfiniment.
+ *
+ * @param {number} indice - Indice de sortie du réseau.
+ * @return {{mainThruster:number, rearThruster:number, leftThruster:number, rightThruster:number}}
+ */
+function _actionPourIndice(indice) {
+    const noms = RocketAI.ACTION_NAMES;
+    const nom = noms[indice] || 'noAction';
+    const t = RocketAI.ACTION_THRUSTERS[nom] || RocketAI.ACTION_THRUSTERS.noAction;
+    return {
+        mainThruster: t.main,
+        rearThruster: t.rear,
+        leftThruster: t.left,
+        rightThruster: t.right
+    };
+}
+
 // Configuration pour le mode démo d'entraînement
 const TRAINING_DEMO_CONFIG = {
     maxEpisodes: 500,
@@ -276,15 +299,7 @@ async function testEvaluationMode() {
                 // Ce fichier dupliquait sa propre table, restée divergente : elle utilisait
                 // `rotationInput` et ne spécifiait qu'une partie des propulseurs, si bien qu'un
                 // 'thrustBackward' laissait l'arrière bloqué à MAX jusqu'à la fin de l'épisode.
-                const noms = RocketAI.ACTION_NAMES;
-                const nom = noms[actionIndex] || 'noAction';
-                const t = RocketAI.ACTION_THRUSTERS[nom] || RocketAI.ACTION_THRUSTERS.noAction;
-                const action = {
-                    mainThruster: t.main,
-                    rearThruster: t.rear,
-                    leftThruster: t.left,
-                    rightThruster: t.right
-                };
+                const action = _actionPourIndice(actionIndex);
                 
                 const result = testEnv.step(action);
                 state = result.observation;
@@ -608,14 +623,13 @@ async function evaluateModelNavigate(modelName, angles, pointB = { x: 90000, y: 
                 angle: state.rocketAngle || 0, angularVelocity: state.rocketAngularVelocity || 0,
                 targetX: pointB.x, targetY: pointB.y
             });
-            const actions = [
-                { mainThruster: 1.0, rotationInput: 0 },
-                { mainThruster: 0, rearThruster: 1.0, rotationInput: 0 },
-                { mainThruster: 0, rotationInput: 1.0 },
-                { mainThruster: 0, rotationInput: -1.0 },
-                { mainThruster: 0, rotationInput: 0 }
-            ];
-            const r = env.step(actions[rocketAI.act(aiState)] || actions[4]);
+            // Table d'actions CANONIQUE (RocketAI.ACTION_THRUSTERS) : chaque action spécifie les
+            // QUATRE propulseurs. Ce fichier dupliquait sa propre table où seul l'indice 1
+            // mentionnait `rearThruster` — or step() ne touche qu'aux propulseurs PRÉSENTS dans
+            // l'objet action : après un unique thrustBackward, le propulseur arrière restait à
+            // fond jusqu'à la fin de l'épisode. compareModels() classait donc les modèles dans un
+            // espace d'actions différent de celui de leur entraînement.
+            const r = env.step(_actionPourIndice(rocketAI.act(aiState)));
             state = r.observation; reward += r.reward; done = r.done; steps++;
         }
         totalReward += reward;

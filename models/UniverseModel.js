@@ -95,31 +95,37 @@ class UniverseModel {
             this.stars.push({
                 x: Math.cos(angle) * distance,
                 y: Math.sin(angle) * distance,
-                // Luminosité de base + variation aléatoire pour un aspect plus naturel
-                brightness: PARTICLES.STAR_BRIGHTNESS_BASE + Math.random() * PARTICLES.STAR_BRIGHTNESS_RANGE,
+                // Luminosité de base + variation aléatoire pour un aspect plus naturel.
+                // NB : ces trois constantes vivent sous RENDER, pas sous PARTICLES (qui n'expose
+                // que STAR_COUNT et VISIBLE_RADIUS). Les lire depuis PARTICLES donnait
+                // `undefined + Math.random() * undefined` = NaN pour les 800 étoiles.
+                brightness: RENDER.STAR_BRIGHTNESS_BASE + Math.random() * RENDER.STAR_BRIGHTNESS_RANGE,
                 // Vitesse individuelle de scintillement pour chaque étoile
-                twinkleSpeed: Math.random() * PARTICLES.STAR_TWINKLE_FACTOR
+                twinkleSpeed: Math.random() * RENDER.STAR_TWINKLE_FACTOR
             });
         }
     }
 
     /**
-     * Met à jour la luminosité des étoiles pour créer un effet de scintillement.
-     * Utilise le temps écoulé (`elapsedTime`) pour faire varier la luminosité de manière sinusoïdale.
-     * @param {number} deltaTime - Le temps écoulé depuis la dernière mise à jour (non utilisé directement ici, mais pourrait l'être pour une animation plus complexe).
+     * Vérifie que chaque étoile porte une `twinkleSpeed` finie (une étoile venue d'un preset peut
+     * arriver sans, ou avec une valeur invalide).
+     *
+     * Cette méthode ne touche PLUS à `star.brightness`. Elle le faisait à chaque frame, alors que
+     * `UniverseView.computeStarTwinkle` recalcule le scintillement de son côté sans lire le modèle :
+     * c'étaient 800 Math.sin par frame pour un résultat jamais affiché, et surtout la luminosité
+     * fournie par un preset était écrasée dès la première frame. `brightness` est désormais la
+     * luminosité de BASE, posée à la création et stable ; la vue l'anime localement.
+     *
+     * @param {number} deltaTime - Temps écoulé depuis la dernière mise à jour (non utilisé).
      * @private
      */
     updateStars(deltaTime) {
-        // Mettre à jour la luminosité des étoiles pour l'effet de scintillement
         for (const star of this.stars) {
-            // Garde-fou : une étoile construite ailleurs (presets) peut arriver sans twinkleSpeed,
-            // ce qui donnerait Math.sin(NaN) -> brightness = NaN à chaque frame.
-            if (typeof star.twinkleSpeed !== 'number') {
-                star.twinkleSpeed = Math.random() * PARTICLES.STAR_TWINKLE_FACTOR;
+            // `typeof NaN === 'number'` : il faut tester la FINITUDE, sinon le garde-fou laisse
+            // justement passer le cas qu'il est censé rattraper.
+            if (!Number.isFinite(star.twinkleSpeed)) {
+                star.twinkleSpeed = Math.random() * RENDER.STAR_TWINKLE_FACTOR;
             }
-            // La fonction sinus crée une oscillation douce de la luminosité autour de la valeur de base.
-            star.brightness = PARTICLES.STAR_BRIGHTNESS_BASE +
-                Math.sin(this.elapsedTime * star.twinkleSpeed) * PARTICLES.STAR_BRIGHTNESS_RANGE;
         }
     }
 
