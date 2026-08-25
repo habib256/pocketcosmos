@@ -15,7 +15,7 @@ class CelestialBodyModel {
      * @param {number} orbitDistance Distance orbitale moyenne par rapport au centre du parentBody.
      * @param {number} initialOrbitAngle Angle initial sur l'orbite en radians (0 = axe positif X).
      * @param {number} orbitSpeed Vitesse angulaire orbitale en radians par seconde.
-     * @param {{hasAtmosphere?: boolean}} [options] Options additionnelles. `hasAtmosphere` pilote l'existence de l'atmosphère. Si non fourni, valeur rétro-compatible basée sur le nom ('Terre').
+     * @param {{hasAtmosphere?: boolean}} [options] Options additionnelles. `hasAtmosphere` pilote l'existence de l'atmosphère. Si non fourni, pas d'atmosphère.
      */
     constructor(name, mass, radius, position, color, parentBody = null, orbitDistance = 0, initialOrbitAngle = 0, orbitSpeed = 0, options = {}) {
         // Identité
@@ -46,11 +46,11 @@ class CelestialBodyModel {
         /**
          * @type {{exists: boolean, height: number, color: string}}
          * Propriétés de l'atmosphère pour le rendu. L'existence est pilotée par
-         * `options.hasAtmosphere`. Par défaut (paramètre non fourni), comportement
-         * rétro-compatible : seule la Terre possède une atmosphère.
+         * `options.hasAtmosphere`. Par défaut (paramètre non fourni) : pas d'atmosphère.
+         * Les presets doivent la déclarer explicitement via `bodies[].atmosphere.exists`.
          */
         this.atmosphere = {
-            exists: typeof options.hasAtmosphere === 'boolean' ? options.hasAtmosphere : (name === 'Terre'),
+            exists: typeof options.hasAtmosphere === 'boolean' ? options.hasAtmosphere : false,
             height: radius * CELESTIAL_BODY.ATMOSPHERE_RATIO, // Hauteur de l'atmosphère
             color: 'rgba(25, 35, 80, 0.4)'  // Bleu très sombre semi-transparent
         };

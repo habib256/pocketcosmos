@@ -321,7 +321,7 @@
                 </div>
                 <div class="control-group">
                     <label>Seed (vide = aléatoire):</label>
-                    <input type="number" id="seed" value="" min="0" step="1" placeholder="ex: 1234 pour reproductibilité">
+                    <input type="number" id="seed" value="" min="0" step="1" placeholder="ex: 1234 — angles, exploration et minibatch déterministes (pas les poids initiaux)">
                 </div>
             </div>
 
@@ -531,6 +531,7 @@
             constructor() {
                 this.isTraining = false;
                 this.isPaused = false;
+                this.modelToLoad = null; // nom du modèle à charger dans l'agent du prochain run (warm-start)
                 this.currentEpisode = 0;
                 this.totalSteps = 0;
                 this.trainingData = {
@@ -897,6 +898,9 @@
                         objectives: [config.objective],
                         role: config.role,
                         modelName: config.modelName,
+                        // WARM-START : nom mémorisé par loadModel() ; TrainingOrchestrator.initializeAgent
+                        // charge les poids dans l'agent neuf (validation 12 dims incluse).
+                        loadFrom: this.modelToLoad || null,
                         seed: config.seed
                     };
                     
@@ -1225,7 +1229,13 @@
                     // aucun effet). Le chargement n'a de sens que sur l'agent de la session.
                     const rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
-                        this.log('Aucune session active : lancez un entraînement, puis chargez le modèle dans son agent.', 'warning');
+                        // Pas d'agent vivant : on mémorise le nom, il sera chargé dans l'agent créé
+                        // au prochain démarrage (via orchestratorConfig.loadFrom). Charger ici dans
+                        // un agent temporaire ne ferait que fuiter des modèles TF.js.
+                        this.modelToLoad = target;
+                        const field = document.getElementById('modelName');
+                        if (field) field.value = target;
+                        this.log(`Modèle "${target}" sera chargé au prochain démarrage d'entraînement`, 'info');
                         return;
                     }
 
@@ -1234,6 +1244,7 @@
                         // Refléter le nom chargé dans le champ pour cohérence
                         const field = document.getElementById('modelName');
                         if (field) field.value = target;
+                        this.modelToLoad = target;
                         this.log(`Modèle "${target}" chargé`, 'success');
                     } else {
                         this.log(`Modèle "${target}" introuvable ou incompatible (voir console)`, 'warning');

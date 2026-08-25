@@ -104,6 +104,19 @@ class GameSetupController {
     }
 
     /**
+     * Lit un COMPTE de configuration : comme `_lireNombrePositif`, mais `0` est une valeur
+     * LÉGITIME (ciel sans étoiles, ceinture neutralisée sans supprimer l'entrée). Rejette
+     * toujours NaN/Infinity/chaîne/négatif.
+     * @private
+     */
+    static _lireCompte(valeur, defaut, champ) {
+        if (valeur === undefined || valeur === null) return defaut;
+        if (GameSetupController.estNombreFini(valeur) && valeur >= 0) return Math.floor(valeur);
+        console.warn(`[GameSetupController] Champ '${champ}' invalide (${typeof valeur} ${GameSetupController._decrire(valeur)}) : un nombre fini positif ou nul est attendu. Valeur ${defaut} utilisée.`);
+        return defaut;
+    }
+
+    /**
      * Pose la fusée à la surface d'un corps céleste, à l'angle donné.
      * Chemin partagé par le spawn nominal (hostName) et par le repli (premier corps
      * disponible) afin que les deux restent rigoureusement identiques.
@@ -120,6 +133,26 @@ class GameSetupController {
         rocketModel.setAngle(angle);
         rocketModel.isLanded = true;
         rocketModel.landedOn = host.name;
+    }
+
+    /**
+     * Repli commun : pose la fusée sur le premier corps céleste disponible.
+     * Appelé quand aucun mode de spawn n'a pu être appliqué ET quand le preset ne déclare
+     * AUCUN `rocket.spawn` : `reset()` remet la fusée à (0,0), c'est-à-dire À L'INTÉRIEUR de
+     * l'étoile centrale des six mondes livrés.
+     * @private
+     */
+    static _poserFuseeEnRepli(rocketModel, universeModel, angle) {
+        const fallbackHost = universeModel.celestialBodies[0];
+        if (fallbackHost && fallbackHost.position && GameSetupController.estNombreFini(fallbackHost.radius)) {
+            console.warn(`[GameSetupController.buildWorldFromData] Utilisation du fallback: '${fallbackHost.name}'`);
+            GameSetupController._poserFuseeSurCorps(rocketModel, fallbackHost, GameSetupController.estNombreFini(angle) ? angle : 0);
+        } else {
+            console.error('[GameSetupController.buildWorldFromData] Aucun corps céleste disponible pour le spawn, fusée positionnée à (0,0)');
+            rocketModel.setPosition(0, 0);
+            rocketModel.isLanded = false;
+            rocketModel.landedOn = null;
+        }
     }
 
     /**
@@ -233,7 +266,7 @@ class GameSetupController {
             console.warn('[GameSetupController.buildWorldFromData] data.bodies est vide, aucun corps céleste ne sera créé');
         }
         if (existingRocketModel && (!data.rocket || !data.rocket.spawn)) {
-            console.warn('[GameSetupController.buildWorldFromData] data.rocket.spawn est absent, la fusée ne sera pas repositionnée');
+            console.warn('[GameSetupController.buildWorldFromData] data.rocket.spawn est absent, la fusée sera réinitialisée et posée sur le premier corps céleste');
         }
 
         // Capturer une seule fois la valeur par défaut de PHYSICS.G (issue de constants.js)
@@ -298,6 +331,13 @@ class GameSetupController {
                 for (let i = 0; i < data.stations.length; i++) {
                     const st = data.stations[i];
                     if (st && typeof st.hostName === 'string' && GameSetupController.estNombreFini(st.angle) && typeof st.name === 'string') {
+                        // L'hôte doit exister : sinon la station est ajoutée au modèle mais
+                        // RenderingController l'écarte par un `continue` muet et le ravitaillement
+                        // ne la trouve jamais. Même diagnostic que `parentName` (CelestialBodyFactory)
+                        // et `centerName` (ceintures).
+                        if (!universeModel.celestialBodies.some(b => b && b.name === st.hostName)) {
+                            console.warn(`[GameSetupController] Station '${st.name}': hostName '${st.hostName}' introuvable (typo ou corps ignoré). La station ne sera ni dessinée ni ravitaillante.`);
+                        }
                         universeModel.addStation(st.hostName, st.angle, st.name, st.color);
                     } else {
                         // Auparavant la station était écartée EN SILENCE (un `angle` en chaîne
@@ -359,8 +399,8 @@ class GameSetupController {
                 }
                 // count/radius devaient être des nombres finis > 0 : une chaîne ("abc") donnait
                 // NaN puis ZÉRO étoile, sans aucun message (ciel vide inexpliqué).
-                const count = Math.max(1, Math.min(GameSetupController.MAX_ETOILES,
-                    GameSetupController._lireNombrePositif(cfg.count, PARTICLES.STAR_COUNT, 'starsConfig.count')));
+                const count = Math.max(0, Math.min(GameSetupController.MAX_ETOILES,
+                    GameSetupController._lireCompte(cfg.count, PARTICLES.STAR_COUNT, 'starsConfig.count')));
                 const radius = Math.max(1, GameSetupController._lireNombrePositif(cfg.radius, PARTICLES.VISIBLE_RADIUS, 'starsConfig.radius'));
                 const seed = (GameSetupController.estNombreFini(cfg.seed) ? cfg.seed : (Date.now() % 2147483647)) >>> 0;
                 if (cfg.seed !== undefined && !GameSetupController.estNombreFini(cfg.seed)) {
@@ -444,16 +484,20 @@ class GameSetupController {
 
             // Stocker l'info de spawn et repositionner la fusée si demandé
             if (existingRocketModel) {
+                // RELOAD SÛR : repartir d'un état fusée PROPRE avant d'appliquer le spawn.
+                // Sans cela, un décollage/atterrissage en cours au moment du reload "fuit" dans le
+                // nouveau monde : propulseurs encore actifs -> redécollage immédiat ;
+                // relativePosition/attachedTo périmés -> téléport ; période de grâce active ->
+                // atterrissage non détecté. reset() coupe les propulseurs, efface
+                // grâce/relativePosition/attachedTo/destruction et restaure carburant/santé.
+                // Inconditionnel : sans spawn dans le preset, l'épave d'un crash antérieur
+                // survivait au changement de monde (le jeu rebasculait aussitôt en
+                // CRASH_ANIMATION, sans explosion ni écran de game over) et les propulseurs
+                // restaient allumés.
+                if (typeof existingRocketModel.reset === 'function') {
+                    existingRocketModel.reset();
+                }
                 if (data && data.rocket && data.rocket.spawn && existingRocketModel.setPosition) {
-                    // RELOAD SÛR : repartir d'un état fusée PROPRE avant d'appliquer le spawn.
-                    // Sans cela, un décollage/atterrissage en cours au moment du reload "fuit" dans le
-                    // nouveau monde : propulseurs encore actifs -> redécollage immédiat ;
-                    // relativePosition/attachedTo périmés -> téléport ; période de grâce active ->
-                    // atterrissage non détecté. reset() coupe les propulseurs, efface
-                    // grâce/relativePosition/attachedTo/destruction et restaure carburant/santé.
-                    if (typeof existingRocketModel.reset === 'function') {
-                        existingRocketModel.reset();
-                    }
                     const spawn = data.rocket.spawn;
                     if (typeof spawn !== 'object' || Array.isArray(spawn)) {
                         console.error(`[GameSetupController.buildWorldFromData] rocket.spawn n'est pas un objet (${Array.isArray(spawn) ? 'tableau' : typeof spawn}) : aucun mode de spawn exploitable, repli sur le premier corps céleste.`);
@@ -551,19 +595,13 @@ class GameSetupController {
                             console.error('[GameSetupController.buildWorldFromData] rocket.spawn ne correspond à AUCUN mode valide (hostName + angle numérique, ou position {x,y} finie).');
                         }
                         console.error('[GameSetupController.buildWorldFromData] Spawn non appliqué : repli sur le premier corps céleste (sans cela la fusée resterait à (0,0), c\'est-à-dire dans l\'étoile centrale).');
-                        const fallbackHost = universeModel.celestialBodies[0];
-                        if (fallbackHost && fallbackHost.position && GameSetupController.estNombreFini(fallbackHost.radius)) {
-                            console.warn(`[GameSetupController.buildWorldFromData] Utilisation du fallback: '${fallbackHost.name}'`);
-                            GameSetupController._poserFuseeSurCorps(existingRocketModel, fallbackHost, angleValide ? spawn.angle : 0);
-                        } else {
-                            console.error('[GameSetupController.buildWorldFromData] Aucun corps céleste disponible pour le spawn, fusée positionnée à (0,0)');
-                            existingRocketModel.setPosition(0, 0);
-                            existingRocketModel.isLanded = false;
-                            existingRocketModel.landedOn = null;
-                        }
+                        GameSetupController._poserFuseeEnRepli(existingRocketModel, universeModel, angleValide ? spawn.angle : 0);
                     }
-                    existingRocketModel.isDestroyed = false;
+                } else {
+                    // Preset sans `rocket.spawn` : même repli que ci-dessus (cf. GameController.resetRocket).
+                    GameSetupController._poserFuseeEnRepli(existingRocketModel, universeModel, 0);
                 }
+                existingRocketModel.isDestroyed = false;
             }
         } catch (e) {
             // NE PAS avaler l'erreur : la relayer à l'appelant. Auparavant elle n'était que
@@ -623,8 +661,8 @@ class GameSetupController {
         const innerR = Math.max(1, GameSetupController._lireNombrePositif(cfg.innerRadius, 32000, 'asteroidBelt.innerRadius'));
         const outerRDemande = GameSetupController._lireNombrePositif(cfg.outerRadius, 44000, 'asteroidBelt.outerRadius');
         const outerR = Math.max(innerR + 1, outerRDemande);
-        let count = Math.max(1, Math.min(GameSetupController.MAX_ASTEROIDES,
-            GameSetupController._lireNombrePositif(cfg.count, 1500, 'asteroidBelt.count')));
+        let count = Math.max(0, Math.min(GameSetupController.MAX_ASTEROIDES,
+            GameSetupController._lireCompte(cfg.count, 1500, 'asteroidBelt.count')));
         if (GameSetupController.estNombreFini(budget) && count > budget) {
             console.warn(`[GameSetupController] Ceinture tronquée à ${budget} astéroïdes (au lieu de ${count}) : plafond global de ${GameSetupController.MAX_ASTEROIDES} astéroïdes.`);
             count = Math.max(0, Math.floor(budget));

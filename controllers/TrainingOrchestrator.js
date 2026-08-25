@@ -146,14 +146,17 @@ class TrainingOrchestrator {
             return this.runCurriculum(userConfig);
         }
 
-        try {
         // Identifiant de CE run. Les gardes de génération (cleanupAfterError, trainingLoop,
         // runTrainingEpisode, evaluateAgent, finalizeTraining) le comparent à this._runGeneration
         // pour ignorer les callbacks d'un run précédent quand on enchaîne Stop puis Start.
-        // Sans cette déclaration, les trois usages plus bas lèvent une ReferenceError (mode strict)
-        // et AUCUN entraînement ne peut démarrer.
+        // DÉCLARÉ AVANT le `try` : le `catch` plus bas l'utilise (cleanupAfterError + garde
+        // d'émission de TRAINING_ERROR) ; déclaré DANS le `try` il y était hors portée, et la
+        // ReferenceError remplaçait l'erreur réelle, sautait cleanupAfterError() et laissait
+        // isTraining à true (plus aucun démarrage possible jusqu'au rechargement de la page).
         this._runGeneration = (this._runGeneration || 0) + 1;
         const runId = this._runGeneration;
+
+        try {
 
         // Fusionner la configuration utilisateur avec la configuration par défaut
         this.config = { ...this.config, ...userConfig };
@@ -337,7 +340,9 @@ class TrainingOrchestrator {
 
         if (this._runGeneration !== runId) return;
 
-        // Réinitialiser les environnements
+        // Réinitialiser les environnements (en les désabonnant d'abord du bus PARTAGÉ)
+        if (this.trainingEnv && typeof this.trainingEnv.cleanup === 'function') this.trainingEnv.cleanup();
+        if (this.evaluationEnv && typeof this.evaluationEnv.cleanup === 'function') this.evaluationEnv.cleanup();
         this.trainingEnv = null;
         this.evaluationEnv = null;
     }
@@ -513,6 +518,13 @@ class TrainingOrchestrator {
                         ? { ...trainingConfig.rocketInitialState.velocity } : undefined }
                 : undefined
         };
+
+        // Libérer les environnements du run PRÉCÉDENT avant d'en créer de nouveaux : leurs
+        // sous-contrôleurs restent sinon abonnés au bus PARTAGÉ, et chaque SET_THRUSTER_POWER /
+        // ROTATE_COMMAND / MISSION_FAILED émis par l'environnement vivant est distribué aussi aux
+        // morts (coût CPU et mémoire linéaires dans le nombre de démarrages / d'étapes de curriculum).
+        if (this.trainingEnv && typeof this.trainingEnv.cleanup === 'function') this.trainingEnv.cleanup();
+        if (this.evaluationEnv && typeof this.evaluationEnv.cleanup === 'function') this.evaluationEnv.cleanup();
 
         // Créer les environnements avec l'EventBus partagé
         this.trainingEnv = new HeadlessRocketEnvironment(trainingConfig);
@@ -1121,6 +1133,14 @@ class TrainingOrchestrator {
         
         try {
             for (let i = 0; i < numEvaluationEpisodes; i++) {
+                // Pause/arrêt demandé : ne pas enchaîner des épisodes d'éval à 0 pas. Sans ce
+                // break, evaluatedEpisodes atteignait quand même 10 et neutralisait le garde
+                // d'évaluation interrompue plus bas -> un score bidon de 0 devenait
+                // bestAverageReward et déclenchait le clonage de bestModelWeights.
+                if (!this.isTraining || this.isPaused) {
+                    break;
+                }
+
                 // Vérifier à chaque itération que l'agent est toujours disponible
                 if (!this.rocketAI || this.rocketAI.isDisposed) {
                     break;
@@ -1565,14 +1585,14 @@ class TrainingOrchestrator {
             }
             this.rocketAI = null;
 
-            // ⚠️ Les environnements, eux, ne sont ici que DÉRÉFÉRENCÉS, pas libérés :
-            // HeadlessRocketEnvironment n'expose aucun cleanup(), et ses sous-contrôleurs
-            // (RocketController, MissionManager) restent abonnés au bus PARTAGÉ tandis que
-            // SynchronizationManager garde ses écouteurs beforeUpdate/afterUpdate sur son moteur
-            // Matter. Ces fermetures maintiennent les deux environnements en vie : après N
-            // cycles arrêt/relance, chaque SET_THRUSTER_POWER est distribué aux contrôleurs des
-            // environnements morts en plus des vivants. Fuite ANTÉRIEURE à ce correctif, non
-            // résolue ici (elle demande un vrai cleanup() côté environnement) — cf. TODO.md.
+            // Les environnements sont LIBÉRÉS avant d'être déréférencés : leur cleanup() désabonne
+            // leurs sous-contrôleurs (RocketController, MissionManager) du bus PARTAGÉ et retire
+            // les écouteurs beforeUpdate/afterUpdate de leur moteur Matter. Sans cet appel, ces
+            // fermetures maintenaient les deux environnements en vie et, après N cycles
+            // arrêt/relance, chaque SET_THRUSTER_POWER était distribué aux contrôleurs des
+            // environnements morts en plus des vivants.
+            if (this.trainingEnv && typeof this.trainingEnv.cleanup === 'function') this.trainingEnv.cleanup();
+            if (this.evaluationEnv && typeof this.evaluationEnv.cleanup === 'function') this.evaluationEnv.cleanup();
             this.trainingEnv = null;
             this.evaluationEnv = null;
             return;

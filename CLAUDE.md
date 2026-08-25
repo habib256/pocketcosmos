@@ -116,12 +116,21 @@ are genuinely procedural — that is a different thing.)
 
 JSON files in `assets/worlds/` can define:
 - `physics.G`: Override for the gravitational constant (replaces `PHYSICS.G` from `constants.js`)
-- `bodies[]`: Celestial bodies with `hasRings`, `atmosphere { exists, height, color }`
-- `rocket.spawn`: Spawn location (hostName+angle OR position/velocity/angle)
-- `stations[]`: Stations anchored to bodies
-- `asteroidBelts[]`: Procedural asteroid fields
-- `starsConfig`: Background star generation
-- `narratives`: Story elements
+- `bodies[]`: Celestial bodies with `hasRings`, `atmosphere { exists, height, color }`.
+  ⚠️ **An atmosphere must now be declared explicitly.** `CelestialBodyModel` used to fall back on the
+  body's *name* (`name === 'Terre'`) when the preset said nothing — and no preset said anything. The
+  default is `false` since 2026‑08‑25, and `1_solar.json` declares the Earth's atmosphere with the
+  previously implicit values (`height: 0.1666` → 119.952, same colour). The other five worlds have
+  no atmosphere, as before.
+- `rocket.spawn`: Spawn location (hostName+angle OR position/velocity/angle). **Optional**: with no
+  `spawn`, `buildWorldFromData` still resets the rocket and lands it on the first celestial body.
+- `stations[]`: Stations anchored to bodies. An unknown `hostName` is kept in the model but is
+  neither drawn nor refuelling — it now logs a warning.
+- `asteroidBelts[]`: Procedural asteroid fields. `count: 0` is honoured (it used to fall back to the
+  default, 1500).
+- `starsConfig`: Background star generation. `count: 0` is honoured (it used to fall back to 800).
+- `narratives`: Story elements — ⚠️ parsed and stored in `universeModel.narratives`, but read by NO
+  view to this day (see CHANGELOG.md and TODO.md).
 - `missions[]`: Available missions
 
 ## Physics & Matter.js
@@ -129,6 +138,7 @@ JSON files in `assets/worlds/` can define:
 - **Engine**: Matter.js 0.19.0 with the matter-attractors plugin
 - **Gravity**: Applied by the matter-attractors plugin during `Engine.update`. `PHYSICS.G` (**0.001**, overridable per preset) is the SINGLE source of truth: at init and on each world load, the code copies `PHYSICS.G` into the plugin's `gravityConstant`, so **real gravity = visualization = AI**. See [PHYSICS.md §2](PHYSICS.md).
 - **Units pitfall**: the game passes `deltaTime` in **seconds** to `Engine.update`, while Matter assumes **milliseconds** (`_baseDelta = 1000/60`). Consequence: a body's `velocity` ≈ (units/second) × (1000/60). This is the root of most physics subtleties.
+- **Read the rocket's velocity through `Matter.Body.getVelocity` / `getAngularVelocity`.** Inside the `collisionStart` handler, `body.velocity` is not yet rescaled (the event fires before `Engine._bodiesUpdateVelocities`), so the raw field is ~1000× too small there and consistent nowhere else. The accessors return the rescaled value from any point of the cycle. See [PHYSICS.md §1.6](PHYSICS.md).
 - **Orbits are kinematic**: celestial bodies follow a prescribed `orbitSpeed` (not gravity), so a body's mass only affects the gravity felt by the rocket — never the bodies' own trajectories.
 - **Collision categories**: Defined in `PHYSICS.COLLISION_CATEGORIES`
 - **Thresholds**: Landing/crash/liftoff in `constants.js`
@@ -163,14 +173,25 @@ World-specific data (body masses, positions) should come from preset JSON files,
 7. Conditional: `vectorsView` (force vectors and/or gravity field arrows/equipotentials)
 8. `uiView.render()`: HUD and modal screens
 
-(When paused, only `uiView.render()` runs.)
+(The full scene is drawn **while paused too** — only the simulation stops; the pause veil is painted
+over the frozen image. The older behaviour, where pause skipped straight to `uiView.render()`, made
+the whole universe vanish behind the veil.)
 
 **Visual features**:
 - Day/night shadowing on planets oriented by central star
-- Atmospheric rendering with shadows
+- Atmospheric rendering with shadows — ⚠️ only bodies whose preset declares `atmosphere.exists`
 - Planetary rings rendered in two passes (back/front)
-- Particle effects for thrust and explosions
-- Gravity field visualization (arrows or equipotential lines)
+- Particle effects for thrust and explosions — thrust emitters follow the thruster's actual `power`,
+  not just `fuel > 0` (a refuel used to revive a ghost plume on a thruster at 0)
+- Force vectors (key `V`): thrust, velocity, `a=F/m`, mission start/target, and the resultant
+  gravitational attraction (label `g`, magenta) — the last one was documented but never drawn before
+  2026‑08‑25
+- Gravity field visualization (key `G`: arrows or equipotential lines). ⚠️ The **arrow** mode encodes
+  magnitude on a **log scale relative to the range actually present in the view**, not on absolute
+  thresholds: the old thresholds were 2–7 orders of magnitude below real accelerations, so 100 % of
+  arrows came out red and length-saturated at every zoom
+- Culling (`UniverseView.renderCelestialBodies`) tests the **painted** extent, not `body.radius`:
+  rings reach 2.1 R and an atmosphere reaches R + `height`
 
 ## AI System
 
@@ -185,7 +206,16 @@ The AI uses a **Double DQN** with TensorFlow.js (online net selects the next act
 
 **In-game AI = pure inference (NPC posture)**: `RocketAI` NEVER learns in-game — `step()` and the hardcoded `calculateReward()` were removed, so there is a SINGLE reward definition (in `HeadlessRocketEnvironment`). In-game, `makeDecision()` runs the trained network's greedy policy **if a model was loaded** (`_modelLoaded`), else falls back to the `maintainOrbit` heuristic. Learning happens ONLY in headless training via `TrainingOrchestrator`.
 
-**Reproducibility**: pass `config.seed` (or the UI "Seed" field) to make the initial angle (per episode), the epsilon exploration AND the replay minibatch sampling deterministic. The orchestrator sets the angle itself before every reset — `randomizeInitialAngle` must stay off for `navigate`, since it would re-overwrite that angle with an unseeded `Math.random()` inside `reset()`. Evaluation uses a **fixed angle set** derived from the seed, so scores compare across runs and models. `compareModels(a, b)` in `train.js` pits two zoo models on that fixed eval set.
+> ⚠️ **`maintainOrbit` must emit a command on EVERY branch.** `ROCKET_SET_THRUSTER_POWER` is
+> idempotent *and persistent*: a branch that emits nothing leaves the previous step's thruster
+> burning. Two such holes were closed on 2026‑08‑25 — the nominal-orbit sub-branch (main thruster
+> stayed at 1000 and destroyed the orbit it had just reached) and the **landed** case (the rocket is
+> re-pinned every frame by `SynchronizationManager`, so steering does nothing while a lateral
+> thruster stays lit: measured 3600 frames of `rotateLeft` for a strictly unchanged angle). The
+> heuristic now cuts all four thrusters (`noAction`) when `rocketData.isLanded` — `update()` feeds
+> `isLanded`/`landedOn` into the snapshot for that. No take-off sequence was added.
+
+**Reproducibility**: pass `config.seed` (or the UI "Seed" field) to make the initial angle (per episode), the epsilon exploration AND the replay minibatch sampling deterministic. ⚠️ It does **not** seed the network's initial weights nor `model.fit()`'s internal shuffle, so a seeded run is not bit-for-bit replayable today (see TODO.md). The orchestrator sets the angle itself before every reset — `randomizeInitialAngle` must stay off for `navigate`, since it would re-overwrite that angle with an unseeded `Math.random()` inside `reset()`. Evaluation uses a **fixed angle set** derived from the seed, so scores compare across runs and models. `compareModels(a, b)` in `train.js` pits two zoo models on that fixed eval set.
 
 **State vector** (`RocketAI.buildStateVector`, single source of truth): **12 dims, `STATE_VERSION 2`**. Scales live in `AI_TRAINING.STATE` (`constants.js`), NOT hardcoded. Dims 0-9 = rocket-vs-target (position delta, velocity, orientation sin/cos, angular vel, distance, radial velocity, heading alignment); dims **10-11 = target's own velocity** in u/s (0 only when the target is genuinely static). These are live on BOTH paths: in training via `missionConfig.movingTarget` (`intercept`), and in game via the mission target body's — or the reference body's — own velocity (`RocketAI.update`/`resolveMissionTarget`). They were structurally zero in game until 2026‑08‑25, which broke the training/inference parity the 12-dim vector exists for. Rocket velocity is stored in Matter scale and converted to u/s via the single point `PhysicsVectors.matterToGameVelocity` (see [PHYSICS.md §1.5](PHYSICS.md)). ⚠️ Changing `STATE_SIZE`/`STATE_VERSION` invalidates saved models — `AIModelStore` refuses incompatible ones at load.
 
@@ -233,6 +263,10 @@ The AI uses a **Double DQN** with TensorFlow.js (online net selects the next act
 > `SUCCESS_TIME_CREDIT` (`constants.js`) proportional to the steps NOT used — success is worth
 > ×1,17 the best loiter on `navigate`, ×4,1 on `orbit`. Any new per-step reward must stay below its
 > objective's time credit, or loitering becomes optimal again.
+> ⚠️ **The `navigate` branch actually paid `successReward` alone until 2026‑08‑25** — the credit was
+> computed and dropped, i.e. exactly the case this mechanism exists for. Measured terminal bonus:
+> 1000 before, **10 000** after (credit 9000), 10 750 with the `race` bonus on top. Episode-return
+> magnitudes on `navigate` therefore changed: reward comparisons with earlier runs are void.
 
 **Other reward configs** (`AI_TRAINING` in `constants.js`):
 - `SUCCESS_TIME_CREDIT`: per-objective credit granted for the steps remaining at success (see above)
@@ -248,10 +282,23 @@ terminal injected a ~2000 discontinuity into the TD targets once per episode.
 (`RocketAI.positionScaleForBody(radius)`, or |B−A| for `navigate`). With the old fixed 150 000,
 `orbit`/`land` positional features were pinned in `[0.005, 0.015]` while the angular ones were
 O(1) — a ~200× conditioning imbalance upstream of the first normalisation layer.
+**Dim 7 (distance to target) follows that same scale since 2026‑08‑25** (`STATE_SCALE_VERSION` 5): it
+was still divided by the fixed `AI_TRAINING.STATE.DISTANCE_SCALE`, i.e. 67.6× off scale on
+`orbit`/`land` and therefore near-constant over the whole flight domain. Measured amplitude ratio
+`max(dim0,dim1)/dim7`: 67.57× before, **1.00×** after. `DISTANCE_SCALE` is no longer read.
+**One rule for both paths**: `RocketAI.positionScaleForTask(objective, ctx)` is the single source —
+the criterion is the OBJECTIVE, never the mere presence of a mission target. Before, any mission
+(`1_solar` starts with "Terre → Lune" active) switched the game to 150 000 while training used 2220.
+Parity is now exact on `orbit` and `land` (0 of 12 dims diverging). ⚠️ It is **not** exact on
+`navigate`: `RocketAI._navigateTravelDistance` is assigned nowhere, so the game falls back to
+150 000 against 127 279 in training (17.85 % gap on dims 0/1/7). Latent today — `setObjective` is
+only called by `TrainingOrchestrator`, so in game `currentObjective` stays `'orbit'` and the
+`navigate` branch is unreachable. See TODO.md.
 ⚠️ `RocketAI.STATE_SCALE_VERSION` documents the convention but is currently read by NO code:
 `AIModelStore` validates `stateVersion`, `stateSize` and `actionCount` only. Bump it when the
 normalisation changes, but be aware a model saved under an older scale convention will still load —
-bump `AI_TRAINING.STATE.STATE_VERSION` too if you need the refusal.
+bump `AI_TRAINING.STATE.STATE_VERSION` too if you need the refusal. **That bump is still owed for
+the dim‑7 change** (`STATE_VERSION` is still 2; see TODO.md).
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
@@ -295,10 +342,15 @@ Here are the most important events flowing through the `EventBus`:
 | `system:canvasResized`       | Canvas resize                                          | `RenderingController`             | Camera/Controllers                   |
 | `particles:explosionCompleted`| Explosion animation finished                           | `ParticleController`              | `GameController`                     |
 
-> ⚠️ **Événements émis SANS aucun consommateur** (vérifié par balayage complet, 2026‑08‑24) :
-> `STATION_DOCKED` / `STATION_REFUELED` (ravitaillement totalement silencieux), `GAME_STATE_CHANGED`,
-> `GAME_OVER_STATE`, `UNIVERSE_RELOAD_COMPLETED`, `AI_CONTROL_CHANGED`, `AI_TRAINING_CHANGED`,
-> `AI_CONTROL_ACTION`, `INPUT_KEYMAP_CHANGED` / `KEYMAP_RESET`, `UI_ASSISTED_CONTROLS_STATE_CHANGED`.
+> ⚠️ **Événements émis SANS aucun consommateur** (re‑vérifié par balayage complet, 2026‑08‑25) :
+> `STATION_DOCKED` / `STATION_REFUELED` (ravitaillement toujours totalement silencieux côté joueur —
+> `REFUELED` n'est plus émis que si du carburant a réellement été ajouté, et porte `added`),
+> `GAME_STATE_CHANGED`, `GAME_OVER_STATE`, `AI_CONTROL_CHANGED` (⇒ la touche `I` n'a aucun retour
+> visuel), `AI_TRAINING_CHANGED`, `AI_CONTROL_ACTION`, `INPUT_KEYMAP_CHANGED` / `KEYMAP_RESET`.
+>
+> Deux entrées ont quitté cette liste : `UI_ASSISTED_CONTROLS_STATE_CHANGED` est désormais consommé
+> par `UIView` (témoin 🤓 de l'aide au pilotage, touche `H`) ; `UNIVERSE_RELOAD_COMPLETED` l'était
+> déjà par `main.js` (retrait du panneau de démarrage) — la liste se trompait sur ce point.
 >
 > ⚠️ **Handlers abonnés à des événements JAMAIS émis** (code mort) : `PHYSICS_TOGGLE_FORCES`,
 > `AI_TOGGLE_TRAINING` (⇒ l'entraînement en jeu ne peut pas être activé), `PARTICLES_CREATE_EXPLOSION`,
@@ -432,6 +484,13 @@ The game starts with a **startup screen** featuring:
 - **"Prêt !" button** on the right: starts the game with the selected world
 
 After selection, `UNIVERSE_LOAD_REQUESTED` is emitted with the chosen preset URL.
+
+**Fatal-error net**: `main.js`'s entry point installs the error overlay and the `error` /
+`unhandledrejection` listeners **before** running `initialiserApplication()`, and an inline
+capture-phase script placed before the CDN tags in `index.html` buffers early failures
+(`window.__erreursPrecoces`, capped at 20 entries) for replay. A missing CDN, an absent `Matter` or
+an unavailable EventBus now shows a message instead of a silent black page. Known gap: a missing
+canvas still fails silently (the guard returns without throwing).
 
 ## Future Development Roadmap
 

@@ -7,6 +7,396 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 
 ---
 
+## [Non publié] — Chasse aux bugs 8 — 2026‑08‑25
+
+> Huitième passe d'audit. Sauf mention contraire, chaque point ci‑dessous a été **mesuré avant/après
+> sur le banc headless Node** exécutant le vrai Matter.js (et le vrai TensorFlow.js pour l'IA) ; les
+> rares points établis par **lecture seule** sont signalés comme tels. Une passe de non‑régression
+> distincte a rejoué l'intégrité statique (43/43 `node --check`, 6/6 presets, scripts inline des deux
+> HTML), le boot complet des deux pages (41/41 et 28/28 scripts), une pile unique exerçant
+> simultanément toutes les zones patchées (0 exception) et un A/B contre `HEAD` sur quatre scénarios
+> d'entraînement (récompense, position, vitesse, santé **identiques bit pour bit**).
+>
+> ⚠️ Plusieurs correctifs sont **partiels** : leur seconde moitié touchait un fichier hors du lot de
+> leur auteur. Les points restants sont listés en fin de section et priorisés dans [TODO.md](TODO.md).
+
+### Majeur — la fusée glissait indéfiniment sur la surface (signalé par le propriétaire)
+
+`collisionsEnabled` n'était armé que dans le handler `collisionStart`, qui repartait par un `return`
+tant que les 2 000 ms de `PHYSICS.COLLISION_DELAY` n'étaient pas écoulées. Or **la partie démarre
+fusée posée** : l'unique `collisionStart` du contact sol tombe dans ce délai, et le contact restant
+ensuite continu, Matter n'émet plus que des `collisionActive`, qui n'armaient rien. Le drapeau
+restait donc `false` tant que la fusée n'avait pas décollé **puis** re‑percuté un corps.
+
+Mesuré (1_solar, 1 500 frames de contact avec la Terre, 2,2 s réelles écoulées) :
+`collisionsEnabled = false`, donc `canCrash = false`, donc **toute la détection de crash était
+désactivée**. Un contact au‑delà de `CRASH_ANGLE_DEG` n'était alors ni un atterrissage (angle hors
+tolérance) ni un crash ; comme `ROCKET.FRICTION` vaut 0, plus rien ne freinait la composante
+tangentielle. Balayage d'inclinaison à 50 (échelle Matter) de vitesse tangentielle, glissement
+cumulé à 10 / 20 / 30 / 40 s :
+
+| inclinaison | avant | après |
+|---|---|---|
+| 0° à 29° | posée, 21 à 65 u puis figée | posée, 6 à 35 u puis figée |
+| 31° | posée (hors tolérance), 52 u | **crash** (correct) |
+| 40° à 89° | jamais posée, jamais crashée — **27,9 / 54,2 / 78,8 / 101,7 u, sans fin** | **crash**, épave figée |
+
+`CollisionHandler.areCollisionsEnabled()` arme désormais le drapeau sur le seul **temps écoulé**,
+quel que soit le chemin qui l'interroge ; `collisionStart` et `canCrash` y délèguent.
+Non‑régression vérifiée : les 6 mondes démarrent toujours posés sans exploser au spawn, décollent,
+et le reset fusée restaure l'état initial.
+
+> Le second mécanisme suspecté — la latence d'épinglage due à l'anti‑rebond de 150 ms de
+> `checkRocketLandedStatusPeriodically` — a été **mesuré puis écarté** : rejoué à la cadence réelle
+> de 60 fps (1 vérification toutes les 9 frames), le glissement résiduel vaut 0,1 à 2,9 unités pour
+> une fusée haute de 60, soit un comportement d'atterrissage normal. Les valeurs bien plus grandes
+> observées d'abord étaient un artefact du banc, qui simule beaucoup plus vite que le temps réel sur
+> lequel cet anti‑rebond est indexé.
+
+### Mineur — la fuite d'abonnements de l'entraînement headless est refermée
+
+`HeadlessRocketEnvironment.cleanup()` appelait `unsubscribeAll()` sur `RocketController` et
+`MissionManager` derrière une garde `typeof … === 'function'` — **méthodes qui n'existaient pas** :
+le nettoyage était un no‑op silencieux. Les deux méthodes sont ajoutées, et l'abonnement
+`UNIVERSE_STATE_UPDATED` de `SynchronizationManager`, jusque‑là seulement confié au
+`controllerContainer` global (purgé au seul teardown de l'application), est désormais aussi
+désabonné par instance dans `cleanup()`.
+
+Mesuré sur 5 cycles création/nettoyage d'environnement : **14 → 1 → 2 → 3 → 4 → 5** écouteurs
+résiduels avant les deux `unsubscribeAll`, **14 → 0** à chaque cycle après le correctif complet.
+
+### Mineur — `deltaTime` transmis à `InputController.update()`
+
+Les trois appels de `GameController` (états `GAME_OVER`, `PAUSED`, et la boucle `update`) omettaient
+l'argument, laissant jouer la valeur par défaut `1/60`. Sans conséquence à 60 fps nominal, mais le
+zoom analogique de la manette, désormais intégré en unités par **seconde**, doit recevoir le pas de
+temps réel. Complète le correctif `zoom-manette-facteur-par-frame`.
+
+### Majeur — la vitesse lue pendant `collisionStart` était 1000× trop petite
+
+`CollisionHandler` lisait `rocketBody.velocity` / `rocketBody.angularVelocity` bruts. Or
+`collisionStart` est déclenché par `Engine.update` **avant** `Engine._bodiesUpdateVelocities` : à cet
+instant ces champs contiennent encore le déplacement brut du pas, soit ~1000× moins que l'échelle
+Matter puisque le jeu passe `deltaTime` en **secondes**. La soustraction
+`vitesse fusée − getCelestialBodyVelocity(corps)` mélangeait donc deux échelles. Trois symptômes
+distincts, tous mesurés :
+
+- **Verdict d'impact non monotone.** Chute libre sur la Terre : 200 u/s → CRASH, 400 → POSÉE,
+  700 → POSÉE, 1000 → CRASH. Le chemin de dégâts partiels n'était jamais atteint (aucun appel à
+  `applyDamage` sur toute la plage). *Après* : monotone de 15 u/s (posée, hp 100) à 1500 u/s (crash,
+  1512 de dégâts), dégâts partiels atteignables.
+- **Atterrissage impossible sur un corps orbitant vite.** La « vitesse relative » valait en pratique
+  la vitesse **absolue** du corps porteur. Contact strictement co‑mobile, ω = 0, orientation
+  perpendiculaire : Deimos et Phobos → CRASH systématique. *Après* : POSÉE hp 100 sur Terre, Lune,
+  Io, Deimos et Phobos ; une approche non co‑mobile à 400 u/s relatifs sur Phobos crashe toujours.
+- **Invulnérabilité totale sous poussée.** Chute de 400 px, impact ~900 u/s : à 11 %, 30 % et 100 %
+  de poussée principale, *aucun* événement — ni crash ni atterrissage, hp 100. *Après* : CRASH hp 0
+  dans les quatre cas testés (0 % compris).
+
+Correctif : lecture via les accesseurs Matter `Body.getVelocity` / `Body.getAngularVelocity`
+(présents en 0.19.0, vérifiés dans le bundle CDN), qui renvoient la valeur remise à l'échelle et
+donnent le même résultat depuis n'importe quel point du cycle. `getCelestialBodyVelocity` et les
+constantes de seuil sont inchangées. Fichier : `controllers/CollisionHandler.js`.
+
+**Effet de bord assumé et mesuré** : la branche « collision normale » (dégâts partiels) devient
+active pour la première fois. Vol rasant à 1 px de la surface pendant 240 frames — 20 u/s tangentiels
+sans poussée : posée sans dégâts ; avec 50 % de poussée : 40,7 de dégâts ; à 120 u/s + 50 % :
+destruction (121,6). Les dégâts valent exactement la vitesse relative en u/s
+(`IMPACT_DAMAGE_FACTOR = 1.0`). Un décollage normal ne prend **aucun** dégât (altitude 4130 puis
+20 448, hp 100). `COLLISION_THRESHOLD` laissé à 2,5 : aucune mesure ne justifiait de le relever.
+Voir [PHYSICS.md §1.6](PHYSICS.md).
+
+### Majeur — la grâce de décollage s'armait en vol libre
+
+`SynchronizationManager.handleLandedOrAttachedRocket` appelait `startLiftoffGracePeriod(500)` dès que
+la poussée principale dépassait le seuil, **même sur une fusée qui n'avait jamais touché le sol** :
+la grâce, qui fait renvoyer `false` à `isRocketLanded`, se réarmait à chaque frame et neutralisait
+crash comme atterrissage tant que le joueur poussait. L'appel est désormais encadré par
+`isLanded || isInLiftoffGracePeriod()`. *Mesuré* : 600 frames en grâce sur 600 avant, 0 sur 27 après ;
+le décollage réel arme toujours la grâce (60 frames sur 60). Conséquence utile : un poser doux avec
+coupure des gaz tardive fonctionne enfin. Fichier : `controllers/SynchronizationManager.js`.
+
+### Physique — options mortes retirées de la fabrique de corps
+
+`BodyFactory.createCelestialBody` passait `restitution: PHYSICS.RESTITUTION` et `friction: 0.05` à
+`Bodies.circle`, valeurs que `Matter.Body.setStatic` (déclenché par `isStatic: true`) écrase
+systématiquement et ne restaure jamais. Mesuré avant comme après : `Terre rest=0 fric=1`. Les deux
+options sont remplacées par un commentaire expliquant que le contact est entièrement réglé par la
+fusée (`max` des restitutions, `min` des frictions) et que **`PHYSICS.RESTITUTION` est inerte**.
+Changement neutre par construction ; fumée multi‑mondes (300 frames sur `2_kerbol` et `5_Endor`) sans
+exception. La variante « réappliquer la restitution après construction » a été écartée : c'est un
+vrai changement de physique, jamais testé ici. Fichier : `controllers/BodyFactory.js`.
+
+### Chargement des mondes
+
+- **Preset sans `rocket.spawn` : l'état de la fusée n'était pas réinitialisé.** Le `reset()` était
+  enfermé dans le garde `if (data.rocket.spawn)`. Une épave de crash survivait donc au changement de
+  monde (retour immédiat en `CRASH_ANIMATION`, sans explosion ni écran de fin) et les propulseurs
+  restaient allumés. `reset()` est désormais inconditionnel, une branche `else` pose la fusée sur le
+  premier corps céleste (repli factorisé dans `_poserFuseeEnRepli`) et `isDestroyed = false` clôt le
+  bloc. *Mesuré* : après `resetWorld` sans spawn, `PLAYING`, non détruite, santé 100, posée sur le
+  Soleil, poussée 0 (avant : `CRASH_ANIMATION`, détruite, santé 0, poussée 1000, position de l'ancien
+  monde). Les 6 mondes livrés se rechargent tous sur le bon corps.
+- **`count: 0` donnait la valeur par défaut.** `_lireNombrePositif` rejetant 0, un ciel sans étoiles
+  demandait 800 étoiles et une ceinture neutralisée en produisait 1500, avec en prime deux
+  avertissements « invalide ». Nouvelle statique `_lireCompte` (0 accepté, NaN/Infinity/chaîne/négatif
+  toujours rejetés), utilisée par les deux seuls sites de `count` avec `Math.max(0, …)`. *Mesuré* :
+  `count:0` → 0 étoile / 0 astéroïde, aucun log ; `"abc"` et `-5` retombent toujours sur 800 / 1500
+  avec avertissement ; les 6 mondes livrés gardent exactement leurs comptes d'avant.
+- **`hostName` de station introuvable, en silence.** Une station dont l'hôte n'existe pas est ajoutée
+  au modèle mais écartée par un `continue` muet au rendu et jamais trouvée par le ravitaillement.
+  Avertissement ajouté, aligné sur ceux de `parentName` et `centerName` ; la station reste ajoutée.
+  Aucune des stations des 6 mondes livrés ne le déclenche.
+- **Atmosphère : le repli sur le nom « Terre » a disparu.** `CelestialBodyModel` accordait une
+  atmosphère à tout corps nommé `Terre` quand le preset ne déclarait rien — et **aucun** des 6 presets
+  ne déclarait la clé. Le défaut est désormais explicitement `false`, et `1_solar.json` déclare
+  l'atmosphère de la Terre avec la valeur implicite antérieure
+  (`height: 0.1666` → 119,952, couleur inchangée). *Mesuré* : hauteur identique bit pour bit avant et
+  après ; renommer la Terre en « Earth » ne fait plus perdre l'atmosphère, et un corps nommé « Terre »
+  sans clé n'en hérite plus. Les 5 autres mondes restent sans atmosphère (décision artistique laissée
+  ouverte). Fichiers : `models/CelestialBodyModel.js`, `assets/worlds/1_solar.json`.
+
+### Démarrage & diagnostic
+
+- **Le gestionnaire d'erreurs de `main.js` était installé trop tard** : une panne pendant
+  l'initialisation (CDN manquant, `Matter` absent, EventBus indisponible) laissait une page noire
+  muette. `init()` pose désormais le filet — overlay + écouteurs `error` / `unhandledrejection` —
+  **avant** `initialiserApplication()`, et un script inline en phase de **capture**, placé avant les
+  balises CDN d'`index.html`, bufferise les erreurs précoces (plafond 20 entrées) pour rejeu.
+  *Mesuré* (pannes réelles par suppression des globaux) : `errorPose:false, overlay:"(vide)"` avant,
+  `errorPose:true, overlay:"flex"` avec message explicite après, dans les trois cas ; en démarrage
+  nominal l'écouteur `error` passe de l'index 16 (après le panneau) à l'index 1. **Réserve** : le cas
+  « canvas absent » reste silencieux (garde propre qui fait `return` sans lever).
+  Fichiers : `main.js`, `index.html`.
+- **Tableau d'aide : flèches latérales inversées.** `← / A` et `→ / D` étaient appariés à l'envers
+  des libellés « Propulsion Latérale Gauche/Droite ». Corrigé d'après l'appariement réellement mesuré
+  au banc (vrais `keydown` : `ArrowLeft`→`rotateRight`, `KeyA`→`rotateLeft`). `DEFAULT_KEY_MAP` et
+  `README.md`, déjà cohérents entre eux, non touchés. Fichier : `main.js`.
+
+### Rendu
+
+- **Le vecteur de gravité n'était jamais dessiné.** `VectorsView` documentait « poussée, vitesse,
+  accélération, gravité » mais aucune branche ne traçait le vecteur `g` ; `RENDER.GRAVITY_SCALE_FACTOR`
+  et `GRAVITY_MAX_LENGTH` étaient morts. Branche ajoutée (magenta, étiquette `g`) et
+  `showGravityVector: true` passé par `RenderingController`. *Mesuré* : étiquettes tracées sous la
+  touche V = `[Poussée, V, a=F/m, g, Orig, Dest, main]` (le `g` était absent avant), 0 exception sur
+  600 frames. Fichiers : `views/VectorsView.js`, `controllers/RenderingController.js`.
+- **Le champ de gravité (touche G, mode flèches) était saturé à 100 %.** Les seuils absolus
+  (5e‑5 … 3e‑3) et le facteur d'échelle 2000 étaient 2 à 7 ordres de grandeur sous les accélérations
+  réelles : *toutes* les flèches sortaient rouges et à longueur maximale, à tous les zooms — la
+  visualisation ne montrait plus aucune variation. L'encodage (longueur **et** couleur) est désormais
+  **relatif à la plage réellement présente dans la vue**, en échelle logarithmique. Chaînes rgba et
+  alphas conservés à l'identique. *Mesuré* sur 1_solar, 6400 flèches : avant, 100 % rouge, 100 % de
+  longueurs saturées, **une** seule couleur distincte à tous les zooms ; après, 0,0–2,0 % de rouge
+  fort, 1 flèche saturée (la maille au maximum de la plage) et 298 à 499 couleurs distinctes selon le
+  zoom. Fichier : `views/VectorsView.js`.
+- **Le culling ignorait anneaux et atmosphère** : le test de visibilité portait sur `body.radius`
+  seul, alors que les anneaux vont jusqu'à 2,1 R et l'atmosphère jusqu'à R + `height`. Le bord
+  extérieur d'un anneau surgissait d'un coup. *Mesuré* sur Saturne balayée sur 21 positions : 9
+  positions où l'anneau atteignait l'écran alors que le corps était cullé avant, **0** après ; un
+  corps à 100 000 px hors écran reste cullé. Fichier : `views/UniverseView.js`.
+
+### Entrées & caméra
+
+- **La molette ignorait l'amplitude de `deltaY`** : un cran par événement, quelle que soit la
+  distance parcourue. Le facteur est désormais proportionnel au défilement réel, avec conversion de
+  `deltaMode` (px / ligne ≈ 16 px / page = `innerHeight`), borne à 4 crans par événement et rejet des
+  `deltaY` non finis ou nuls. Calibrage : `|deltaY| = 100` redonne exactement le facteur historique
+  (1 + `ZOOM_SPEED` = 1,2). *Mesuré* : un trackpad (`deltaY = 1`) passe de 10 à **983** événements
+  pour traverser la plage de zoom, la molette à crans garde son comportement à l'identique (10
+  événements), et un geste aller‑retour revient au zoom initial à 1e‑12 près.
+  Fichier : `controllers/InputController.js`.
+- **Le zoom au stick appliquait un facteur « par cran » à chaque frame** : saturation en 7 frames et
+  dérive au repos. `CameraController.handleZoomCommand` intègre désormais un gain en unités/seconde
+  sur le temps réel (`zoom × exp(−value × taux × dt)`, `dt` clampé à [0 ; 0,05]) ; `InputController`
+  applique un seuil dédié de 0,25 avec remise à l'échelle et transmet `deltaTime` dans la charge
+  utile. *Mesuré* : saturation à 108 frames (~1,8 s), dérive de stick à 0,11 et 0,20 totalement
+  neutralisée sur 3000 frames, et à `deltaTime` fourni 1 s simulée donne le même zoom à 60 et 144 Hz
+  (écart 8e‑15). Boutons LT/RT et touches +/− inchangés.
+  ⚠️ **Moitié manquante** : `GameController` ne passe pas encore `deltaTime` à ses trois appels
+  `inputController.update()` — le repli 1/60 s'applique, donc l'indépendance au framerate n'est pas
+  effective en jeu (cf. TODO.md). Fichiers : `controllers/CameraController.js`,
+  `controllers/InputController.js`.
+
+### Interface, audio et particules
+
+- **Aucun retour visuel de l'aide au pilotage (touche H).** `UI_ASSISTED_CONTROLS_STATE_CHANGED`
+  était émis sans aucun abonné. `UIView` porte désormais `assistedControlsActive` (initialisé à
+  `true`, aligné sur `PhysicsController.assistedControls`), s'y abonne (désabonnement suivi par
+  `controllerContainer`, coercition booléenne contre les charges utiles dégradées) et dessine un
+  témoin 🤓 sous les jauges. *Mesuré* : 0 abonné avant, 1 après ; l'état de la vue suit celui de
+  `PhysicsController` à chaque appui, rendu sans exception dans les deux états.
+  ⚠️ La ligne « H » manque toujours au tableau d'aide de `main.js` (cf. TODO.md).
+  Fichier : `views/UIView.js`.
+- **La sourdine coupait définitivement la boucle des propulseurs.** `stopAllLoops` mettait en pause
+  sans mémoriser, et `setEnabled(true)` ne relançait rien : après un aller‑retour 🔇/🔊, la poussée
+  restait muette jusqu'au relâchement de la touche. `AudioManager` marque désormais les boucles
+  réellement en cours (`_pausedByMute`) et les relance à la réactivation ; `stop(key)` invalide le
+  marqueur pour qu'un relâchement pendant la sourdine ne fasse rien repartir. *Mesuré* (stub `Audio`
+  suivant `paused`) : après unmute, `paused = false` (avant : `true`) ; mute + relâche + unmute reste
+  bien `paused = true`. Fichier : `controllers/AudioManager.js`.
+- **Panache fantôme après ravitaillement.** `ParticleController.update` conditionnait l'émission au
+  seul `fuel > 0` : après une panne sèche touche maintenue, un plein (touche R, station) relançait un
+  panache alors que le propulseur est à 0. L'émission suit désormais la puissance réelle du
+  propulseur homonyme. *Mesuré* : 547 particules entretenues après refuel avant, **0** après ;
+  ré‑appui → 240 particules, latéraux/arrière intacts, chemin d'explosion inchangé (120 débris puis
+  purge et `particles:explosionCompleted`). Fichier : `controllers/ParticleController.js`.
+- **`STATION_REFUELED` émis même réservoir plein.** L'événement est désormais conditionné à un ajout
+  réel de carburant et porte la quantité (`added`) ; `DOCKED` reste inconditionnel. *Mesuré* sur des
+  atterrissages réels en chute libre : réservoir à 1000 → `DOCKED + REFUELED(+5000)`, réservoir déjà
+  plein → `DOCKED` seul (avant : `DOCKED + REFUELED`). ⚠️ Les deux événements n'ont **toujours aucun
+  consommateur** : le témoin HUD reste à écrire (cf. TODO.md).
+  Fichier : `controllers/GameController.js`.
+- **Méthode morte supprimée** : `GameController.toggleThrusterPositions()`, qui appelait une méthode
+  entièrement commentée de `RocketView`. Aucun appelant n'existait. Fichier :
+  `controllers/GameController.js`.
+
+### IA en jeu (inférence)
+
+- **`maintainOrbit` n'émettait aucune commande sur sa branche nominale.** `ROCKET_SET_THRUSTER_POWER`
+  étant idempotent et persistant, le propulseur du pas précédent (principal à 1000) restait allumé et
+  détruisait l'orbite qui venait d'être atteinte. `else { emitControl('noAction'); }` ajouté.
+  *Mesuré* sur 3600 frames en orbite circulaire réelle : 43 frames sans commande et 38 frames avec un
+  propulseur collé avant (56,3 u de carburant brûlées hors commande), **0** et **0** après.
+- **IA activée au sol : rotation infinie, jamais de décollage.** `handleLandedOrAttachedRocket`
+  réimpose position et angle chaque frame ; l'heuristique pilotait donc dans le vide, propulseur
+  latéral collé. `update()` expose maintenant `isLanded`/`landedOn` dans l'instantané, et
+  `maintainOrbit` coupe explicitement les quatre propulseurs et sort quand la fusée est posée.
+  *Mesuré* sur 3600 frames au sol : avant, `{rotateLeft: 3600}`, propulseur gauche à 20, 60 u de
+  carburant brûlées pour un angle strictement inchangé ; après, `{noAction: 3600}`, propulseurs à 0,
+  **0,00** de carburant consommé. Aucune séquence de décollage n'a été ajoutée : le comportement du
+  jeu à l'appui sur `I` est inchangé par ailleurs.
+- **Dim 7 (distance à la cible) ignorait l'échelle positionnelle.** Elle restait sur la constante fixe
+  `DISTANCE_SCALE = 150000` alors que les dims 0/1 suivent `positionScale` depuis la 7ᵉ passe : sur
+  `orbit`/`land` (échelle 2220) la distance était 67,6× hors échelle, donc quasi constante sur tout le
+  domaine de vol. `DISTANCE_SCALE = POSITION_SCALE`. *Mesuré* sur le chemin d'entraînement réel :
+  rapport d'amplitude `max(dim0,dim1)/dim7` = **1,00×** sur `orbiter` et `lander` (67,57× avant),
+  1,73× sur `race` (4,27× avant) ; le clamp à 10 sature toujours sans déclencher la validation d'état.
+  `STATE_SCALE_VERSION` passe de 4 à 5.
+- **Parité d'échelle jeu ↔ entraînement.** `buildState()` choisissait l'échelle sur la **présence
+  d'une cible de mission**, jamais sur l'objectif : la mission « Terre → Lune », active dès le
+  démarrage de `1_solar`, faisait basculer le jeu sur 150 000 quand l'entraînement `orbit`/`land`
+  utilise 2220. Nouvelle statique `RocketAI.positionScaleForTask(objective, ctx)`, source unique, dont
+  le critère est l'objectif. *Mesuré* : mêmes données géométriques avec et sans cible de mission →
+  rapport **1,0000** (67,57 avant) ; `getPositionScale(orbit)` = `positionScaleForTask(orbit)` = 2220.
+  Vérifié aussi en jeu réel (mission Terre→Lune, distance 2000 u) : état passé de
+  `[-0,0155 ; -0,0094 ; … ; 0,0182]` à `[-1,0504 ; -0,6381 ; … ; 1,2290]`, sans saturation sur 1800
+  frames. Sur `orbit` et `land`, la parité entraînement/jeu est **exacte** (0 dimension divergente
+  sur 12). ⚠️ Sur `navigate` elle ne l'est pas : `_navigateTravelDistance` n'est assigné nulle part,
+  le jeu retombe sur 150 000 contre 127 279 à l'entraînement (17,85 % d'écart sur les dims 0/1/7).
+  Latent aujourd'hui — `setObjective` n'est appelé que par l'orchestrateur, donc `currentObjective`
+  vaut toujours `'orbit'` en jeu. Cf. TODO.md. Fichier : `controllers/RocketAI.js`.
+
+### Entraînement IA
+
+- **`runId` hors de portée du `catch` de `startTraining`** (trois signalements indépendants du même
+  défaut) : déclaré **dans** le `try`, il levait une `ReferenceError` depuis le `catch`, laquelle
+  remplaçait l'erreur réelle, sautait `cleanupAfterError()` et laissait `isTraining` à `true` — plus
+  aucun démarrage possible jusqu'au rechargement de la page. Les deux lignes sont remontées avant le
+  `try`. *Mesuré* (panne injectée dans `initializeEnvironments`) : avant, promesse **rejetée**,
+  `TRAINING_ERROR = []`, `isTraining = true`, relance sans effet ; après, promesse résolue,
+  `TRAINING_ERROR` émis, `isTraining = false`, relance qui lance réellement la boucle
+  (`_runGeneration` 1 → 2). Le correctif complémentaire proposé côté `training-interface.html` s'est
+  révélé inutile et n'a pas été appliqué.
+- **Critique — le crédit temporel n'était jamais versé sur `navigate`.** Le `case 'navigate'` ajoutait
+  `successReward` seul, sans `successTimeCredit()` : c'est précisément le terme qui doit empêcher la
+  flânerie de battre la réussite. *Mesuré* (fusée posée sur B, pas 1000 sur 4000) : bonus terminal
+  1000 avant, **10 000** après (crédit 9000), et 10 750 en cumulant le bonus de course.
+  ⚠️ Cela change l'échelle des retours d'épisode `navigate` : les comparaisons de récompense avec les
+  runs antérieurs ne sont plus valides.
+- **Objectif `explore` : le bonus « nouveau corps » était inatteignable.** `checkExplorationSuccess()`
+  enregistrait le corps visité, or elle est appelée par la garde de `step()` et par `isDone()` **avant**
+  le calcul de récompense : le corps était toujours déjà connu au moment de payer.
+  `checkExplorationSuccess()` devient lecture seule et l'enregistrement se fait au versement du bonus,
+  désormais lu dans `AI_TRAINING.REWARDS.EXPLORATION_NEW_BODY` au lieu d'un 10 codé en dur. *Mesuré*
+  sur un épisode réel de 500 pas : 0 pas avec bonus et récompense max −0,01 avant ; 1 pas avec bonus
+  et 9,99 après, sans plus aucune mutation depuis `isDone()`.
+  ⚠️ **Régression mineure identifiée par la passe de non‑régression** : une politique qui décolle dès
+  le pas 0 ne crédite plus le corps de **départ** (la fusée n'est plus posée au moment de
+  l'enregistrement) et doit donc réussir deux atterrissages au lieu d'un. Non corrigée : le remède
+  évident (enregistrer dans `reset()`) reprivatiserait le bonus du corps de départ, c'est‑à‑dire
+  annulerait le correctif. Arbitrage laissé au propriétaire — cf. TODO.md.
+- **La pause corrompait l'évaluation** : `evaluateAgent` enchaînait ses 10 épisodes à 0 pas,
+  `evaluatedEpisodes` atteignait quand même 10 et neutralisait le garde d'évaluation interrompue — un
+  score bidon de 0 devenait `bestAverageReward` et déclenchait le clonage de `bestModelWeights`.
+  Garde `if (!this.isTraining || this.isPaused) break;` en tête de boucle. *Mesuré* : en pause, 0
+  reset, 0 `EVALUATION_COMPLETED`, `bestAverageReward = -Infinity`, aucun poids cloné ; hors pause,
+  l'évaluation de référence est inchangée (10 resets, score publié).
+- **Fuite d'abonnements des environnements d'entraînement (partiel).**
+  `HeadlessRocketEnvironment.cleanup()` est ajouté (désabonnement des sous‑contrôleurs + `cleanup()`
+  du `SynchronizationManager`) et appelé aux trois emplacements de `TrainingOrchestrator`
+  (`initializeEnvironments`, `cleanupAfterError`, `finalizeTraining`). ⚠️ **Aujourd'hui inerte** :
+  ses deux gardes `typeof … === 'function'` ne trouvent rien, `RocketController.unsubscribeAll` et
+  `MissionManager.unsubscribeAll` n'existant pas. A/B mesuré : accumulation d'abonnements strictement
+  **identique** à `HEAD` (2 → 4 → 6 → 8 sur 4 démarrages). Avec ces deux méthodes injectées pour
+  simuler le handoff, l'accumulation disparaît (2 et 2 stables, 0 après `cleanupAfterError`).
+  Fichiers : `controllers/HeadlessRocketEnvironment.js`, `controllers/TrainingOrchestrator.js`.
+- **Visualiseur — zoom inerte hors entraînement** : l'interpolation vers `targetZoom` vivait dans
+  `updateVisualization()`/`updateCamera()`, jamais appelées sans pas d'entraînement ; les boutons de
+  zoom ne faisaient donc rien à l'arrêt. Déplacée dans `render()`. Méthode morte
+  `maintainEarthCenteredView()` supprimée (aucun appelant). *Mesuré* : après 5 zoom‑in, échelle
+  réellement appliquée au contexte 0,0207 (bloquée à 0,0027 avant) ; convergence à 3e‑5 en 60 appels
+  de `render()` seuls.
+- **Visualiseur — trajectoires accumulées** : `maxTrajectoriesCount` 100 → 10, décimation à
+  l'archivage (≤ ~300 points par trace) et purge sur `AI.TRAINING_STARTED`. *Mesuré* sur 40 épisodes
+  de 2000 points archivés par le chemin réel : 79 962 `lineTo` par frame avant, **2850** après ; 0
+  trajectoire conservée après un nouveau run.
+- **`train.js` : diagnostics construits sur 10 dimensions.** `diagnosticComplet()` et
+  `testUpdateFrequency()` fabriquaient des tenseurs à 10 entrées pour un réseau à 12. Remplacé par
+  `RocketAI.STATE_SIZE`. *Mesuré* : le diagnostic va désormais jusqu'au bout (le test 5 n'apparaissait
+  jamais), l'erreur `expected shape [null,12] but got [2,10]` a disparu.
+- **`train.js` : échelle positionnelle des évaluations.** `evaluateModelNavigate()` n'ayant pas de
+  `positionScale`, `buildStateVector` retombait sur 150 000 au lieu de |B−A| ; `testEvaluationMode()`
+  de même. *Mesuré* : échelles réellement observées 127 279,22 et 2220 (défaut 150 000 avant).
+- **Interface : « Charger Modèle » sans effet sur l'entraînement.** Hors session, le chargement était
+  refusé en silence. L'interface mémorise désormais le nom et le transmet via `loadFrom` au prochain
+  démarrage (le chemin existait déjà côté orchestrateur). *Mesuré* de bout en bout : `loadFrom`
+  présent dans `orchestratorConfig` et `loadModel` réellement appelé avec le nom voulu (avant :
+  `loadFrom` absent, `AIModelStore.load` appelé 0 fois). Fichier : `training-interface.html`.
+- **Documentation seule** : le JSDoc de `RocketCargo.getTotalMass()` avertit désormais que la valeur
+  est purement informative — masse modèle et masse Matter n'en dépendent pas (aucun `Matter.Body.setMass`
+  / `setInertia` n'existe dans le dépôt). Aucune ligne exécutable touchée ; API et masses vérifiées
+  inchangées au banc (1500 / 1500). Fichier : `controllers/RocketCargo.js`.
+
+### Deux constats RÉFUTÉS par la mesure — ne pas les « recorriger »
+
+- **« Le throttle du champ de gravité ne réutilise jamais sa grille à cause du terme `bodiesHash` ».**
+  Faux sur les deux points. Le cache est massivement réutilisé dans le cas d'usage visé (caméra
+  immobile, vue large) : 88 réutilisations sur 120 frames à zoom 0,2 ; 115 sur 119 à zoom 0,05. Et la
+  cause invoquée est inversée : |Δ`bodiesHash`|/frame vaut 3,42 pour un quantum de 8 (la somme varie
+  **moins** que le quantum). Ce qui invalide le cache, c'est le déplacement réel d'**un** corps rapide
+  — Phobos parcourt 15,6 u/frame, soit ~2 quanta ; en retirant Phobos et Deimos, les recalculs à
+  zoom 1 tombent de 118/120 à 57/120. L'invalidation satisfait donc exactement son critère documenté
+  (demi‑cellule) ; le correctif proposé relâcherait ce critère d'un facteur 20 de façon arbitraire.
+  Seule nuance vraie : à zoom 1 dans `1_solar`, « le frein sert dès que la caméra est immobile » est
+  optimiste (2 à 26 réutilisations sur 120) — imprécision de commentaire, pas défaut de code.
+- **« Le bouton audio affiche 🔇 au lancement alors que les effets sonores sont actifs ».** Le
+  troisième écrivain du libellé avait été manqué : `setupAudioUnlock()` (`index.html`), posé sur
+  `load`, écrit `🔊` au tout premier geste utilisateur — obligatoirement le clic sur « Prêt ! », qui
+  n'appelle ni `stopPropagation` ni `preventDefault`. Avant ce geste le panneau d'options est
+  `display:none` et aucun son ne peut être déclenché : il n'y a aucune incohérence audible. Le
+  correctif proposé (coder `🔊` en dur) ferait au contraire mentir le bouton, la musique étant
+  réellement en pause au chargement.
+
+### Correctifs restés partiels (handoffs)
+
+Ces points exigeaient un fichier hors du lot de leur auteur et **n'ont pas été appliqués**. Ils sont
+priorisés dans [TODO.md](TODO.md) :
+
+- **Bloquants pour la moitié d'un bug** : `RocketController.unsubscribeAll` / `MissionManager.unsubscribeAll`
+  (sans elles `cleanup()` est un no‑op) ; `GameController` passant `deltaTime` à
+  `inputController.update()` ; assignation de `RocketAI._navigateTravelDistance`.
+- **`constants.js`** : `STATE_VERSION` 2 → 3 (sinon un modèle entraîné avant le changement d'échelle
+  de la dim 7 se charge toujours) et commentaire de `DISTANCE_SCALE` ; `RESTITUTION` désormais sans
+  aucun lecteur ; ajout facultatif de `WHEEL_NOTCH_DELTA` et `ZOOM_RATE_PER_SECOND` (les deux sites
+  utilisent un repli, le comportement corrigé est identique sans elles) ; annotation des constantes
+  `GRAVITY_*` (deux redevenues lues, deux toujours mortes).
+- **`views/UIView.js`** : consommateurs de `STATION.DOCKED`/`REFUELED` et de `AI.CONTROL_CHANGED`,
+  affichage du remplissage du cargo.
+- **`main.js`** : ligne « H » du tableau des contrôles.
+
+---
+
 ## [Non publié] — Réparation de la fusion IA + audit du code amont — 2026‑08‑25
 
 > Cette passe cible ce que la fusion `b2d2a17` (refonte IA amont + campagne de correctifs) avait

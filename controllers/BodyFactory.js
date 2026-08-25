@@ -104,8 +104,11 @@ class BodyFactory {
             //    mais ne sont pas attirés en retour par eux.
             isStatic: true,
             label: bodyModel.name, // Nom du corps pour identification facile (ex: 'Earth', 'Moon').
-            restitution: this.PHYSICS.RESTITUTION, // Coefficient de rebond global (affecte la fusée si elle collisionne).
-            friction: 0.05, // Faible friction (affecte la fusée si elle collisionne).
+            // Pas de `restitution`/`friction` ici : `Matter.Body.setStatic` (déclenché par
+            // `isStatic: true`) les écrase systématiquement (restitution → 0, friction → 1) et ne
+            // les restaure que si le corps redevient dynamique, ce qui n'arrive jamais. Le contact
+            // est donc entièrement réglé par la fusée (Matter prend le MAX des restitutions et le
+            // MIN des frictions, cf. createRocketBody). PHYSICS.RESTITUTION est INERTE.
 
             // --- Interactions : Filtres de Collision ---
             collisionFilter: {

@@ -52,12 +52,70 @@ const WORLD_PRESETS = [
 ];
 
 /**
+ * @type {(message: string) => void}
+ * Affiche un message dans l'overlay #errorOverlay d'index.html.
+ * No-op tant que `installerGestionnaireErreurs()` n'a pas trouvé les éléments du DOM.
+ */
+let afficherErreurFatale = () => {};
+
+/**
+ * Câble l'overlay d'erreur d'index.html sur les erreurs globales.
+ * DOIT être appelé tout au début de `init()` : posé en dernier (comme c'était le cas), il ne
+ * couvrait AUCUNE panne d'initialisation — une exception entre l'instanciation de l'EventBus et
+ * `showInstructions()` laissait une page entièrement noire, sans écran de démarrage ni message.
+ */
+function installerGestionnaireErreurs() {
+    const errorOverlay = document.getElementById('errorOverlay');
+    const errorMessageElement = document.getElementById('errorMessage');
+    const closeErrorButton = document.getElementById('closeError');
+
+    if (!errorOverlay || !errorMessageElement || !closeErrorButton) {
+        console.warn("Éléments de l'overlay d'erreur non trouvés. L'affichage des erreurs dans l'UI est désactivé.");
+        return;
+    }
+
+    afficherErreurFatale = function(message) {
+        errorMessageElement.textContent = message;
+        errorOverlay.style.display = 'flex';
+    };
+
+    window.addEventListener('error', function(event) {
+        let message = event.message;
+        if (event.filename) {
+            message += `\nFichier: ${event.filename.substring(event.filename.lastIndexOf('/') + 1)}`;
+        }
+        if (event.lineno) {
+            message += ` Ligne: ${event.lineno}`;
+        }
+        if (event.colno) {
+            message += ` Colonne: ${event.colno}`;
+        }
+        afficherErreurFatale(message);
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+        const raison = event.reason;
+        afficherErreurFatale('Promesse rejetée : ' + ((raison && raison.stack) || raison));
+    });
+
+    // Rejouer les erreurs capturées avant DOMContentLoaded (voir le <script> inline d'index.html).
+    if (Array.isArray(window.__erreursPrecoces) && window.__erreursPrecoces.length) {
+        afficherErreurFatale(window.__erreursPrecoces.join('\n'));
+        window.__erreursPrecoces.length = 0;
+    }
+
+    closeErrorButton.onclick = function() {
+        errorOverlay.style.display = 'none';
+    };
+}
+
+/**
  * Fonction principale d'initialisation de l'application.
  * Exécutée lorsque le DOM est entièrement chargé.
  * Crée le canvas, l'EventBus, initialise les contrôleurs, configure le GameController,
  * et affiche les instructions initiales.
  */
-function init() {
+function initialiserApplication() {
     // Initialisation du ControllerContainer global pour le suivi des abonnements EventBus
     // Cela doit être fait une seule fois, AVANT l'instanciation des contrôleurs qui l'utilisent.
     if (!window.controllerContainer) {
@@ -152,32 +210,23 @@ function init() {
     // showInstructions() ci-dessus, dont le bouton « Prêt ! » gère lui-même la fermeture,
     // le chargement du monde choisi et le recentrage caméra.
 
-    // Gestionnaire global d'erreurs pour l'interface utilisateur
-    const errorOverlay = document.getElementById('errorOverlay');
-    const errorMessageElement = document.getElementById('errorMessage');
-    const closeErrorButton = document.getElementById('closeError');
+}
 
-    if (errorOverlay && errorMessageElement && closeErrorButton) {
-        window.addEventListener('error', function(event) {
-            let message = event.message;
-            if (event.filename) {
-                message += `\nFichier: ${event.filename.substring(event.filename.lastIndexOf('/') + 1)}`;
-            }
-            if (event.lineno) {
-                message += ` Ligne: ${event.lineno}`;
-            }
-            if (event.colno) {
-                message += ` Colonne: ${event.colno}`;
-            }
-            errorMessageElement.textContent = message;
-            errorOverlay.style.display = 'flex';
-        });
-
-        closeErrorButton.onclick = function() {
-            errorOverlay.style.display = 'none';
-        };
-    } else {
-        console.warn("Éléments de l'overlay d'erreur non trouvés. L'affichage des erreurs dans l'UI est désactivé.");
+/**
+ * Point d'entrée réel : pose le filet de sécurité AVANT toute initialisation, puis initialise.
+ */
+function init() {
+    installerGestionnaireErreurs();
+    try {
+        initialiserApplication();
+    } catch (e) {
+        console.error("Échec fatal de l'initialisation :", e);
+        afficherErreurFatale(
+            "Échec de l'initialisation : " + ((e && e.stack) || e) +
+            "\n\nVérifiez votre connexion réseau (Matter.js, matter-attractors et TensorFlow.js sont " +
+            "chargés depuis un CDN) et que la page est servie par un serveur local " +
+            "(python -m http.server 8000), pas ouverte en file://."
+        );
     }
 }
 
@@ -261,8 +310,8 @@ function showInstructions() {
                     <tbody>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; width: 40%; text-align: center;"><b>↑ / W</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Principale</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>↓ / S</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Arrière</td></tr>
-                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>← / A</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Gauche</td></tr>
-                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>→ / D</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Droite</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>→ / A</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Gauche</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>← / D</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Droite</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>R</b></td><td style="border:1px solid #666; padding: 3px 6px;">Réinitialiser la Simulation</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>T</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher la Trajectoire</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>V</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher les Vecteurs</td></tr>

@@ -111,6 +111,36 @@ PhysicsVectors.matterToGameVelocity(v)  // = v / PHYSICS.MATTER_BASE_DELTA
 > Auparavant la constante `1000/60` était réécrite en dur à chaque site (RocketAI + 3 sites de
 > l'environnement headless) — source de bugs de parité entraînement/jeu. Centralisée le 2026‑07‑03.
 
+### 1.6 ⚠️ `collisionStart` : le SEUL moment où `body.velocity` n'est pas encore à l'échelle Matter
+
+`Engine.update` déclenche l'événement `collisionStart` **avant** `Engine._bodiesUpdateVelocities`.
+À cet instant, `body.velocity` contient encore le **déplacement brut du pas**, pas la valeur remise à
+l'échelle : puisque le jeu passe `deltaTime` en **secondes**, l'écart vaut exactement
+`_baseDelta / deltaTime` = `(1000/60) / (1/60)` = **1000**.
+
+**Convention du dépôt** : lire la vitesse de la fusée via
+
+```
+Matter.Body.getVelocity(body)          // = (position − positionPrev) × _baseDelta / body.deltaTime
+Matter.Body.getAngularVelocity(body)
+```
+
+(accesseurs présents en 0.19.0). Ils renvoient la valeur remise à l'échelle et donnent le **même
+résultat depuis n'importe quel point du cycle** : `collisionStart`, `collisionActive`, `afterUpdate`,
+vérification périodique. `CollisionHandler` les utilise depuis le 2026‑08‑25.
+
+`CollisionHandler.getCelestialBodyVelocity` reste, elle, la conversion **inverse** (modèle en u/s ×
+`MATTER_BASE_DELTA`, §1.3) : les deux membres de la soustraction « vitesse fusée − vitesse du corps »
+sont donc homogènes. Avant ce correctif ils ne l'étaient pas, et la « vitesse relative » valait en
+pratique la vitesse **absolue** du corps porteur — d'où trois symptômes mesurés : verdict d'impact
+non monotone en chute libre, atterrissage impossible sur Phobos/Deimos même strictement co‑mobile, et
+invulnérabilité totale tant que la poussée principale était maintenue. Voir
+[CHANGELOG.md](CHANGELOG.md) (2026‑08‑25).
+
+> Rappel d'échelle pour lire les seuils de §5 : `CRASH_SPEED_THRESHOLD` / `LANDING_MAX_SPEED` = 2500
+> en échelle Matter ≈ **150 u/s** ; `CRASH_ANGULAR_VELOCITY` / `LANDING_MAX_ANGULAR_VELOCITY` = 400
+> ≈ **24 rad/s**.
+
 ---
 
 ## 2. Gravité
@@ -241,7 +271,9 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 - chaque frame : `updateAbsolutePosition` recalcule la position depuis l'orbite courante du corps,
   `setPosition` force la fusée dessus, angle perpendiculaire forcé, vélocité = vélocité parent, ω=0.
 - **Garde décollage** : si `main > TAKEOFF_THRUST_THRESHOLD_PERCENT` (10 %), retourne **immédiatement**
-  (pas d'épinglage) et déclenche/rafraîchit la grâce → la fusée n'est jamais re‑collée pendant la poussée.
+  (pas d'épinglage) et rafraîchit la grâce **si et seulement si** la fusée est posée ou déjà en grâce
+  (§5.2) → la fusée n'est jamais re‑collée pendant la poussée, mais une fusée en vol libre ne devient
+  pas invulnérable pour autant.
 
 ---
 
@@ -252,8 +284,10 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 - **Délai de collision** : aucune collision pendant `COLLISION_DELAY = 2000 ms` après init.
 - **Grâce de décollage** : si `isInLiftoffGracePeriod()` → renvoie `false` (jamais posé).
 - **Proximité** : `|distance - rayon - HEIGHT/2| < 15 px`.
-- **Vitesse relative** au corps (via `getCelestialBodyVelocity`, à l'échelle Matter correcte — donc
-  réellement relative : co‑mobile sur une lune rapide ⇒ atterrissage doux, pas crash).
+- **Vitesse relative** au corps : `Body.getVelocity(rocketBody) − getCelestialBodyVelocity(corps)`,
+  les deux termes étant à l'échelle Matter (cf. **§1.6** — la lecture directe de `rocketBody.velocity`
+  est fausse depuis `collisionStart`). Réellement relative : co‑mobile sur une lune rapide ⇒
+  atterrissage doux, pas crash. `|ω|` est lue de même via `Body.getAngularVelocity`.
 - **CRASH** si proche & collisions actives & au moins un de :
   `vitesse ≥ CRASH_SPEED_THRESHOLD (2500)` · `|Δangle| > CRASH_ANGLE_DEG (30°)` ·
   `|ω| > CRASH_ANGULAR_VELOCITY (400)` → `isDestroyed=true`, dégâts fatals, enfoncement visuel.
@@ -267,10 +301,24 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 > (CRASH_ANGLE_DEG a été ramené 45°→30° le 2026‑06‑14 : la bande 30‑45° laissait la fusée glisser
 > sans coller ni crasher depuis l'adoucissement des dégâts d'impact P3.)
 
+> ⚠️ **La branche « collision normale » (dégâts partiels) n'était atteignable par AUCUN scénario
+> avant le 2026‑08‑25** : la vitesse d'impact lue depuis `collisionStart` étant ~1000× trop petite
+> (§1.6), elle restait sous `COLLISION_THRESHOLD` (2,5) dans tous les cas. Elle est désormais vivante
+> et les dégâts valent la vitesse relative réelle en u/s (`IMPACT_DAMAGE_FACTOR = 1.0`). Mesuré en
+> vol rasant (1 px de la surface, 240 frames) : 20 u/s tangentiels + 50 % de poussée → 40,7 de
+> dégâts ; 50 u/s + 50 % → 60,2 ; 120 u/s + 50 % → destruction. Un décollage normal ne prend
+> **aucun** dégât. `COLLISION_THRESHOLD` reste à 2,5 (aucune mesure ne justifiait de le relever),
+> mais l'équilibrage de cette branche n'a jamais été playtesté — cf. TODO.md (item P3).
+
 ### 5.2 Grâce de décollage (`RocketModel`)
 
 - `startLiftoffGracePeriod(500)` : pose `_liftoffGracePeriodEnd = Date.now() + 500`.
-- Rafraîchie **chaque frame** tant que `main > 10 %` (couvre tout le décollage + 500 ms après).
+- Rafraîchie **chaque frame** tant que `main > 10 %` **ET** que la fusée est posée ou déjà en grâce
+  (couvre tout le décollage + 500 ms après). ⚠️ Cette seconde condition a été ajoutée le
+  2026‑08‑25 : sans elle, `handleLandedOrAttachedRocket` armait la grâce sur une fusée **en vol
+  libre** qui n'avait jamais touché le sol, et comme `isRocketLanded` renvoie `false` pendant la
+  grâce, ni le crash ni l'atterrissage n'étaient détectés tant que le joueur poussait (mesuré :
+  600 frames en grâce sur 600, hp 100 pour un impact à ~900 u/s).
 - `isInLiftoffGracePeriod()` (lecture seule) ; `canSetLanded()` (renvoie false pendant la grâce, et
   toujours false si `isDestroyed`).
 
@@ -283,18 +331,22 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 | type | `rectangle(WIDTH=30, HEIGHT=60)`, dynamique | `circle(radius)`, `isStatic: true` |
 | `mass` | `ROCKET.MASS = 1500` | `bodyModel.mass` (du JSON) |
 | `inertia` | `MASS × 1.5` | — |
-| `friction` | `0` | `0.05` demandé → **forcé à `1` par `Body.setStatic`** |
+| `friction` | `0` | **non demandée** (valait `0.05`, forcée à `1` par `Body.setStatic`) → `1` |
 | `frictionAir` | `0.1` (effet réel ~1000× plus faible, cf. note) | — |
-| `restitution` | `0.05` | `PHYSICS.RESTITUTION = 0.2` demandé → **forcé à `0`** |
+| `restitution` | `0.05` | **non demandée** (valait `PHYSICS.RESTITUTION`, forcée à `0`) → `0` |
 | `sleepThreshold` | `-1` (jamais endormi) | — |
 | `collisionFilter` | cat `ROCKET (0x0001)`, masque `0xFFFFFFFF` | cat `CELESTIAL (0x0002)`, masque `ROCKET` |
 | `plugin.attractors` | `[Attractors.gravity]` | `[Attractors.gravity]` |
 
 > ⚠️ **Pièges de cette table**
 > - **`Body.setStatic(body, true)` écrase `restitution` (→ 0) et `friction` (→ 1)** après
->   `Body.create` ; seuls `mass`/`inertia` sont restaurés. `PHYSICS.RESTITUTION = 0.2` est donc un
->   réglage **mort** : le rebond effectif vient du `restitution: 0.05` de la fusée (`Pair.update`
->   prend `max(restitution)` et `min(friction)`).
+>   `Body.create` ; seuls `mass`/`inertia` sont restaurés. Le rebond effectif vient du
+>   `restitution: 0.05` de la fusée (`Pair.update` prend `max(restitution)` et `min(friction)`).
+>   `BodyFactory` a donc cessé le 2026‑08‑25 de passer ces deux options aux corps célestes : elles
+>   étaient écrasées à coup sûr (mesuré avant comme après : `Terre rest=0 fric=1`). Conséquence :
+>   **`PHYSICS.RESTITUTION` n'a plus aucun lecteur dans le dépôt** (cf. TODO.md). Réappliquer une
+>   restitution après construction serait un vrai changement de physique (`pair.restitution`
+>   0,05 → 0,2), jamais testé ici.
 > - **`angularDamping` n'existe pas dans Matter.js.** La ligne qui figurait ici (« assisté 2.0 /
 >   normal 0.0 ») décrivait une propriété fantôme, sans effet : les constantes
 >   `ASSISTED_ANGULAR_DAMPING` / `NORMAL_ANGULAR_DAMPING` ne sont lues par aucun moteur. Les
@@ -309,7 +361,8 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 ## 7. Référence des constantes (`constants.js`)
 
 **PHYSICS** : `G=0.001` (source unique : gravité réelle = viz = IA, copiée dans le plugin) · `MAX_SPEED=10000` · `COLLISION_DELAY=2000` ·
-`IMPACT_DAMAGE_FACTOR=1.0` (en u/s, cf. §5) · `RESTITUTION=0.2` · `CRASH_SPEED_THRESHOLD=2500` ·
+`IMPACT_DAMAGE_FACTOR=1.0` (en u/s, cf. §5) · `RESTITUTION=0.2` (**INERTE, plus aucun lecteur** —
+§6) · `CRASH_SPEED_THRESHOLD=2500` ·
 `LANDING_MAX_SPEED=2500` · `LANDING_MAX_ANGLE_DEG=30` · `LANDING_MAX_ANGULAR_VELOCITY=400` ·
 `CRASH_ANGLE_DEG=30` · `CRASH_ANGULAR_VELOCITY=400` · `TAKEOFF_THRUST_THRESHOLD_PERCENT=10` ·
 `THRUST_MULTIPLIER=100` · `COLLISION_CATEGORIES{ROCKET:0x0001, CELESTIAL:0x0002}` ·
@@ -329,6 +382,8 @@ Quand `isLanded` sur un corps en orbite, `handleLandedOrAttachedRocket` :
 ## 8. Pièges récapitulatifs
 
 1. **Ne jamais raisonner « body.velocity = déplacement par pas ».** C'est `× 1000/60` la vitesse u/s.
+   **Sauf depuis `collisionStart`**, où le champ n'est pas encore remis à l'échelle : y lire la
+   vitesse via `Body.getVelocity` / `Body.getAngularVelocity` (§1.6).
 2. **La gravité réelle = `PHYSICS.G` = 0,001** (copiée dans le plugin) ; le champ de gravité affiché est fidèle.
 3. **Masses des presets** : tuner pour `poussée/gravité > 1` (G=0,001).
 4. **Orbites cinématiques** : changer une masse ne change pas les orbites.

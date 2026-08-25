@@ -164,12 +164,17 @@ class ParticleController {
         }
         
         // Mettre à jour chaque émetteur de particules.
-        const noFuel = !!(this.rocketModel && this.rocketModel.fuel <= 0);
+        // On se cale sur la puissance RÉELLE du propulseur homonyme : `isActive` seul se
+        // désynchronise (panne sèche touche maintenue → puissances forcées à 0 sans que
+        // personne ne désactive l'émetteur ; le ravitaillement en station rallume alors un
+        // panache permanent sans aucune poussée). Couvre aussi la fusée détruite.
+        const thrusters = (this.rocketModel && this.rocketModel.thrusters) || null;
         for (const emitterName in this.particleSystemModel.emitters) {
             const emitter = this.particleSystemModel.emitters[emitterName];
-            
-            // Si l'émetteur est actif et qu'il reste du carburant, générer de nouvelles particules.
-            if (emitter.isActive && !noFuel) {
+            const thruster = thrusters ? thrusters[emitterName] : null;
+
+            // Si l'émetteur est actif et que son propulseur pousse, générer de nouvelles particules.
+            if (emitter.isActive && thruster && thruster.power > 0) {
                 this.emitParticles(emitter);
             }
             

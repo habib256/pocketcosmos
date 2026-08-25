@@ -372,7 +372,8 @@ class RenderingController {
                 showMissionStartVector: true,
                 showMissionTargetVector: true,
                 showThrustVector: true,
-                showTotalAccelerationVector: true
+                showTotalAccelerationVector: true,
+                showGravityVector: true
             });
         }
         // Afficher le champ de gravité selon le mode

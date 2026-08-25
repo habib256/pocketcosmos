@@ -162,30 +162,23 @@ class CameraController {
      * @param {object} data - L'objet contenant les données de l'événement.
      * @param {number} data.value - La valeur brute de l'entrée de zoom (ex: position de l'axe du joystick).
      *                            Une valeur négative est interprétée comme un zoom avant, positive comme un zoom arrière.
+     * @param {number} [data.deltaTime] - Le temps écoulé (en secondes) depuis la dernière frame.
      */
     handleZoomCommand(data) {
-        if (!this.cameraModel) return;
-        
+        if (!this.cameraModel || !data) return;
+
         const zoomValue = data.value; // Valeur brute de l'axe du joystick
-        const zoomSpeed = (RENDER.ZOOM_SPEED || 0.01); // Vitesse de zoom de base
-        let factor = 1.0;
+        if (typeof zoomValue !== 'number' || !isFinite(zoomValue) || zoomValue === 0) return;
 
-        // Comportement désiré :
-        // - Valeur d'entrée < 0 (ex: joystick vers le haut) : ZOOMER (facteur > 1).
-        // - Valeur d'entrée > 0 (ex: joystick vers le bas) : DÉZOOMER (facteur < 1).
-        // La méthode cameraModel.setZoom(this.cameraModel.zoom * factor) fonctionne ainsi :
-        // - facteur > 1 : Zoom IN (objets plus grands, zone vue plus petite)
-        // - facteur < 1 : Zoom OUT (objets plus petits, zone vue plus grande)
-
-        if (zoomValue < 0) { // Entrée pour ZOOMER
-            factor = 1 + Math.abs(zoomValue) * zoomSpeed * 1.5; // facteur > 1
-        } else if (zoomValue > 0) { // Entrée pour DÉZOOMER
-            factor = 1 / (1 + Math.abs(zoomValue) * zoomSpeed * 1.5); // facteur < 1
-        } else {
-            return; // Pas de changement si la valeur est nulle (zone morte gérée en amont par InputController)
-        }
-        
-        this.cameraModel.setZoom(this.cameraModel.zoom * factor);
+        // Le gain est exprimé en unités par SECONDE et intégré sur le temps réel. Auparavant le
+        // facteur « par cran de molette » (1 + |v| * ZOOM_SPEED * 1.5) était appliqué à CHAQUE
+        // frame : saturation en 7 frames à fond, et zoom 2,4× plus rapide à 144 Hz qu'à 60 Hz.
+        const dt = (typeof data.deltaTime === 'number' && isFinite(data.deltaTime))
+            ? Math.max(0, Math.min(0.05, data.deltaTime))
+            : 1 / 60;
+        const taux = (RENDER.ZOOM_RATE_PER_SECOND || 1.0); // Gain du zoom analogique en unités/seconde
+        // v < 0 (stick vers le haut) -> facteur > 1 -> ZOOM IN ; v > 0 -> facteur < 1 -> ZOOM OUT.
+        this.cameraModel.setZoom(this.cameraModel.zoom * Math.exp(-zoomValue * taux * dt));
     }
 
     /**

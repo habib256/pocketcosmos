@@ -124,6 +124,28 @@ class RocketController {
         console.log(`[RocketController] Abonné à ${subscriptionCount} événements`);
     }
 
+    /**
+     * Désabonne tous les écouteurs enregistrés par subscribeToEvents().
+     * Indispensable en entraînement headless : `HeadlessRocketEnvironment.cleanup()` appelle cette
+     * méthode entre deux épisodes. Sans elle, l'appel était un no-op silencieux (garde
+     * `typeof … === 'function'`) et les abonnements des environnements successifs s'empilaient sur
+     * le même EventBus — chaque commande de propulseur était alors traitée N fois.
+     */
+    unsubscribeAll() {
+        if (!Array.isArray(this._subscriptions)) {
+            this._subscriptions = [];
+            return;
+        }
+        for (const unsubscribe of this._subscriptions) {
+            try {
+                if (typeof unsubscribe === 'function') unsubscribe();
+            } catch (error) {
+                console.warn('[RocketController] Échec du désabonnement:', error);
+            }
+        }
+        this._subscriptions = [];
+    }
+
     handleThrustForwardStart() {
         if (!this.eventBus || !this.rocketModel) return;
         // Si la fusée est détruite (écran rouge crashé), utiliser le même bouton (boost)

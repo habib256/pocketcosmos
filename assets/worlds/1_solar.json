@@ -20,7 +20,8 @@
       "parentName": "Soleil",
       "orbitDistance": 22500,
       "initialOrbitAngle": 0.0,
-      "orbitSpeed": 0.0
+      "orbitSpeed": 0.0,
+      "atmosphere": { "exists": true, "height": 0.1666, "color": "rgba(25, 35, 80, 0.4)" }
     },
     {
       "name": "Lune",

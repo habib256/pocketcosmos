@@ -31,6 +31,31 @@ class CollisionHandler {
     }
 
     /**
+     * Les collisions sont-elles armées ? `COLLISION_DELAY` est un délai ÉCOULÉ, pas un événement :
+     * il doit donc s'armer de lui-même, quel que soit le chemin qui l'interroge.
+     *
+     * Le drapeau n'était auparavant posé que dans `collisionStart`, qui repartait par un `return`
+     * tant que le délai courait. Or la partie démarre fusée POSÉE sur son corps de spawn : l'unique
+     * `collisionStart` du contact sol tombe dans ce délai, et le contact restant ensuite continu,
+     * Matter n'émet plus que des `collisionActive`. `collisionsEnabled` restait donc false tant que
+     * la fusée n'avait pas décollé PUIS re-percuté un corps.
+     *
+     * Conséquence mesurée au banc (1_solar, 1500 frames de contact avec la Terre, 2,2 s réelles
+     * écoulées) : `collisionsEnabled` restait false, donc `canCrash` aussi, donc TOUTE la détection
+     * de crash était désactivée. Un contact à plus de `CRASH_ANGLE_DEG` de la normale n'était alors
+     * ni un atterrissage (angle hors tolérance) ni un crash, et comme `ROCKET.FRICTION` vaut 0 la
+     * fusée glissait indéfiniment sur la surface (101 unités en 40 s à 40° d'inclinaison).
+     *
+     * @returns {boolean}
+     */
+    areCollisionsEnabled() {
+        if (!this.collisionsEnabled && Date.now() - this.initTime >= this.PHYSICS.COLLISION_DELAY) {
+            this.collisionsEnabled = true;
+        }
+        return this.collisionsEnabled;
+    }
+
+    /**
      * Configure les écouteurs d'événements pour les collisions de Matter.js.
      * Gère 'collisionStart', 'collisionActive', et 'collisionEnd'.
      */
@@ -47,14 +72,10 @@ class CollisionHandler {
         // Événement déclenché au début d'une collision
         this.Events.on(this.engine, 'collisionStart', (event) => {
             // Vérifier si les collisions sont actives et si le délai d'initialisation est écoulé.
-            // CORRECTION: Activer les collisions AVANT de traiter la collision pour éviter les race conditions
-            if (!this.collisionsEnabled) {
-                if (Date.now() - this.initTime < this.PHYSICS.COLLISION_DELAY) {
-                    return; // Ignorer les collisions pendant le délai d'initialisation.
-                }
-                // Activer les collisions avant de traiter cette collision
-                this.collisionsEnabled = true;
-                // Continuer le traitement de cette collision maintenant que les collisions sont activées
+            // L'armement est délégué à areCollisionsEnabled() : il doit dépendre du seul temps
+            // écoulé, pas de l'arrivée d'un nouveau collisionStart (voir sa documentation).
+            if (!this.areCollisionsEnabled()) {
+                return; // Ignorer les collisions pendant le délai d'initialisation.
             }
 
             const pairs = event.pairs;
@@ -76,8 +97,14 @@ class CollisionHandler {
                     // On lit la vélocité réelle du corps (orbitale) via le modèle : les corps
                     // célestes étant `isStatic`, leur `body.velocity` ne reflète pas leur mouvement.
                     const otherVel = this.getCelestialBodyVelocity(otherBody);
-                    const relVelX = rocketBody.velocity.x - otherVel.x;
-                    const relVelY = rocketBody.velocity.y - otherVel.y;
+                    // `collisionStart` est déclenché AVANT `Engine._bodiesUpdateVelocities` (vérifié
+                    // dans Matter 0.19) : à cet instant `rocketBody.velocity` contient encore le
+                    // DÉPLACEMENT BRUT du pas, soit ~1000× moins que l'échelle Matter puisque le jeu
+                    // passe deltaTime en SECONDES. `Body.getVelocity` renvoie la valeur remise à
+                    // l'échelle et donne le MÊME résultat depuis n'importe quel point du cycle Matter.
+                    const rocketVel = this.Body.getVelocity(rocketBody);
+                    const relVelX = rocketVel.x - otherVel.x;
+                    const relVelY = rocketVel.y - otherVel.y;
                     const impactVelocity = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
                     // impactVelocity est en ÉCHELLE MATTER (rocketBody.velocity et getCelestialBodyVelocity
                     // le sont). Le gate et les dégâts doivent raisonner en unités/seconde (u/s), sinon une
@@ -355,10 +382,18 @@ class CollisionHandler {
         // Vitesse RELATIVE au corps céleste : un atterrissage ou un crash se juge par rapport à
         // la surface (qui peut être en orbite/mouvement), pas dans le référentiel absolu du monde.
         const bodyVelocity = this.getCelestialBodyVelocity(otherBody);
-        const relSpeedX = rocketBody.velocity.x - bodyVelocity.x;
-        const relSpeedY = rocketBody.velocity.y - bodyVelocity.y;
+        // Même lecture que dans le handler `collisionStart` : cette méthode est appelée AVANT le
+        // rescaling de Matter (depuis collisionStart) ET après (collisionActive, vérification
+        // périodique de SynchronizationManager). `Body.getVelocity`/`getAngularVelocity` donnent la
+        // même valeur dans les trois cas : un seul point de lecture, cohérent quel que soit le
+        // moment du cycle Matter. Sans cela, la vitesse "relative" valait de fait la vitesse
+        // ABSOLUE du corps porteur (× MATTER_BASE_DELTA), rendant tout contact fatal sur un corps
+        // orbitant vite (Phobos, Deimos). Voir PHYSICS.md §1.
+        const rocketVel = this.Body.getVelocity(rocketBody);
+        const relSpeedX = rocketVel.x - bodyVelocity.x;
+        const relSpeedY = rocketVel.y - bodyVelocity.y;
         const speed = Math.sqrt(relSpeedX * relSpeedX + relSpeedY * relSpeedY);
-        const angularVelocity = Math.abs(rocketBody.angularVelocity);
+        const angularVelocity = Math.abs(this.Body.getAngularVelocity(rocketBody));
 
         // Calcul de l'angle d'orientation de la fusée par rapport à la normale à la surface du corps céleste.
         const surfaceAngle = Math.atan2(dy, dx); // Angle du vecteur allant du centre du corps vers la fusée.
@@ -391,7 +426,7 @@ class CollisionHandler {
 
         // --- Logique de décision : CRASH ou ATTERRISSAGE --- 
         // Un crash ne peut se produire que si les collisions sont activées (après le délai initial).
-        const canCrash = this.collisionsEnabled;
+        const canCrash = this.areCollisionsEnabled();
 
         // 1. Vérifier les conditions de CRASH (si proche de la surface et collisions activées)
         if (isCloseToSurface && canCrash && !rocketModel.isDestroyed) {

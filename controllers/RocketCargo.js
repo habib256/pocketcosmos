@@ -109,8 +109,12 @@ class RocketCargo {
     }
 
     /**
-     * Calcule la masse totale de la cargaison
-     * @returns {number} - Masse totale en kg (1 unité = 10kg)
+     * Calcule la masse totale de la cargaison (1 unité = 10 kg).
+     * ⚠️ Valeur purement informative : la masse du modèle (RocketModel.mass) et celle du corps
+     * Matter (BodyFactory, `mass: ROCKET.MASS`) sont figées et NE dépendent PAS du cargo.
+     * Câbler cette masse dans la physique exigerait Matter.Body.setMass + Body.setInertia et
+     * modifierait l'équilibrage de la poussée : à décider côté conception, pas ici.
+     * @returns {number} - Masse totale en kg
      */
     getTotalMass() {
         return this.cargoItems.reduce((total, item) => total + (item.quantity * 10), 0);

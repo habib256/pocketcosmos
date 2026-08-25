@@ -51,10 +51,13 @@ class RocketAI {
     // v3 : recalibrage de la feature de vitesse angulaire (plage observable portée de ±50 à
     // ±CRASH_ANGULAR_VELOCITY). Tout modèle sauvegardé avec une version antérieure a été entraîné
     // sur une normalisation différente et est refusé au chargement.
-    // v4 : échelle positionnelle (features 0/1/7/8) devenue DÉPENDANTE DE LA TÂCHE via
+    // v4 : échelle positionnelle (features 0/1) devenue DÉPENDANTE DE LA TÂCHE via
     // `positionScale` (cf. buildStateVector / positionScaleForBody) — un modèle entraîné avec
     // l'échelle fixe de 150000 voit des entrées ~200× différentes sur orbit/land.
-    static get STATE_SCALE_VERSION() { return 4; }
+    // v5 : la feature 7 (distance à la cible) suit enfin cette même échelle ; elle était restée
+    // sur la constante fixe DISTANCE_SCALE, soit 67,6× hors échelle sur orbit/land. (La feature 8
+    // est une vitesse radiale, normalisée par VELOCITY_SCALE : elle n'est pas positionnelle.)
+    static get STATE_SCALE_VERSION() { return 5; }
 
     // Échelle positionnelle par défaut (objectifs longue distance type 'navigate' : la diagonale
     // A→B fait ~127k unités). Utilisée quand l'appelant ne fournit pas de `positionScale`.
@@ -75,6 +78,23 @@ class RocketAI {
             ? AI_TRAINING.ORBIT.MAX_ALTITUDE
             : 1500;
         return Math.max(1, r + maxAltitude);
+    }
+
+    /**
+     * Échelle positionnelle d'une TÂCHE. Source unique appelée par RocketAI.buildState() (jeu)
+     * ET destinée à TrainingOrchestrator.getPositionScale() (entraînement) : le critère est
+     * l'OBJECTIF, jamais la simple présence d'une cible de mission. Sans cela, le jeu choisissait
+     * 150000 dès qu'une mission désignait un corps, soit 67× l'échelle de l'entraînement orbit/land.
+     * @param {string} objective - 'navigate' | 'orbit' | 'land' | ...
+     * @param {{radius?: number, travelDistance?: number}} ctx
+     * @return {number} Échelle strictement positive.
+     */
+    static positionScaleForTask(objective, ctx = {}) {
+        if (objective === 'navigate') {
+            const d = ctx.travelDistance;
+            return (typeof d === 'number' && isFinite(d) && d > 0) ? d : RocketAI.DEFAULT_POSITION_SCALE;
+        }
+        return RocketAI.positionScaleForBody(ctx.radius);
     }
 
     constructor(eventBus) {
@@ -452,7 +472,11 @@ class RocketAI {
         const ANGULAR_VEL_LIMIT = (typeof PHYSICS !== 'undefined' && PHYSICS.CRASH_ANGULAR_VELOCITY)
             ? PHYSICS.CRASH_ANGULAR_VELOCITY
             : 400;
-        const DISTANCE_SCALE = S.DISTANCE_SCALE || 150000;
+        // La distance à la cible (dim 7) est une grandeur POSITIONNELLE : elle DOIT suivre la même
+        // échelle que dx/dy (dims 0/1). Avec l'échelle fixe de 150000 elle restait 67,6× hors
+        // échelle sur orbit/land (positionScale = 2220), c'est-à-dire quasi constante sur tout le
+        // domaine de vol. S.DISTANCE_SCALE n'est plus lue (repli déjà assuré par POSITION_SCALE).
+        const DISTANCE_SCALE = POSITION_SCALE;
         const TARGET_VEL_SCALE = S.TARGET_VEL_SCALE || 2500;
 
         // Sécurisation des entrées
@@ -535,12 +559,15 @@ class RocketAI {
         const targetY = (typeof this.rocketData.targetY === 'number')
             ? this.rocketData.targetY : this.celestialBodyData.y;
 
-        // Échelle positionnelle adaptée à la tâche (cf. STATE_SCALE_VERSION v4) : en jeu la
-        // référence est le corps céleste courant (orbite/atterrissage), sauf si une cible de
-        // navigation lointaine est explicitement fournie (rocketData.targetX/Y).
-        const positionScale = (typeof this.rocketData.targetX === 'number')
-            ? RocketAI.DEFAULT_POSITION_SCALE
-            : RocketAI.positionScaleForBody(this.celestialBodyData.radius);
+        // Échelle positionnelle adaptée à la TÂCHE (cf. STATE_SCALE_VERSION) : le critère est
+        // l'objectif courant, PAS la présence d'une cible de mission. Auparavant, la moindre
+        // mission (« Terre -> Lune », active dès le démarrage de 1_solar) faisait basculer
+        // l'échelle sur 150000 alors que l'entraînement orbit/land utilise positionScaleForBody
+        // (2220) : les mêmes données géométriques produisaient des entrées 67× plus petites.
+        const positionScale = RocketAI.positionScaleForTask(this.currentObjective, {
+            radius: this.celestialBodyData.radius,
+            travelDistance: this._navigateTravelDistance
+        });
 
         return RocketAI.buildStateVector({
             x: this.rocketData.x,
@@ -1069,7 +1096,16 @@ class RocketAI {
     // Logique pour maintenir une orbite stable
     maintainOrbit() {
         if (!this.rocketData || !this.celestialBodyData) return;
-        
+
+        // Fusée POSÉE : SynchronizationManager.handleLandedOrAttachedRocket réimpose position ET
+        // angle à chaque frame. Une commande de rotation n'a donc aucun effet mécanique et le
+        // propulseur latéral reste allumé en boucle (mesuré : 1 u/s de carburant, angle figé).
+        // On coupe explicitement les quatre propulseurs plutôt que de piloter dans le vide.
+        if (this.rocketData.isLanded) {
+            this.emitControl('noAction');
+            return;
+        }
+
         // Calculer la distance au corps céleste
         const dx = this.rocketData.x - this.celestialBodyData.x;
         const dy = this.rocketData.y - this.celestialBodyData.y;
@@ -1139,6 +1175,12 @@ class RocketAI {
                 if (tangentialSpeed < Math.sqrt(PHYSICS.G * this.celestialBodyData.mass / distance) * 0.9) {
                     // Vitesse orbitale trop faible, accélérer
                     this.emitControl('thrustForward');
+                } else {
+                    // Orbite nominale : COUPER explicitement les quatre propulseurs.
+                    // Sans ce `else`, aucune commande n'était émise ; SET_THRUSTER_POWER étant
+                    // idempotent/persistant, le propulseur du pas précédent (principal à fond)
+                    // restait allumé et détruisait l'orbite qui venait d'être atteinte.
+                    this.emitControl('noAction');
                 }
             }
         }
@@ -1206,7 +1248,11 @@ class RocketAI {
             vy: vel.y,                      // brut (échelle Matter), comme à l'entraînement
             angle: rm.angle,
             angularVelocity: rm.angularVelocity,
-            fuel: rm.fuel
+            fuel: rm.fuel,
+            // État posé : l'heuristique doit savoir qu'aucune commande n'aura d'effet mécanique
+            // (la fusée est épinglée au sol par SynchronizationManager).
+            isLanded: rm.isLanded,
+            landedOn: rm.landedOn
         };
 
         // Corps céleste de référence : le PLUS PROCHE de la fusée, comme la logique de proximité

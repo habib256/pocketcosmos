@@ -108,6 +108,25 @@
         }
     </style>
     
+    <!-- Filet de sécurité posé AVANT tout chargement de script : le DOM de #errorOverlay n'existe
+         pas encore ici, on bufferise ; main.js (installerGestionnaireErreurs) rejoue le buffer.
+         La phase de CAPTURE est indispensable : les erreurs de chargement de ressource
+         (balise script en 404 / CDN bloqué) ne bouillonnent pas jusqu'à window. -->
+    <script>
+        window.__erreursPrecoces = [];
+        window.addEventListener('error', function(event) {
+            // Plafond : cet écouteur reste posé pour toute la vie de la page ; une erreur
+            // répétée à chaque frame ferait autrement grossir le tampon sans fin.
+            if (window.__erreursPrecoces.length >= 20) return;
+            const cible = event.target;
+            if (cible && cible !== window && cible.tagName === 'SCRIPT') {
+                window.__erreursPrecoces.push('Échec de chargement du script : ' + (cible.src || '(inline)'));
+            } else if (event.message) {
+                window.__erreursPrecoces.push(event.message + (event.filename ? ' (' + event.filename + ':' + event.lineno + ')' : ''));
+            }
+        }, true);
+    </script>
+
     <!-- Bibliothèques externes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <!-- Plugin Matter Attractors (ignorer le warning de compatibilité, il fonctionne quand même) -->

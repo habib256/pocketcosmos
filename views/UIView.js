@@ -47,6 +47,9 @@ class UIView {
 
         // État interne de l'UI (certains pourraient être gérés via EventBus à terme)
         this.showMoonInfo = true;
+        // État de l'aide au pilotage (touche H). Valeur initiale alignée sur
+        // PhysicsController.assistedControls (controllers/PhysicsController.js:50).
+        this.assistedControlsActive = true;
         this.missionSuccessFadeTime = 0; // Timestamp de la dernière réussite de mission pour l'effet de fade
         this.missionSuccessDuration = 2500; // Durée de l'affichage "Mission Réussie" (ms)
 
@@ -168,6 +171,15 @@ class UIView {
                 this.eventBus.subscribe(EVENTS.UI.HIDE_GAME_OVER_SCREEN, () => {
                     this.uiState.showGameOverScreen = false;
                     console.log("[UIView] Cache: Écran Game Over");
+                })
+            );
+        }
+
+        // Aide au pilotage (touche H) : seul retour visuel de l'état des contrôles assistés.
+        if (EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(EVENTS.UI.ASSISTED_CONTROLS_STATE_CHANGED, (data) => {
+                    this.assistedControlsActive = !!(data && data.isActive);
                 })
             );
         }
@@ -351,6 +363,12 @@ class UIView {
              ctx.fillText(`a: --- m/s²`, labelX, accelerationY); // Indiquer si non disponible
         }
         */
+
+        // --- Aide au pilotage (touche H) ---
+        const assistY = 110;
+        ctx.fillStyle = this.assistedControlsActive ? this.colors.green : this.colors.barBackground;
+        ctx.fillText(`🤓`, labelX, assistY);
+        ctx.fillStyle = this.colors.white;
 
         ctx.restore();
     }
