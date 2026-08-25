@@ -8,6 +8,56 @@ Légende priorité : 🔴 haute · 🟠 moyenne · 🟢 basse.
 
 ---
 
+## Constats de la passe du 2026‑08‑25 (non corrigés — décision à prendre)
+
+### 🟠 Aucun pilote PNJ n'est réellement chargé au démarrage
+`assets/models/README.md` et `CLAUDE.md` décrivent la livraison de modèles pré‑entraînés, et
+`AIModelStore.load()` sait bien retomber sur `assets/models/<nom>/model.json`. Mais **aucun code
+côté jeu n'appelle `loadModel()`** : ni `main.js`, ni `GameSetupController`, ni `GameController`.
+`makeDecision()` reste donc sur l'heuristique `maintainOrbit` même une fois un modèle livré, et le
+dossier `assets/models/` ne contient encore que son README. Il manque le branchement — et une
+décision sur QUAND charger (au démarrage ? à l'apparition d'un PNJ ?) et sur le comportement en cas
+d'absence ou d'incompatibilité du modèle.
+
+### 🟠 Champ de gravité : 58 % du budget d'une frame en vol
+Mesuré sur banc : un recalcul complet de la grille coûte **9,6 ms** (grille 80×80 = 6400 points ×
+21 corps), soit ~58 % des 16,7 ms d'une frame à 60 fps. Le frein de 150 ms sert désormais dès que la
+caméra est lente ou immobile, mais à vitesse de croisière (~2500 u/s) la caméra franchit plus d'une
+cellule de grille par frame : le recalcul y reste **nécessaire pour rester exact** (179 recalculs
+sur 180 frames mesurés). Réduire le coût demande de baisser la densité de la grille (80×80 → 40×40
+diviserait le coût par 4), ce qui change l'aspect visuel — d'où l'arbitrage laissé au propriétaire.
+Le coût est opt‑in (touche G).
+
+### 🟢 Code mort laissé en place volontairement
+- `RocketAI.STATE_SCALE_VERSION`, `MODEL_STORAGE_KEY`, `MODEL_META_KEY` : plus aucun lecteur.
+  `STATE_SCALE_VERSION` documente encore la convention d'échelle — voir la mise en garde dans
+  CLAUDE.md (§ vecteur d'état) : un modèle sauvegardé sous une ancienne convention se charge malgré
+  tout, seuls `stateVersion`/`stateSize`/`actionCount` étant validés.
+- `RocketAI.autoSaveIfNeeded()` : aucun appelant ; sa condition porte sur `this.totalSteps`, qui
+  n'est plus incrémenté depuis le retrait de `step()`.
+- `RocketAI.epsilonDecayManagedExternally` : écrit par l'orchestrateur, lu par personne (sa garde
+  vivait dans le chemin de décroissance supprimé).
+- `HeadlessRocketEnvironment.calculateCrashMoonReward` / `calculateOrbitReward` /
+  `calculateExplorationReward` : inatteignables, `calculateObjectiveSpecificReward` neutralisant
+  délibérément ces objectifs (source unique de récompense par objectif). `calculateOrbitReward` est
+  le seul lecteur restant de `ORBIT.TARGET_ORBITAL_SPEED`/`ALTITUDE_TOLERANCE`/`SPEED_TOLERANCE` et
+  de `REWARDS.TOO_CLOSE_PENALTY`/`TOO_FAR_PENALTY`, désormais morts eux aussi.
+- `PhysicsVectors.calculateEarthAttractionVector` / `calculateLunarAttractionVector` : conservées,
+  mais plus appelées — leurs deux branches d'affichage dans `VectorsView` sont inatteignables.
+
+### 🟢 Diagnostics de `train.js` construits sur 10 dimensions
+`diagnosticComplet()` fabrique des tenseurs à 10 dimensions et appelle `model.predict` sur un réseau
+à 12 entrées : l'appel lève à chaque fois (l'exception est attrapée et affichée « ❌ Erreur lors du
+diagnostic »). `testUpdateFrequency()` empile des expériences à 10 dimensions que `RocketAI.train()`
+remplace silencieusement par des vecteurs nuls — son verdict est donc dénué de sens. Antérieur à la
+fusion (identique dans les deux parents).
+
+### 🟢 `_initialDistanceToTarget` et l'écriture `a - b || 0`
+`HeadlessRocketEnvironment` utilise `a - b || 0`, qui écrase un delta légitimement nul. Pour le rôle
+`intercept`, cette distance initiale est en outre calculée face à une cible **déjà déplacée**.
+
+---
+
 ## Entraînement IA — fondations PNJ/adversaires (2026‑07‑03)
 
 > But : entraîner des pilotes IA fiables **et réutilisables** comme futurs PNJ (course, trafic

@@ -147,6 +147,14 @@ class TrainingOrchestrator {
         }
 
         try {
+        // Identifiant de CE run. Les gardes de génération (cleanupAfterError, trainingLoop,
+        // runTrainingEpisode, evaluateAgent, finalizeTraining) le comparent à this._runGeneration
+        // pour ignorer les callbacks d'un run précédent quand on enchaîne Stop puis Start.
+        // Sans cette déclaration, les trois usages plus bas lèvent une ReferenceError (mode strict)
+        // et AUCUN entraînement ne peut démarrer.
+        this._runGeneration = (this._runGeneration || 0) + 1;
+        const runId = this._runGeneration;
+
         // Fusionner la configuration utilisateur avec la configuration par défaut
         this.config = { ...this.config, ...userConfig };
         
@@ -198,6 +206,13 @@ class TrainingOrchestrator {
         this.metrics.medianStepsToSuccess = null;
         this.metrics.episodeDurations = [];
         this.metrics.recentSuccesses = [];
+        // État de l'arrêt anticipé : à remettre à zéro AVEC les métriques. Il ne l'était pas, si
+        // bien qu'une étape de curriculum démarrait avec jusqu'à 10 scores d'évaluation de
+        // l'étape précédente — un autre objectif, sur une autre échelle de récompense — et un
+        // compteur de patience non nul, ce qui pouvait déclencher l'arrêt anticipé presque
+        // immédiatement.
+        this.trainingState.recentPerformance = [];
+        this.trainingState.earlyStoppingCounter = 0;
         this.isTraining = true;
             
             // Initialiser les environnements
@@ -248,19 +263,32 @@ class TrainingOrchestrator {
         const base = { ...userConfig };
         delete base.trainingRuns; // éviter la récursion infinie dans startTraining
 
+        // Remise à zéro AVANT la boucle : stopTraining() lève ce drapeau pour n'importe quel run,
+        // curriculum ou non. Un simple arrêt manuel d'un entraînement ordinaire faisait donc
+        // avorter le curriculum suivant dès la fin de sa première étape.
+        this._curriculumAborted = false;
+
         for (let i = 0; i < runs.length; i++) {
             const stage = runs[i] || {};
             this.eventBus.emit(window.EVENTS.AI.CURRICULUM_STAGE_STARTED, {
                 index: i, total: runs.length, stage
             });
 
+            // Une étape qui déclare explicitement un `objective` sans `role` ne doit PAS hériter
+            // du rôle global : _resolveRole a priorité sur `objectives`, si bien qu'une étape
+            // {objective:'orbit'} sous un role:'race' global entraînait 'navigate' en course.
+            const roleEtape = stage.role || (stage.objective ? null : (base.role || null));
+
             const stageConfig = {
                 ...base,
-                role: stage.role || base.role || null,
+                role: roleEtape,
                 objectives: stage.objective ? [stage.objective] : base.objectives,
                 maxEpisodes: stage.episodes || base.maxEpisodes,
                 loadFrom: stage.loadFrom || null,
-                modelName: stage.saveAs || null, // null → défaut dérivé du rôle/objectif
+                // Défaut '<rôle|objectif>-v<n>' comme documenté ci-dessus. L'ancien `null`
+                // retombait sur '<rôle|objectif>-default' dans startTraining : deux étapes
+                // successives sur le même rôle s'écrasaient silencieusement dans le zoo.
+                modelName: stage.saveAs || ((roleEtape || stage.objective || 'run') + '-v' + (i + 1)),
                 seed: (stage.seed !== undefined) ? stage.seed : base.seed
             };
 
@@ -372,7 +400,7 @@ class TrainingOrchestrator {
             // demande à HeadlessRocketEnvironment.reset() d'en tirer un NOUVEAU à chaque épisode
             // (entraînement ET évaluation, evaluationConfig étant une copie de trainingConfig).
             // La valeur ci-dessous ne sert donc que d'angle du tout premier reset.
-            const rocketInitialAngle = Math.random() * Math.PI * 2;
+            const rocketInitialAngle = (this.rng ? this.rng() : Math.random()) * Math.PI * 2;
 
             // Budget de steps réduit ~5× (vol plus court A→B). Distance ~127k unités, croisière
             // cible ~2500 u/s → ~51s → ~3000 steps de croisière + freinage ⇒ 4000 steps (66s @ 1/60s).
@@ -387,7 +415,14 @@ class TrainingOrchestrator {
             trainingConfig = {
                 maxStepsPerEpisode: navigateMaxSteps,
                 infiniteFuel: true,
-                randomizeInitialAngle: true,
+                // PAS de randomizeInitialAngle ici : l'orchestrateur pose lui-même l'angle avant
+                // CHAQUE reset — _applyInitialAngle(env, this.rng) pour l'entraînement (seedé,
+                // donc reproductible) et _applyFixedEvalAngle(env, i) pour l'évaluation (jeu de
+                // 10 angles fixes, ce qui rend les scores comparables entre évaluations, entre
+                // runs et entre modèles : c'est la prémisse de compareModels). Laisser le drapeau
+                // actif faisait ré-écraser cet angle par un Math.random() non seedé dans reset(),
+                // ce qui annulait à la fois la reproductibilité et le jeu d'éval fixe.
+                rng: this.rng,
                 rocketInitialState: {
                     position: { ...pointA },
                     velocity: { x: 0, y: 0 },
@@ -572,7 +607,14 @@ class TrainingOrchestrator {
         this.rocketAI.config.gamma = this.config.gamma;
         this.rocketAI.config.batchSize = this.config.batchSize;
         this.rocketAI.config.replayBufferSize = this.config.replayBufferSize;
-        
+        // runTrainingEpisode() lit this.rocketAI.config.updateFrequency, pas this.config : sans
+        // cette recopie, le champ « Fréquence de mise à jour » de l'interface reste sans effet
+        // (l'agent conserve son défaut de 4).
+        if (typeof this.config.updateFrequency === 'number' && this.config.updateFrequency >= 1) {
+            this.rocketAI.config.updateFrequency = Math.floor(this.config.updateFrequency);
+        }
+
+
         // Objectif et nom de modèle (zoo) : utilisés par saveModel() pour les métadonnées
         this.rocketAI.setObjective(this.trainingState.currentObjective);
         this.rocketAI.modelName = this.config.modelName;
@@ -1066,6 +1108,11 @@ class TrainingOrchestrator {
         const numEvaluationEpisodes = 10;
         let totalScore = 0;
         let successCount = 0;
+        // Nombre d'épisodes d'éval RÉELLEMENT terminés : sert à détecter une évaluation
+        // interrompue (stop/pause) plus bas. Sans cette déclaration, l'incrément lève une
+        // ReferenceError avalée par les catch silencieux : l'évaluation n'aboutit jamais
+        // (bestAverageReward reste -Infinity, aucun meilleur modèle n'est mémorisé).
+        let evaluatedEpisodes = 0;
         const stepsToSuccess = []; // steps des épisodes d'éval réussis (pour la médiane)
         
         // Sauvegarder l'état d'entraînement
@@ -1078,7 +1125,13 @@ class TrainingOrchestrator {
                 if (!this.rocketAI || this.rocketAI.isDisposed) {
                     break;
                 }
-                
+
+                // Un nouveau run a démarré entre-temps : cette évaluation appartient au run
+                // précédent, ses scores ne doivent pas polluer les métriques du run courant.
+                if (this._runGeneration !== runId) {
+                    break;
+                }
+
                 // Jeu d'angles FIXE pour l'éval (navigate) : mêmes conditions initiales à chaque
                 // évaluation et entre modèles → scores comparables (cf. compareModels).
                 this._applyFixedEvalAngle(this.evaluationEnv, i);
@@ -1391,10 +1444,32 @@ class TrainingOrchestrator {
             });
             if (saved) {
                 this.metrics.lastCheckpointTime = Date.now();
+            } else {
+                this._signalerEchecSauvegarde(this.config.modelName, 'saveModel a renvoyé false');
             }
         } catch (error) {
-            // Ignorer silencieusement
+            // NE PAS ignorer : quota IndexedDB dépassé, navigation privée, stockage refusé… Un run
+            // entier pouvait se terminer sans avoir rien persisté pendant que l'interface affichait
+            // une session parfaitement saine.
+            this._signalerEchecSauvegarde(this.config.modelName, (error && error.message) || String(error));
         }
+    }
+
+    /**
+     * Remonte un échec de sauvegarde à l'utilisateur (console + EventBus). Les points de
+     * sauvegarde échouaient en silence : ni journal, ni événement, aucun moyen de s'en apercevoir
+     * avant de constater un zoo vide en fin d'entraînement.
+     * @param {string} nomModele
+     * @param {string} raison
+     * @private
+     */
+    _signalerEchecSauvegarde(nomModele, raison) {
+        console.warn(`[TrainingOrchestrator] Échec du point de sauvegarde "${nomModele}" : ${raison}`);
+        try {
+            if (window.EVENTS && window.EVENTS.AI && window.EVENTS.AI.MODEL_SAVE_FAILED) {
+                this.eventBus.emit(window.EVENTS.AI.MODEL_SAVE_FAILED, { name: nomModele, reason: raison });
+            }
+        } catch (e) { /* l'échec de la notification ne doit pas interrompre l'entraînement */ }
     }
     
     /**

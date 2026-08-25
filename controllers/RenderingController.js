@@ -340,7 +340,7 @@ class RenderingController {
         } : {};
 
         // this.rocketState contient les vecteurs calculés par GameController.emitUpdatedStates()
-        // (gravityVector, thrustVectors, totalThrustVector, accelerationVector (résultant), lunarAttraction, earth)
+        // (gravityVector, thrustVectors, totalThrustVector, accelerationVector (résultant))
         // et aussi potentiellement les champs de base, mais ceux de rocketModel (passé en arg) sont plus frais.
         const calculatedVectorsFromEvent = this.rocketState || {};
 
@@ -351,8 +351,8 @@ class RenderingController {
             thrustVectors: calculatedVectorsFromEvent.thrustVectors, // Note: `calculateThrustVectors` dans GameController utilise `PHYSICS.MAIN_THRUST` etc.
             totalThrustVector: calculatedVectorsFromEvent.totalThrustVector,
             accelerationVector: calculatedVectorsFromEvent.accelerationVector, // C'est le a=F/m global
-            lunarAttraction: calculatedVectorsFromEvent.lunarAttraction,
-            earthAttractionVector: calculatedVectorsFromEvent.earthAttraction,
+            // (attractions Terre/Lune retirées : leurs branches d'affichage dans VectorsView sont
+            // toutes deux inatteignables — cf. PhysicsVectors.calculateVectors)
             // Ajouter les vecteurs de mission calculés localement
             missionStartVector,
             missionTargetVector
@@ -369,8 +369,6 @@ class RenderingController {
             this.vectorsView.render(ctx, finalRocketStateForView, camera, {
                 showTotalThrustVector: true,
                 showVelocityVector: true,
-                showLunarAttractionVector: true,
-                showEarthAttractionVector: true,
                 showMissionStartVector: true,
                 showMissionTargetVector: true,
                 showThrustVector: true,

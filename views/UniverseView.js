@@ -142,9 +142,13 @@ class UniverseView {
 
         // Calcul simple basé sur sin() pour un effet périodique
         const twinkling = Math.sin(time * TWINKLE_SPEED + star.x * 0.01 + star.y * 0.01);
+        // Luminosité de base PROPRE à l'étoile quand elle en porte une (les presets peuvent
+        // fournir `stars[].brightness`) ; sinon la valeur globale. Sans cela, toute luminosité
+        // définie dans un preset était purement décorative : la vue n'en tenait aucun compte.
+        const base = Number.isFinite(star.brightness) ? star.brightness : RENDER.STAR_BRIGHTNESS_BASE;
         // Applique le scintillement à la luminosité de base, en utilisant
         // STAR_BRIGHTNESS_RANGE comme amplitude du scintillement (et non comme offset).
-        const brightness = RENDER.STAR_BRIGHTNESS_BASE + twinkling * RENDER.STAR_BRIGHTNESS_RANGE;
+        const brightness = base + twinkling * RENDER.STAR_BRIGHTNESS_RANGE;
         // S'assure que la luminosité reste dans une plage valide (ex: 0 à 1)
         return Math.max(0, Math.min(1, brightness));
     }

@@ -185,9 +185,9 @@ The AI uses a **Double DQN** with TensorFlow.js (online net selects the next act
 
 **In-game AI = pure inference (NPC posture)**: `RocketAI` NEVER learns in-game — `step()` and the hardcoded `calculateReward()` were removed, so there is a SINGLE reward definition (in `HeadlessRocketEnvironment`). In-game, `makeDecision()` runs the trained network's greedy policy **if a model was loaded** (`_modelLoaded`), else falls back to the `maintainOrbit` heuristic. Learning happens ONLY in headless training via `TrainingOrchestrator`.
 
-**Reproducibility**: pass `config.seed` (or the UI "Seed" field) to make the initial angle (per episode) and epsilon exploration deterministic. Evaluation uses a **fixed angle set** derived from the seed, so scores compare across runs and models. `compareModels(a, b)` in `train.js` pits two zoo models on that fixed eval set.
+**Reproducibility**: pass `config.seed` (or the UI "Seed" field) to make the initial angle (per episode), the epsilon exploration AND the replay minibatch sampling deterministic. The orchestrator sets the angle itself before every reset — `randomizeInitialAngle` must stay off for `navigate`, since it would re-overwrite that angle with an unseeded `Math.random()` inside `reset()`. Evaluation uses a **fixed angle set** derived from the seed, so scores compare across runs and models. `compareModels(a, b)` in `train.js` pits two zoo models on that fixed eval set.
 
-**State vector** (`RocketAI.buildStateVector`, single source of truth): **12 dims, `STATE_VERSION 2`**. Scales live in `AI_TRAINING.STATE` (`constants.js`), NOT hardcoded. Dims 0-9 = rocket-vs-target (position delta, velocity, orientation sin/cos, angular vel, distance, radial velocity, heading alignment); dims **10-11 = target's own velocity** (0 for a fixed target — reserved for moving targets like intercept/escort, avoiding a future compatibility break). Rocket velocity is stored in Matter scale and converted to u/s via the single point `PhysicsVectors.matterToGameVelocity` (see [PHYSICS.md §1.5](PHYSICS.md)). ⚠️ Changing `STATE_SIZE`/`STATE_VERSION` invalidates saved models — `AIModelStore` refuses incompatible ones at load.
+**State vector** (`RocketAI.buildStateVector`, single source of truth): **12 dims, `STATE_VERSION 2`**. Scales live in `AI_TRAINING.STATE` (`constants.js`), NOT hardcoded. Dims 0-9 = rocket-vs-target (position delta, velocity, orientation sin/cos, angular vel, distance, radial velocity, heading alignment); dims **10-11 = target's own velocity** in u/s (0 only when the target is genuinely static). These are live on BOTH paths: in training via `missionConfig.movingTarget` (`intercept`), and in game via the mission target body's — or the reference body's — own velocity (`RocketAI.update`/`resolveMissionTarget`). They were structurally zero in game until 2026‑08‑25, which broke the training/inference parity the 12-dim vector exists for. Rocket velocity is stored in Matter scale and converted to u/s via the single point `PhysicsVectors.matterToGameVelocity` (see [PHYSICS.md §1.5](PHYSICS.md)). ⚠️ Changing `STATE_SIZE`/`STATE_VERSION` invalidates saved models — `AIModelStore` refuses incompatible ones at load.
 
 **Model persistence** (`AIModelStore`, this is the bridge to future NPCs): models are named per role/objective and stored in **IndexedDB** (`indexeddb://pc-model-<name>`) with a JSON metadata registry in localStorage. `load(name)` falls back to `assets/models/<name>/model.json` (+ `meta.json`) so pretrained pilots can be committed to the repo and loaded at game start. `exportToFile`/`importFromFiles` move models via downloaded files. `RocketAI.saveModel(name)`/`loadModel(name)` delegate here; the old single-key `localstorage://rocket-ai-model` (v1, 10 dims) is obsolete and read-only-detected only to warn.
 
@@ -199,7 +199,7 @@ The AI uses a **Double DQN** with TensorFlow.js (online net selects the next act
 
 **Roles (NPC pilots)** — `AI_TRAINING.ROLES` in `constants.js`, resolved by `TrainingOrchestrator` into (objective + missionConfig). Pass `config.role` (or the UI "Rôle" dropdown):
 - `race` - navigate + terminal bonus proportional to remaining step budget (fastest wins) + higher step penalty
-- `intercept` - navigate to a **MOVING target** (`missionConfig.movingTarget`, pattern `linear`/`circular`); success = stay within `proximityRadius` for `proximitySteps` consecutive steps (`successMode: 'proximity'`). The moving target's velocity feeds state dims 10-11 (`getObservation` exposes `targetVX/VY`).
+- `intercept` - navigate to a **MOVING target** (`missionConfig.movingTarget`, pattern `linear`/`circular`); success = stay within `proximityRadius` for `proximitySteps` consecutive steps (`successMode: 'proximity'`). The moving target's velocity feeds state dims 10-11 (`getObservation` exposes `targetVX/VY`). In `proximity` mode the braking zone and the stabilisation bonus are **disabled**: both pay for standing still, whereas the success criterion requires matching a target that recedes at 800 u/s.
 - `lander` - objective `land`; `orbiter` - objective `orbit`
 
 **Curriculum / sequential runs**: `config.trainingRuns: [{ role, episodes, loadFrom?, saveAs }]` runs stages in sequence (`TrainingOrchestrator.runCurriculum`); `loadFrom` warm-starts from a zoo model (transfer, e.g. `race` from `navigate`). Emits `AI.CURRICULUM_STAGE_STARTED/COMPLETED`.
@@ -220,7 +220,12 @@ The AI uses a **Double DQN** with TensorFlow.js (online net selects the next act
 > zones 11 % · potential 0,2 % — i.e. the documented ordering. Before the rebalance the real shares
 > were heading 85,7 % / delta **0,18 %**, because an unweighted leftover term
 > (`(radialVelocity/100)*0.5`, scaled for a long-gone `VELOCITY_TARGET` of 30 u/s) alone accounted
-> for 55 % of the return. **Do not tune one weight without re-measuring the episode-sum shares.**
+> for 55 % of the return. That term came back through the 2026‑08‑24 merge and was removed again on
+> 2026‑08‑25: at the current cruise target it paid ~12,5/step (up to 50 at `VELOCITY_MAX`) against
+> `HEADING_ALIGNMENT`'s maximum of 1,0, making a yo-yo policy worth ~10⁵ against 1000 for actually
+> succeeding. The legitimate radial bonus — scaled by `VELOCITY_TARGET` and switched off inside the
+> braking zone — lives in `calculateVelocityReward`.
+> **Do not tune one weight without re-measuring the episode-sum shares.**
 
 > ⚠️ **Reaching the goal must beat loitering.** Success ends the episode and therefore forfeits the
 > remaining per-step shaping, which used to exceed the terminal bonus: parking just outside the
@@ -243,15 +248,17 @@ terminal injected a ~2000 discontinuity into the TD targets once per episode.
 (`RocketAI.positionScaleForBody(radius)`, or |B−A| for `navigate`). With the old fixed 150 000,
 `orbit`/`land` positional features were pinned in `[0.005, 0.015]` while the angular ones were
 O(1) — a ~200× conditioning imbalance upstream of the first normalisation layer.
-`RocketAI.STATE_SCALE_VERSION` must be bumped whenever this normalisation changes: saved models
-are refused at load, since their weights no longer match the input distribution.
+⚠️ `RocketAI.STATE_SCALE_VERSION` documents the convention but is currently read by NO code:
+`AIModelStore` validates `stateVersion`, `stateSize` and `actionCount` only. Bump it when the
+normalisation changes, but be aware a model saved under an older scale convention will still load —
+bump `AI_TRAINING.STATE.STATE_VERSION` too if you need the refusal.
 
 **Training methods**:
 1. Web interface: `training-interface.html` (recommended) - Full application with configuration, real-time performance charts, metrics, and trajectory visualization
 2. Console: `train.js` scripts for quick training or benchmarking
 3. Direct programming via `TrainingOrchestrator`
 
-**Train & ship a model (deliver an NPC pilot)**: run `await trainAndDeliver({ role, episodes })` in the browser console (either page) — it trains headless, saves to the zoo, and downloads the 3 files to place under `assets/models/<name>/` (see `assets/models/README.md` for the exact rename steps). `deliverModel('<name>')` exports an already-trained zoo model. Models under `assets/models/` load at game start via `AIModelStore.load()`.
+**Train & ship a model (deliver an NPC pilot)**: run `await trainAndDeliver({ role, episodes })` in the browser console (either page) — it trains headless, saves to the zoo, and downloads the 3 files to place under `assets/models/<name>/` (see `assets/models/README.md` for the exact rename steps). `deliverModel('<name>')` exports an already-trained zoo model. ⚠️ **Nothing in the game calls `loadModel()` yet**: `AIModelStore.load()` does fall back to `assets/models/<name>/`, but no game-side code invokes it, so a delivered pilot is not picked up at startup — `makeDecision()` stays on the `maintainOrbit` heuristic. Wiring that call is the remaining step to make NPC pilots real (see TODO.md).
 
 **Training Interface Features** (`training-interface.html`):
 - Configure training parameters (episodes, learning rate, etc.) **and the model name** (saved into the zoo)

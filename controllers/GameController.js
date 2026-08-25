@@ -608,6 +608,13 @@ class GameController {
                 if (this.inputController) {
                     this.inputController.update();
                 }
+                // La scène est désormais dessinée sous le voile de pause : la caméra doit donc
+                // rester vivante. Sans cette mise à jour, le lissage de zoom et de suivi restait
+                // figé — le joueur voyait une scène bien rendue mais une vue qui ne répondait à
+                // rien. C'est purement une opération de vue : aucune physique n'avance ici.
+                if (this.cameraModel) {
+                    this.cameraModel.update(deltaTime);
+                }
                 break;
             case GameStates.LEVEL_SETUP:
             case GameStates.MISSION_BRIEFING:

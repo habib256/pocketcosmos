@@ -818,6 +818,11 @@
 
                 // Rafraîchir la liste du zoo dès qu'un modèle est sauvegardé (checkpoint/fin)
                 this.eventBus.subscribe(window.EVENTS.AI.MODEL_SAVED, () => this.refreshZoo());
+                // Un échec de sauvegarde doit être VISIBLE : sans cela, une session pouvait
+                // tourner des heures et ne rien persister avec une interface d'apparence normale.
+                this.eventBus.subscribe(window.EVENTS.AI.MODEL_SAVE_FAILED, (d) => {
+                    this.log(`Échec de sauvegarde du modèle "${d && d.name}" : ${d && d.reason}`, 'error');
+                });
                 
                 this.eventBus.subscribe(window.EVENTS.AI.TRAINING_COMPLETED, (stats) => {
                     this.isTraining = false;
@@ -1187,12 +1192,16 @@
                 const name = this.getTrainingConfig().modelName;
                 this.log(`Sauvegarde du modèle "${name}" en cours...`, 'info');
                 try {
-                    // Créer un agent temporaire si nécessaire
-                    let rocketAI = this.trainingOrchestrator.rocketAI;
+                    // Sans session active, l'ancien code fabriquait un agent NEUF (poids
+                    // aléatoires) et l'enregistrait sous `name`. AIModelStore.save conserve les
+                    // métadonnées existantes (episodes, bestEvalScore, successRate) : le zoo
+                    // affichait donc toujours les statistiques du modèle entraîné, alors que les
+                    // poids venaient d'être écrasés par du bruit. Perte silencieuse d'un
+                    // entraînement complet — on refuse.
+                    const rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
-                        this.log('Création d\'un agent IA temporaire pour la sauvegarde...', 'info');
-                        rocketAI = new RocketAI(this.eventBus);
-                        await rocketAI.waitForReady();
+                        this.log('Aucune session active : rien à sauvegarder. Lancez un entraînement d\'abord.', 'warning');
+                        return;
                     }
 
                     const ok = await rocketAI.saveModel(name);
@@ -1216,9 +1225,8 @@
                     // aucun effet). Le chargement n'a de sens que sur l'agent de la session.
                     const rocketAI = this.trainingOrchestrator.rocketAI;
                     if (!rocketAI) {
-                        this.log('Création d\'un agent IA temporaire pour le chargement...', 'info');
-                        rocketAI = new RocketAI(this.eventBus);
-                        await rocketAI.waitForReady();
+                        this.log('Aucune session active : lancez un entraînement, puis chargez le modèle dans son agent.', 'warning');
+                        return;
                     }
 
                     const success = await rocketAI.loadModel(target);

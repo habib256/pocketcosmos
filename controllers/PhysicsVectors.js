@@ -204,6 +204,26 @@ class PhysicsVectors {
         return { x: totalGravityX, y: totalGravityY };
     }
 
+    /**
+     * Un propulseur produit-il RÉELLEMENT de la poussée ? Reproduit les conditions d'annulation de
+     * ThrusterPhysics.applyThrusterForce : réservoir vide, et couple latéral neutralisé au sol.
+     *
+     * Les visualisations se contentaient de `power > 0` : réservoir vide, maintenir ↑ dessinait une
+     * flèche « Poussée » pleine longueur et une flèche a=F/m incluant une poussée fantôme, alors
+     * que la fusée n'accélérait pas du tout. Idem au sol avec gauche/droite maintenus.
+     *
+     * @param {object} rocketModel
+     * @param {string} thrusterName - 'main' | 'rear' | 'left' | 'right'
+     * @param {object} thruster
+     * @return {boolean}
+     */
+    static thrusterProduitPoussee(rocketModel, thrusterName, thruster) {
+        if (!thruster || !(thruster.power > 0)) return false;
+        if (rocketModel.fuel <= 0) return false;
+        if (rocketModel.isLanded && (thrusterName === 'left' || thrusterName === 'right')) return false;
+        return true;
+    }
+
     static calculateThrustVectors(rocketModel, rocketConstants) { // rocketConstants = ROCKET
         if (!rocketModel) return null;
 
@@ -212,7 +232,7 @@ class PhysicsVectors {
         for (const thrusterName in rocketModel.thrusters) {
             const thruster = rocketModel.thrusters[thrusterName];
 
-            if (thruster.power > 0) {
+            if (PhysicsVectors.thrusterProduitPoussee(rocketModel, thrusterName, thruster)) {
                 // La logique originale pour 'left' et 'right' était de les ignorer ici,
                 // car ils contribuent au couple, pas directement à la poussée calculée de cette manière.
                 // calculateTotalThrustVector les gère différemment.
@@ -265,7 +285,7 @@ class PhysicsVectors {
         for (const thrusterName in rocketModel.thrusters) {
             const thruster = rocketModel.thrusters[thrusterName];
 
-            if (thruster.power > 0) {
+            if (PhysicsVectors.thrusterProduitPoussee(rocketModel, thrusterName, thruster)) {
                 const position = rocketConstants.THRUSTER_POSITIONS[thrusterName.toUpperCase()];
                 if (!position) continue;
 
@@ -412,16 +432,20 @@ class PhysicsVectors {
         }
 
         const accelerationVector = { x: ax, y: ay };
-        const lunarAttraction = PhysicsVectors.calculateLunarAttractionVector(rocketModel, universeModel);
-        const earthAttraction = PhysicsVectors.calculateEarthAttractionVector(rocketModel, universeModel);
 
+        // Les vecteurs d'attraction Terre/Lune NE SONT PLUS CALCULÉS ICI : leurs deux branches
+        // d'affichage dans VectorsView sont inatteignables — celle de la Lune est commentée, et
+        // celle de la Terre exige `!showMissionStartVector` alors que RenderingController passe
+        // toujours showMissionStartVector: true. C'étaient donc deux calculs par frame dont le
+        // résultat n'était jamais dessiné (et dont l'étiquette aurait affiché « undefined »,
+        // rocketState.earthDistance n'étant jamais renseigné). Les méthodes
+        // calculateLunarAttractionVector / calculateEarthAttractionVector restent disponibles si
+        // l'affichage est un jour rétabli.
         return {
             gravityVector,
             thrustVectors,
             totalThrustVector,
-            accelerationVector,
-            lunarAttraction,
-            earthAttraction
+            accelerationVector
         };
     }
 } 

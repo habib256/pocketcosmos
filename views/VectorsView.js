@@ -48,7 +48,28 @@ class VectorsView {
                 if (m && m.position) bodiesHash += m.position.x + m.position.y;
             }
         }
-        const sig = `${camera.x.toFixed(1)}|${camera.y.toFixed(1)}|${camera.zoom.toFixed(3)}|${ctx.canvas.width}|${ctx.canvas.height}|${bodiesHash.toFixed(1)}`;
+        // Signature VOLONTAIREMENT GROSSIÈRE. Avec une signature fine (position caméra au dixième,
+        // somme exacte des positions des corps), elle changeait à chaque frame — la caméra suit la
+        // fusée et les corps orbitent en permanence — donc `canReuse` était toujours faux et le
+        // throttle des 150 ms ne servait à rien : la grille de 6400 cellules × N corps était
+        // reconstruite à chaque frame, et en mode « lignes » le marching squares repassait sur
+        // 6241 cellules × 50 isovaleurs. C'est précisément la chute de framerate à l'appui sur G
+        // que ce throttle devait éviter.
+        //
+        // Le quantum est une DEMI-CELLULE de grille exprimée en unités monde : en deçà, la grille
+        // périmée est indiscernable de la grille exacte (les flèches bougeraient de moins d'un
+        // demi-pas d'échantillonnage). Il s'adapte au zoom, au lieu d'un seuil arbitraire.
+        //
+        // MESURÉ : le throttle sert désormais dès que la caméra est lente ou immobile (caméra
+        // libre, inspection, pause) — le cas d'usage principal de cette surcouche. En vol à
+        // vitesse de croisière (~2500 u/s), la caméra franchit plus d'une cellule par frame et le
+        // recalcul reste nécessaire pour rester exact : 179 recalculs sur 180 frames, à 9,6 ms
+        // l'unité (grille 80×80, 21 corps), soit ~58 % du budget d'une frame à 60 fps. Le coût est
+        // opt-in (touche G) mais réel ; le réduire demanderait de baisser la densité de la grille,
+        // ce qui change le rendu — cf. TODO.md.
+        const pasMonde = Math.max(1e-6, (ctx.canvas.width / this.gridX) / (camera.zoom || 1));
+        const q = pasMonde / 2;
+        const sig = `${Math.round(camera.x / q)}|${Math.round(camera.y / q)}|${camera.zoom.toFixed(3)}|${ctx.canvas.width}|${ctx.canvas.height}|${Math.round(bodiesHash / q)}`;
         const canReuse = this.gravityFieldGrid && this._lastCameraSignature === sig && (now - this._lastGridComputeTime) < this._gridComputeIntervalMs;
         if (canReuse) {
             return; // Réutiliser la grille existante
@@ -190,11 +211,13 @@ class VectorsView {
         //     this.drawVector(ctx, rocketState.lunarAttractionVector, '#E0A0FF', 'Lune', 80, rocketState.lunarDistance);
         // }
 
-        // Vecteur d'attraction terrestre (si calculé et fourni)
-        if (options.showEarthAttractionVector && !options.showMissionStartVector && rocketState.earthAttractionVector) {
-            // Affiche aussi la distance dans le label
-            this.drawVector(ctx, rocketState.earthAttractionVector, '#00FF00', 'Terre', 80, rocketState.earthDistance, rocketScreen);
-        }
+        // // Vecteur d'attraction terrestre (branche morte : elle exigeait !showMissionStartVector
+        // // alors que RenderingController passe toujours showMissionStartVector: true, et son
+        // // étiquette lisait rocketState.earthDistance, jamais renseigné). Conservée en commentaire
+        // // comme le vecteur lunaire ci-dessus, au cas où l'affichage serait rétabli.
+        // if (options.showEarthAttractionVector && !options.showMissionStartVector && rocketState.earthAttractionVector) {
+        //     this.drawVector(ctx, rocketState.earthAttractionVector, '#00FF00', 'Terre', 80, rocketState.earthDistance, rocketScreen);
+        // }
 
         // Vecteurs de mission (pointant de la fusée vers départ/destination)
         // Note: La structure attendue est { vector: {x, y}, ... }

@@ -7,6 +7,153 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 
 ---
 
+## [Non publié] — Réparation de la fusion IA + audit du code amont — 2026‑08‑25
+
+> Cette passe cible ce que la fusion `b2d2a17` (refonte IA amont + campagne de correctifs) avait
+> cassé, puis le code amont jamais audité (rôles PNJ, model zoo IndexedDB, RNG seedé, état 12 dims).
+> Trois audits indépendants ont convergé sur les mêmes points majeurs ; chaque correctif ci‑dessous
+> a été **prouvé puis re‑vérifié** sur banc Node exécutant le vrai Matter.js et le vrai TensorFlow.js.
+
+### Critique — le pipeline d'entraînement IA était entièrement mort
+
+- **`TrainingOrchestrator.startTraining` : `runId` jamais déclaré.** La fusion a gardé les trois
+  usages de `runId` et perdu sa déclaration. En mode strict (corps de classe), `trainingLoop(runId)`
+  levait une `ReferenceError`, puis `cleanupAfterError(runId)` la relevait depuis le `catch` :
+  `startTraining()` rejetait. **Aucun entraînement ne pouvait démarrer**, par aucun chemin (bouton
+  de l'interface, `quickTraining()`, `trainAndDeliver()`, `runCurriculum()`). Effet de bord :
+  `_runGeneration` n'était jamais incrémenté, donc toutes les gardes de génération étaient inertes.
+  *Mesuré avant : `ReferenceError: runId is not defined`, `_runGeneration = 0`. Après : le run
+  démarre, `_runGeneration = 1`.*
+- **`RocketAI.loadModel` : `previousModel` et `loaded` jamais déclarés.** Ligne orpheline de
+  l'ancien chargeur localStorage, greffée sur le chargeur `AIModelStore` amont. Elle s'exécutait
+  APRÈS l'installation du nouveau modèle : `loadModel()` renvoyait donc **toujours `false`** tout en
+  laissant `targetModel` périmé, `_modelLoaded` à faux et `modelName` inchangé. Conséquences : le
+  bouton « Charger Modèle » et les 📂 du zoo inopérants, le warm‑start de curriculum (`loadFrom`)
+  silencieusement ignoré, `compareModels()` toujours en échec, et l'inférence PNJ bloquée sur
+  l'heuristique `maintainOrbit`. *Mesuré avant : « Chargement du modèle échoué : previousModel is
+  not defined ». Après : chargement réussi, target network reconstruit, `AI_MODEL_LOADED` émis.*
+- **`TrainingOrchestrator.evaluateAgent` : `evaluatedEpisodes` jamais déclaré.** L'incrément levait
+  une `ReferenceError` dès le premier épisode d'évaluation, avalée par deux `catch` silencieux.
+  L'évaluation n'aboutissait **jamais** : `bestAverageReward` restait à `-Infinity`, aucun meilleur
+  modèle n'était mémorisé, l'arrêt anticipé n'avait aucune donnée, et `AI_EVALUATION_COMPLETED`
+  n'était jamais émis — sans le moindre message. *Après : l'événement est émis.*
+
+### Majeur — apprentissage faussé
+
+- **`isDone()` avait perdu la terminaison sur succès** (absente des DEUX parents de la fusion).
+  Trois conséquences : `successTimeCredit()` payait le crédit de fin ET l'agent continuait
+  d'encaisser le shaping de tous les pas restants (le double‑comptage même que ce crédit doit
+  empêcher) ; `isEpisodeSuccessful()` exigeant `steps < 0,8 × budget`, les rôles `orbiter` et
+  `lander` enregistraient **0 % de réussite quelles que soient leurs performances** ; et le succès
+  n'étant évalué qu'au pas de timeout, une fusée stabilisée puis repartie était notée en échec.
+- **Terme de récompense fantôme revenu par la fusion** : `(radialVelocity / 100) * 0.5` dans
+  `calculateHeadingAlignmentReward`. Son `/100` datait d'un `VELOCITY_TARGET` de 30 u/s ; à la cible
+  de croisière actuelle (2500 u/s) il payait ~12,5 par pas — jusqu'à 50 à `VELOCITY_MAX` — contre un
+  maximum de 1,0 pour l'alignement et un budget d'épisode entier de 3000 pour la distance. La
+  politique optimale devenait un yo‑yo rapportant ~10⁵ contre 1000 pour réussir. Retiré ; le bonus
+  radial légitime, mis à l'échelle par `VELOCITY_TARGET`, reste dans `calculateVelocityReward`.
+- **Échelle positionnelle adaptée à la tâche ignorée.** `buildStateVector` lisait une constante fixe
+  alors que ses deux appelants calculaient et transmettaient `positionScale`. Pour `orbit`/`land`
+  (rôles `orbiter`/`lander`), les dims 0/1/7 restaient confinées dans [0,005 ; 0,015] pendant que les
+  dims 4/5/9 étaient d'ordre 1 : ~200× de déséquilibre de conditionnement en amont de la première
+  `layerNormalization`.
+- **Rôle `intercept` : le shaping combattait son propre critère de succès.** La zone de freinage et
+  le bonus de stabilisation paient l'immobilité, alors que réussir exige de suivre une cible qui
+  s'éloigne à 800 u/s. Les deux sont désormais désactivés en mode `successMode: 'proximity'`.
+- **`calculateLandingReward` comparait une vitesse en échelle Matter** à un seuil de 5, soit
+  0,3 u/s : critère ~16,7× trop strict, sur le chemin chaud du rôle `lander`. Passé en u/s.
+- **Statut de fin d'épisode**: une réussite franche était rapportée `max_steps_reached`, les
+  missions à jeton n'étant jamais « réussies » au sens du gestionnaire de missions.
+
+### Reproductibilité
+
+- **La graine ne servait à rien pour les angles initiaux** : `reset()` réécrasait avec un
+  `Math.random()` non seedé l'angle que l'orchestrateur venait de poser — annulant du même coup le
+  **jeu d'évaluation à 10 angles fixes**, prémisse de la comparabilité des scores et de
+  `compareModels`. L'orchestrateur ne demande plus la randomisation, et `reset()` accepte un
+  `config.rng`.
+- **L'échantillonnage du minibatch** (le plus gros consommateur d'aléa) et le repli d'`act()`
+  utilisaient encore `Math.random()`.
+- **`SeededRandom.mulberry32` repliait la graine 0 sur 1** via un `|| 1` hérité d'un LCG : deux runs
+  distincts produisaient la même séquence. mulberry32 étant un mélangeur à compteur, l'état 0 est
+  valide. *Vérifié : séquences distinctes, moyenne 0,50046 sur 200 000 tirages, déciles à ±2,3 %.*
+
+### Model zoo (IndexedDB)
+
+- **Aucune validation du nombre d'actions** au chargement, bien que `save()` enregistre
+  `actionCount` : un modèle à sortie plus large se chargeait, puis `argMax` renvoyait un indice hors
+  table et la fusée cessait de répondre, sans message.
+- **`importFromFiles` ignorait le `meta.json`** qu'il excluait pourtant de la recherche : aucune
+  `stateVersion` n'était vérifiée, puis `save()` estampillait la version courante — un modèle
+  entraîné sous une autre sémantique d'état était réétiqueté « compatible » en silence.
+- **`exportToFile`** cliquait une ancre détachée du document (ignorée par Firefox) et révoquait
+  l'URL de l'objet de façon synchrone (course avec le démarrage du téléchargement sur Chromium) :
+  le `meta.json` pouvait manquer — précisément le fichier qui porte `stateVersion`.
+- **Les échecs de sauvegarde étaient totalement muets** (quota, navigation privée) : un run entier
+  pouvait ne rien persister avec une interface d'apparence saine. Nouvel événement
+  `AI_MODEL_SAVE_FAILED`, journalisé dans l'interface.
+
+### Curriculum
+
+- `_curriculumAborted` n'était remis à zéro qu'APRÈS la boucle, alors que `stopTraining()` le lève
+  pour n'importe quel run : un simple arrêt manuel faisait avorter le curriculum suivant.
+- L'état d'arrêt anticipé (`recentPerformance`, `earlyStoppingCounter`) n'était pas réinitialisé
+  entre étapes : une étape démarrait avec les scores d'un autre objectif, sur une autre échelle.
+- Une étape déclarant `{objective:'orbit'}` sous un `role:'race'` global entraînait `navigate`.
+- Le nom de modèle par défaut était `<rôle>-default` et non `<rôle>-v<n>` : deux étapes successives
+  sur le même rôle s'écrasaient dans le zoo.
+
+### Interface d'entraînement
+
+- **« Charger Modèle » levait `TypeError: Assignment to constant variable`** hors session (`const`
+  réassigné). Le chargement exige désormais une session active, avec un message explicite.
+- **« Sauvegarder » hors session écrasait un modèle entraîné par des poids aléatoires** : un agent
+  neuf était créé et enregistré sous le nom visé, tandis que `AIModelStore.save` conservait les
+  statistiques (épisodes, score) de l'ancien — le zoo continuait donc d'annoncer un entraînement
+  qui n'existait plus. Refusé hors session.
+- **Le champ « Fréquence de mise à jour » était inerte** : `runTrainingEpisode` lit
+  `rocketAI.config.updateFrequency`, que l'orchestrateur ne recopiait plus.
+- **`train.js`** dupliquait une table d'actions partielle : `step()` ne remettant à zéro que les
+  propulseurs présents, un `thrustBackward` laissait l'arrière à fond jusqu'à la fin de l'épisode.
+  Conversion factorisée sur `RocketAI.ACTION_THRUSTERS`.
+
+### Jeu — corrections visibles par le joueur
+
+- **La jauge de vitesse du HUD était inversée là où elle compte.** Elle comparait la vitesse
+  **absolue** à `CRASH_SPEED_THRESHOLD`, alors que la détection de crash applique ce seuil à la
+  vitesse **relative au corps**. Une fusée parfaitement immobile posée sur Phobos (vitesse orbitale
+  960 u/s ≈ 16 000 en échelle Matter, soit 640 % du seuil) affichait une jauge ROUGE pleine, tandis
+  qu'une approche réellement fatale sur une Terre immobile s'affichait en vert.
+- **Les 800 étoiles avaient une luminosité `NaN`.** `UniverseModel` et `GameSetupController`
+  lisaient `PARTICLES.STAR_BRIGHTNESS_BASE`/`_RANGE`/`STAR_TWINKLE_FACTOR`, qui n'existent que sous
+  `RENDER`. Le garde‑fou prévu pour ce cas ne pouvait pas se déclencher (`typeof NaN === 'number'`).
+  De plus `updateStars` réécrivait `brightness` à chaque frame alors que la vue recalcule le
+  scintillement de son côté : 800 `Math.sin` par frame pour rien, et toute luminosité fournie par un
+  preset écrasée dès la première frame. Le modèle porte désormais la luminosité de BASE, la vue
+  l'anime et l'honore. *Mesuré : 800/800 étoiles `NaN` avant, 0/800 après.*
+- **Vecteurs de poussée fantômes** : les visualisations ne testaient que `power > 0`, sans les deux
+  conditions où `ThrusterPhysics` annule réellement la force (réservoir vide, couple latéral
+  neutralisé au sol). Réservoir vide, maintenir ↑ dessinait une flèche « Poussée » pleine longueur
+  et une flèche `a=F/m` incluant une poussée inexistante.
+- **Le bouton 🔇 ne coupait que la musique** : la boucle des propulseurs et les impacts restaient
+  audibles. `AudioManager.setEnabled()` existait pour cela mais n'était appelé de nulle part.
+- **La caméra était figée en pause** alors que la scène y est désormais dessinée : le joueur voyait
+  une scène vivante qu'il ne pouvait ni déplacer ni zoomer. Zoom, glissement et recentrage sont
+  rétablis en pause (opérations de vue pures, aucune physique n'avance).
+- **Champ de gravité (touche G)** : le frein de recalcul de la grille ne pouvait jamais s'enclencher,
+  sa signature de cache changeant à chaque frame (la caméra suit la fusée, les corps orbitent). Le
+  frein sert désormais dès que la caméra est lente ou immobile. *Mesuré : un recalcul complet coûte
+  9,6 ms (grille 80×80, 21 corps), soit ~58 % du budget d'une frame à 60 fps ; en vol à vitesse de
+  croisière il reste nécessaire à chaque frame pour rester exact — cf. TODO.md.*
+- **Deux vecteurs calculés à chaque frame et jamais dessinés** (attractions Terre et Lune) : leurs
+  branches d'affichage sont inatteignables. Calculs supprimés.
+- **Vecteur d'état 12 dims en jeu** : les dims 10‑11 (vitesse de la cible) étaient structurellement
+  nulles côté jeu, la cible et le corps de référence étant construits sans vitesse. Un modèle
+  entraîné à intercepter voyait donc une caractéristique constamment nulle à l'inférence.
+  *Vérifié : corps à 960 u/s → dim 10 = 0,384 = 960/2500, exactement l'échelle d'entraînement.*
+
+---
+
 ## [Non publié] — Chasse aux bugs 7e passe — 2026‑08‑24
 
 ### Critique — la page pouvait geler définitivement

@@ -337,12 +337,12 @@ class GameSetupController {
                         universeModel.stars.push({
                             x: s.x,
                             y: s.y,
-                            brightness: GameSetupController.estNombreFini(s.brightness) ? s.brightness : PARTICLES.STAR_BRIGHTNESS_BASE,
+                            brightness: GameSetupController.estNombreFini(s.brightness) ? s.brightness : RENDER.STAR_BRIGHTNESS_BASE,
                             // `twinkleSpeed` est obligatoire : UniverseModel.updateStars l'utilise
                             // à chaque frame et son absence produisait brightness = NaN.
                             twinkleSpeed: GameSetupController.estNombreFini(s.twinkleSpeed)
                                 ? s.twinkleSpeed
-                                : Math.random() * PARTICLES.STAR_TWINKLE_FACTOR
+                                : Math.random() * RENDER.STAR_TWINKLE_FACTOR
                         });
                     } else {
                         etoilesRejetees++;
@@ -375,10 +375,10 @@ class GameSetupController {
                     universeModel.stars.push({
                         x: Math.cos(angle) * dist,
                         y: Math.sin(angle) * dist,
-                        brightness: PARTICLES.STAR_BRIGHTNESS_BASE + rnd() * PARTICLES.STAR_BRIGHTNESS_RANGE,
+                        brightness: RENDER.STAR_BRIGHTNESS_BASE + rnd() * RENDER.STAR_BRIGHTNESS_RANGE,
                         // Idem : sans twinkleSpeed, updateStars produit brightness = NaN.
                         // Tiré du même générateur pseudo-aléatoire seedé, pour rester déterministe.
-                        twinkleSpeed: rnd() * PARTICLES.STAR_TWINKLE_FACTOR
+                        twinkleSpeed: rnd() * RENDER.STAR_TWINKLE_FACTOR
                     });
                 }
             } else {

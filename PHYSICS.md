@@ -105,7 +105,7 @@ PhysicsVectors.matterToGameVelocity(v)  // = v / PHYSICS.MATTER_BASE_DELTA
 
 | Appelant | Rôle |
 |---|---|
-| `RocketAI.buildStateVector` | normalise la vitesse fusée (dims 2/3/8/10/11 du vecteur d'état) |
+| `RocketAI.buildStateVector` | normalise la vitesse **fusée** (dims 2/3/8). Les dims 10/11 portent la vitesse de la **cible**, déjà en u/s : elles ne passent PAS par `matterToGameVelocity`. |
 | `HeadlessRocketEnvironment._rocketSpeedUnitsPerSec` + rewards navigate | vitesse/vitesse radiale en u/s pour les cibles `NAVIGATE_REWARDS` et les seuils de succès |
 
 > Auparavant la constante `1000/60` était réécrite en dur à chaque site (RocketAI + 3 sites de
