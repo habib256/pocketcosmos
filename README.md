@@ -84,9 +84,42 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **N** : Augmenter la puissance globale des propulseurs
 - **H** : Activer/désactiver l'aide au pilotage 🤓 (stabilisation automatique de la rotation)
 
-Également disponibles (non listés ci-dessus car non clavier) : **glisser-déposer souris ou tactile**
+Également disponibles (non listés ci-dessus car non clavier) : **glisser-déposer à la souris**
 pour déplacer la caméra, et une **manette** (sticks : rotation/zoom · A : poussée · Y : rétro ·
 LB/RB : traces/vecteurs · Start : pause · L3 : réinitialiser · View : centrer la caméra).
+
+### 📱 Contrôles tactiles (tablette, téléphone)
+
+Sur un appareil tactile, des boutons semi-transparents apparaissent automatiquement une fois le
+monde lancé (détection `(pointer: coarse)`, ou dès le premier appui au doigt sur un ordinateur
+à écran tactile). Ils restent masqués sur un ordinateur à souris. Le bouton **✋**, à côté de ⚙️
+en bas à droite, les affiche ou les masque à tout moment (ce choix l'emporte ensuite sur la
+détection automatique).
+
+| Où | Bouton | Effet |
+|---|---|---|
+| Pouce gauche | **↺** / **↻** (maintenir) | Tourner à gauche / à droite — comme **←** / **→** |
+| Pouce droit | **▲ Poussée** (maintenir) | Propulsion principale — comme **↑** / **W** |
+| Pouce droit | **▼ Rétro** (maintenir) | Propulsion arrière — comme **↓** / **S** |
+| En bas au centre | **T**, **G**, **V**, **C** | Trajectoire, champ de gravité, vecteurs, centrer la caméra |
+| En bas au centre | **−** / **+** | Zoom (maintenir pour répéter) |
+| En bas au centre | **Ⅱ Pause**, **R Recommencer** | Pause / reprise, replacer la fusée |
+
+- **Plusieurs doigts à la fois** : on peut pousser et tourner en même temps.
+- Les commandes maintenues s'arrêtent dès que le doigt se lève, et aussi si le navigateur annule
+  le toucher, si la page perd le focus ou si l'onglet est masqué.
+- Un bouton ponctuel (T, G, V, C, Pause, R) agit quand le doigt se lève **sur** le bouton :
+  glisser le doigt hors du bouton annule.
+- **Sur la zone de jeu** : un doigt fait glisser la vue (C recentre sur la fusée), **deux doigts
+  pincent pour zoomer** — même avec un pouce posé sur ▲.
+- La page ne défile pas et ne zoome pas sous les doigts (`touch-action: none`), pas de menu ni de
+  sélection de texte sur appui long. L'affichage suit la taille de la fenêtre ou du cadre
+  (`iframe`) et la rotation de la tablette.
+
+Les boutons passent par le même chemin que le clavier (`InputController.appuyerCommande` /
+`relacherCommande` / `executerActionPonctuelle`) : aucune règle de pilotage n'est dupliquée.
+Code : `controllers/TouchControlsController.js` (boutons) et `InputController.initTouchEvents`
+(glisser, pincer).
 
 ## 🔧 Technologies
 

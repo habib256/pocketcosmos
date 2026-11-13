@@ -288,6 +288,17 @@ class UIView {
 
     // _renderMainMenuScreen supprimé (menu principal désactivé)
 
+    /**
+     * Consigne de redémarrage adaptée à l'appareil : avec les commandes tactiles affichées
+     * (window.UI_STATE.commandesTactiles, posé par TouchControlsController), il n'y a pas de
+     * touche R à presser mais un bouton « R Recommencer » à toucher.
+     * @private
+     */
+    _consigneRecommencer() {
+        const tactile = typeof window !== 'undefined' && window.UI_STATE && window.UI_STATE.commandesTactiles;
+        return tactile ? 'Touchez le bouton R pour recommencer' : 'Appuyez sur R pour recommencer';
+    }
+
     /** @private Affiche l'écran de Game Over. */
     _renderGameOverScreen(ctx, canvas, rocketModel) {
         ctx.save();
@@ -312,7 +323,7 @@ class UIView {
         
         ctx.font = `18px ${this.fontFamily}`;
         ctx.fillStyle = this.colors.white;
-        ctx.fillText('Appuyez sur R pour recommencer', canvas.width / 2, canvas.height / 2 + 60);
+        ctx.fillText(this._consigneRecommencer(), canvas.width / 2, canvas.height / 2 + 60);
         ctx.restore();
     }
 
@@ -512,7 +523,7 @@ class UIView {
             // Instruction de redémarrage
             ctx.font = `16px ${this.fontFamily}`;
             ctx.fillStyle = this.colors.white; // Instruction en blanc
-            ctx.fillText('Appuyez sur R pour recommencer', canvas.width / 2, 100);
+            ctx.fillText(this._consigneRecommencer(), canvas.width / 2, 100);
         }
         // Aucune indication spécifique si en vol normal (ancien renderLandingGuidance supprimé)
         ctx.restore();

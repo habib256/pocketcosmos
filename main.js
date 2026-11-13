@@ -170,6 +170,13 @@ function initialiserApplication() {
     logDiagnostic(`[main.js] Création de InputController...`);
     const inputController = new InputController(eventBus);
     logDiagnostic(`[main.js] InputController créé:`, inputController);
+    // Commandes tactiles à l'écran : elles passent par l'InputController (même chemin que le
+    // clavier) et ne s'affichent que sur un appareil tactile ou via le bouton ✋.
+    try {
+        window.touchControls = new TouchControlsController(eventBus, inputController);
+    } catch (e) {
+        console.error("[main.js] Commandes tactiles indisponibles :", e);
+    }
     const renderingController = new RenderingController(eventBus, canvas);
     const rocketAI = new RocketAI(eventBus);
     
@@ -288,7 +295,13 @@ function showInstructions() {
         font-size: 0.95em; /* Taille de police légèrement augmentée */
         z-index: 9999;
         min-width: 250px; /* Largeur minimale */
-        max-width: 500px; /* Largeur maximale augmentée pour rééquilibrage */
+        max-width: min(640px, calc(100vw - 16px)); /* jamais plus large que l'écran (téléphone, cadre) */
+        max-height: calc(100vh - 16px);            /* trop haut : le panneau défile au doigt */
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        box-sizing: border-box;
         border: 1px solid #555; /* Bordure subtile */
         display: flex; /* Utilisation de flexbox pour l'agencement */
         flex-direction: column;
@@ -296,15 +309,18 @@ function showInstructions() {
         gap: 10px; /* Espacement entre les éléments */
     `;
     
-    // Contenu HTML du panneau (structure améliorée).
+    // Contenu HTML du panneau (structure améliorée). Mise en page : classes définies dans
+    // index.html (#instructions …), qui adaptent le panneau aux petits écrans et au doigt.
     instructions.innerHTML = `
-        <div style="display: flex; align-items: flex-start; gap: 15px; width: 100%;">
-            <div style="display:flex; flex-direction:column; align-items:center; width:160px; flex-shrink:0;">
-                <img src="favicon.png" alt="Icône Fusée" style="width:160px; height:160px; margin-top: 5px;" />
-                <p style="font-size:0.8em; color:#bbb; margin-top: 8px; text-align:center;">Souris et Manette de jeu également supportées.</p>
-                <p style="font-size:0.82em; color:#9cf; margin-top:4px; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
+        <div class="ligne-haut">
+            <div class="colonne-logo">
+                <img src="favicon.png" alt="Icône Fusée" />
+                <div>
+                    <p style="font-size:0.8em; color:#bbb; margin-top: 8px; text-align:center;">Souris, manette de jeu et écran tactile également supportés.</p>
+                    <p style="font-size:0.82em; color:#9cf; margin-top:4px; text-align:center; font-style: italic;">Une minuscule fusée. Un univers infini. Votre voyage commence.</p>
+                </div>
             </div>
-            <div style="flex-grow: 1;">
+            <div class="colonne-controles">
                 <h3 style="font-weight:bold; font-size:1.1em; margin:0 0 5px 0; text-align: left;">Contrôles</h3>
                 <table style="border-collapse:collapse; width: 100%; font-size:0.85em; text-align: left;">
                     <tbody>
@@ -318,15 +334,20 @@ function showInstructions() {
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>G</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher Champ Gravité/Équipotentielles</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>+ / -</b></td><td style="border:1px solid #666; padding: 3px 6px;">Zoom Avant / Arrière (Molette aussi)</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>P / Échap</b></td><td style="border:1px solid #666; padding: 3px 6px;">Mettre en Pause / Reprendre</td></tr>
-                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Centrer la caméra sur la fusée</td></tr>            
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Centrer la caméra sur la fusée</td></tr>
+                        <tr><td colspan="2" class="titre-tactile">Écran tactile (tablette) — boutons T, G, V, C, R comme au clavier</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>▲ / ▼</b></td><td style="border:1px solid #666; padding: 3px 6px;">Poussée / Rétro (garder le doigt appuyé)</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>↺ / ↻</b></td><td style="border:1px solid #666; padding: 3px 6px;">Tourner à gauche / à droite (garder appuyé)</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>2 doigts</b></td><td style="border:1px solid #666; padding: 3px 6px;">Pincer pour zoomer ; 1 doigt fait glisser la vue</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>✋</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher / masquer les commandes tactiles</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; margin-top:10px;">
-            <div style="display:flex; align-items:center; gap:8px;">
+        <div class="ligne-depart">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
                 <label for="worldSelect" style="font-weight:bold;">Monde:</label>
-                <select id="worldSelect" style="padding:4px 6px;">
+                <select id="worldSelect">
                     <option value="1" selected>Monde 1 — Système solaire</option>
                     <option value="2">Monde 2 — Kerbol System</option>
                     <option value="3">Monde 3 — OuterWilds System</option>
@@ -335,7 +356,7 @@ function showInstructions() {
                     <option value="6">Monde 6 — Alien</option>
                 </select>
             </div>
-            <button id="startButton" style="font-size:1.0em; padding: 5px 15px; cursor: pointer;">Prêt ! (Commencer)</button>
+            <button id="startButton" type="button">Prêt ! (Commencer)</button>
         </div>
     `;
     

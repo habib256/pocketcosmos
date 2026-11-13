@@ -76,7 +76,10 @@ The EventBus is the heart of inter-module communication:
 ### Critical Event Flows
 
 **User Input → Rocket Thrust**:
-1. `InputController` detects keypress
+1. `InputController` detects keypress — or `TouchControlsController` a held on-screen button, which
+   calls `inputController.appuyerCommande(action)` / `relacherCommande(action)`: the source is
+   recorded in `activeKeyActions` as `${action}-tactile`, exactly like a key (`${action}-${code}`),
+   so source counting, release on `blur`/`ROCKET_RESET`, etc. apply to fingers too
 2. Emits `ROCKET_THRUST_*` or `INPUT_ROTATE_COMMAND`
 3. `RocketController` updates `RocketModel`
 4. `ThrusterPhysics` applies force to Matter.js body
@@ -378,7 +381,8 @@ Here are the most important events flowing through the `EventBus`:
 - `PhysicsController.js` - Matter.js engine management
 - `RocketController.js` - Rocket-specific logic
 - `RenderingController.js` - View coordination (CRITICAL)
-- `InputController.js` - Keyboard/mouse/gamepad input
+- `InputController.js` - Keyboard/mouse/gamepad/touch input (one-finger pan + two-finger pinch zoom on the canvas)
+- `TouchControlsController.js` - On-screen touch buttons (HTML overlay `#commandesTactiles`, toggle ✋). Routes through `InputController.appuyerCommande` / `relacherCommande` / `executerActionPonctuelle` — the same path as the keyboard
 - `CollisionHandler.js` - Collision detection and response
 - `SynchronizationManager.js` - Physics ↔ Model sync
 - `ThrusterPhysics.js` - Applies thrust forces

@@ -7,6 +7,74 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 
 ---
 
+## [Non publié] — Commandes tactiles (tablettes) — 2026‑11‑14
+
+> Objectif : jouer en classe sur iPad et tablettes Android, y compris dans le cadre (`iframe`) du
+> site du collège, sans rien changer au clavier, à la souris ni à la manette. Vérifié au banc
+> **Chrome headless piloté par CDP**, émulation tactile (`Emulation.setTouchEmulationEnabled`,
+> `Input.dispatchTouchEvent`, multi-touch compris) : 51/51 vérifications en tablette paysage
+> 1024×768, 51/51 en portrait 768×1024, 49/49 dans un `iframe` 1000×680, 19/19 sur ordinateur à
+> souris 1280×800 (régression clavier/molette), 51/51 sur téléphone 390×844 et 844×390. Aucune
+> erreur JavaScript, aucune requête hors de l'origine locale. ⚠️ **Aucun essai sur une vraie
+> tablette** à ce jour.
+
+### Ajouté — commandes tactiles à l'écran (`controllers/TouchControlsController.js`)
+
+- Pouce gauche : **↺ / ↻** (rotation, maintenue). Pouce droit : **▲ Poussée** et **▼ Rétro**
+  (maintenues). En bas au centre : **T, G, V, C, −, +, Pause, R**. Boutons semi-transparents,
+  52 px minimum (76 à 88 px pour le pilotage), hors des zones du HUD (mesuré : aucun
+  chevauchement avec santé/carburant, missions/cargo, message d'état), marges `safe-area`.
+- Multi-touch : chaque doigt est suivi par son `pointerId` ; pousser et tourner en même temps,
+  lever un seul doigt ne coupe que sa commande.
+- Relâchement garanti : `pointerup`, `pointercancel`, `lostpointercapture`, `blur`,
+  `visibilitychange` (onglet masqué), `pagehide`, masquage par ✋, reset de la fusée.
+- Affichage automatique si le pointeur principal est tactile (`(pointer: coarse)`) ou au premier
+  `pointerdown` de type `touch` ; masqué sur ordinateur à souris. Bouton **✋** (à côté de ⚙️) pour
+  afficher/masquer ; ce choix manuel prime ensuite. Rien n'est enregistré ni transmis.
+- Les commandes n'apparaissent qu'une fois l'écran de démarrage refermé.
+
+### Modifié — un seul chemin pour le clavier et le doigt (`InputController`)
+
+- Les `switch` de `handleKeyDown` / `handleKeyUp` sont factorisés en `_demarrerActionContinue`,
+  `_arreterActionContinue` et `executerActionPonctuelle`. Les boutons tactiles appellent
+  `appuyerCommande` / `relacherCommande` (source `${action}-tactile` dans `activeKeyActions`) et
+  `executerActionPonctuelle` : mêmes événements `ROCKET_*_START/STOP`, même comptage des sources
+  (mesuré : ↑ tenu + ▲ touché puis levé → la poussée continue jusqu'au relâchement de ↑).
+- **Pincement à deux doigts** sur la zone de jeu → `CAMERA_ZOOM_ADJUST` (rapport des écarts, borné
+  à ×0,5–×2 par événement). Mesuré : écarter ×3 → zoom ×3,000 ; resserrer → retour à 1,000 ;
+  pincer avec un pouce sur ▲ → zoom ×2,000 et poussée maintenue.
+- Le glissement et le pincement ne comptent que les doigts **posés sur le canvas** : avant, un
+  pouce sur un bouton empêchait tout panoramique, et le lever arrêtait le glissement en cours.
+
+### Corrigé — rotation de la tablette
+
+- Mesuré sur le code d'origine : passer de paysage 1024×768 à portrait 768×1024 laissait
+  `innerWidth` à 1024 et la page dézoomée à 0,75 — l'ancien canvas, plus large que le nouvel
+  écran, débordait, et le canvas ne se réduisait jamais. Le canvas a maintenant une boîte CSS
+  liée à la fenêtre (`position: fixed; width/height: 100%`) : après rotation, canvas 768×1024,
+  échelle 1.
+
+### Modifié — écran de démarrage et page
+
+- Tableau des contrôles complété (section « Écran tactile »), sélecteur de monde et « Prêt ! »
+  de 48 px de haut, police 16 px (pas de zoom automatique de Safari iOS). Le panneau défile sur
+  petit écran et la ligne « Monde / Prêt ! » reste visible en bas (téléphone en paysage).
+- `touch-action: none` sur le canvas et les boutons, `manipulation` sur la page,
+  `overscroll-behavior: none`, pas de sélection ni de menu contextuel sur appui long (le clic
+  droit de la souris sur le canvas est inchangé), `gesturestart` annulé (zoom de page Safari).
+- `<meta name="viewport">` : ajout de `viewport-fit=cover` pour les encoches.
+- Consigne de fin de partie adaptée : « Touchez le bouton R pour recommencer » quand les
+  commandes tactiles sont affichées.
+
+### Limites connues
+
+- Le zoom par pincement est centré sur la caméra, pas sur le point entre les doigts.
+- Le canvas n'utilise pas `devicePixelRatio` : image moins nette sur écran Retina (inchangé).
+- Sur un téléphone en portrait, le HUD dessiné sur le canvas (texte « Posé sur… », cadre
+  Missions) se chevauche lui‑même : antérieur à ce changement.
+
+---
+
 ## [Non publié] — Chasse aux bugs 8 — 2026‑08‑25
 
 > Huitième passe d'audit. Sauf mention contraire, chaque point ci‑dessous a été **mesuré avant/après

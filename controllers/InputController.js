@@ -336,6 +336,7 @@ class InputController {
         // alt-tab (ou un relâchement au-dessus de l'interface du navigateur) ne produit aucun
         // mouseup/touchend. Sans cela, au retour dans l'onglet, bouger la souris continuait à
         // faire glisser la caméra comme si le bouton était toujours enfoncé.
+        this._pincement = null;
         if (this.isMouseDragging || this.isTouchDragging) {
             this.isMouseDragging = false;
             this.isTouchDragging = false;
@@ -441,54 +442,118 @@ class InputController {
     }
     
     /**
-     * Initialise les écouteurs d'événements pour les interactions tactiles (touchstart, touchmove, touchend, touchcancel).
-     * Gère le glissement (drag) de la caméra sur les appareils tactiles.
+     * Initialise les écouteurs d'événements pour les interactions tactiles sur la zone de jeu
+     * (touchstart, touchmove, touchend, touchcancel) :
+     *  - un doigt sur le canvas : glissement (panoramique) de la caméra ;
+     *  - deux doigts sur le canvas : pincement pour zoomer (CAMERA_ZOOM_ADJUST).
+     *
+     * Seuls les doigts POSÉS SUR LE CANVAS comptent (`Touch.target` = élément où le doigt s'est
+     * posé). Avec les commandes tactiles, un pouce reste souvent appuyé sur un bouton (poussée)
+     * pendant que l'autre main agit sur la vue : compter `event.touches` en entier empêchait
+     * alors tout panoramique, et lever le pouce du bouton arrêtait le glissement en cours.
      * @listens touchstart sur `window`
      * @listens touchmove sur `window`
      * @listens touchend sur `window`
      * @listens touchcancel sur `window`
      */
     initTouchEvents() {
+        /** État du pincement en cours (null si aucun). @private */
+        this._pincement = null;
+
+        const doigtsSurCanvas = (liste) => {
+            const res = [];
+            if (!liste) return res;
+            for (let i = 0; i < liste.length; i++) {
+                if (this._estCibleCanvas(liste[i].target)) res.push(liste[i]);
+            }
+            return res;
+        };
+        const ecart = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const arreterGlissement = () => {
+            if (this.isTouchDragging) {
+                this.isTouchDragging = false;
+                if (this.eventBus && EVENTS.CAMERA && EVENTS.CAMERA.STOP_DRAG) {
+                    this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+                }
+            }
+        };
+        // (Re)part de l'état des doigts posés sur le canvas : 1 doigt = glissement, 2 = pincement.
+        const reprendreSelonDoigts = (doigts) => {
+            if (doigts.length >= 2) {
+                arreterGlissement();
+                const d = ecart(doigts[0], doigts[1]);
+                this._pincement = { id1: doigts[0].identifier, id2: doigts[1].identifier, distance: d };
+            } else if (doigts.length === 1) {
+                this._pincement = null;
+                const touch = doigts[0];
+                this.isTouchDragging = true;
+                this.eventBus.emit(EVENTS.CAMERA.START_DRAG, { x: touch.clientX, y: touch.clientY });
+            } else {
+                this._pincement = null;
+                arreterGlissement();
+            }
+        };
+
         const touchStartHandler = (event) => {
             // Même règle qu'à la souris : ne pas démarrer un panoramique depuis les contrôles
             // de la page (et ne pas leur voler leur comportement via preventDefault).
-            if (!this._estCibleCanvas(event.target)) return;
-            if (event.touches.length === 1) { // Gérer le drag avec un seul doigt
-                const touch = event.touches[0];
-                this.isTouchDragging = true;
-                this.eventBus.emit(EVENTS.CAMERA.START_DRAG, { x: touch.clientX, y: touch.clientY });
-                event.preventDefault(); // Empêcher le défilement de la page
-            }
+            if (doigtsSurCanvas(event.changedTouches).length === 0) return;
+            const doigts = doigtsSurCanvas(event.touches);
+            if (this.isTouchDragging) arreterGlissement();
+            reprendreSelonDoigts(doigts);
+            event.preventDefault(); // Empêcher le défilement / zoom de la page
         };
         this._touchHandlers.touchstart = touchStartHandler;
         this._addTrackedEventListener(window, 'touchstart', touchStartHandler, { passive: false });
 
         const touchMoveHandler = (event) => {
-            // Un second doigt met fin au panoramique : sinon `isTouchDragging` restait vrai alors
-            // que plus aucun preventDefault n'était appelé — la page se mettait à défiler/zoomer
-            // derrière le canvas, et lever un seul doigt émettait STOP_DRAG doigt encore posé.
-            if (this.isTouchDragging && event.touches.length !== 1) {
-                this.isTouchDragging = false;
-                if (this.eventBus && EVENTS.CAMERA && EVENTS.CAMERA.STOP_DRAG) {
-                    this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
+            if (!this.isTouchDragging && !this._pincement) return;
+            const doigts = doigtsSurCanvas(event.touches);
+            if (this._pincement) {
+                const t1 = doigts.find(t => t.identifier === this._pincement.id1);
+                const t2 = doigts.find(t => t.identifier === this._pincement.id2);
+                if (t1 && t2) {
+                    const d = ecart(t1, t2);
+                    const precedente = this._pincement.distance;
+                    // Écarts minuscules (doigts quasi superposés) : rapport instable, ignoré.
+                    if (precedente > 8 && d > 8) {
+                        // Borné par événement : un saut de mesure ne doit pas projeter le zoom.
+                        const facteur = Math.max(0.5, Math.min(2, d / precedente));
+                        if (facteur !== 1) {
+                            this.eventBus.emit(EVENTS.CAMERA.CAMERA_ZOOM_ADJUST, { factor: facteur });
+                        }
+                    }
+                    this._pincement.distance = d;
                 }
+                event.preventDefault();
                 return;
             }
-            if (this.isTouchDragging && event.touches.length === 1) {
-                const touch = event.touches[0];
-                this.eventBus.emit(EVENTS.CAMERA.DRAG, { x: touch.clientX, y: touch.clientY });
-                event.preventDefault();
+            // Un second doigt sur le canvas sans touchstart vu (cas limite) : on arrête le
+            // glissement plutôt que de suivre un doigt arbitraire.
+            if (doigts.length !== 1) {
+                arreterGlissement();
+                return;
             }
+            const touch = doigts[0];
+            this.eventBus.emit(EVENTS.CAMERA.DRAG, { x: touch.clientX, y: touch.clientY });
+            event.preventDefault();
         };
         this._touchHandlers.touchmove = touchMoveHandler;
         this._addTrackedEventListener(window, 'touchmove', touchMoveHandler, { passive: false });
 
         const touchEndHandler = (event) => {
-            if (this.isTouchDragging) {
-                this.isTouchDragging = false;
-                this.eventBus.emit(EVENTS.CAMERA.STOP_DRAG);
-                // event.preventDefault(); // Peut être nécessaire sur certains appareils
+            // Un doigt levé AILLEURS (bouton tactile, contrôle de la page) ne concerne pas la vue.
+            if (doigtsSurCanvas(event.changedTouches).length === 0) return;
+            if (!this.isTouchDragging && !this._pincement) return;
+            const doigts = doigtsSurCanvas(event.touches);
+            if (this._pincement) {
+                // Fin du pincement : s'il reste un doigt, il reprend le glissement depuis SA
+                // position actuelle (aucun saut de caméra).
+                this._pincement = null;
+                reprendreSelonDoigts(doigts.length >= 2 ? doigts : doigts.slice(0, 1));
+                return;
             }
+            if (doigts.length === 0) arreterGlissement();
         };
         this._touchHandlers.touchend = touchEndHandler;
         this._addTrackedEventListener(window, 'touchend', touchEndHandler);
@@ -631,42 +696,15 @@ class InputController {
 
         const actionKey = `${actionName}-${event.code || event.key}`; // Clé unique pour activeKeyActions
 
-        switch (actionName) {
-            case 'thrustForward':
-            case 'boost': // boost est un alias pour thrustForward
-                if (!this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.add(actionKey);
-                    console.log(`[InputController] Touche ${event.code || event.key} détectée, émission THRUST_FORWARD_START`);
-                    this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_START);
-                } else {
-                    console.log(`[InputController] Touche ${event.code || event.key} déjà active, pas de ré-émission`);
-                }
-                break;
-            case 'thrustBackward':
-                if (!this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.add(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_START);
-                }
-                break;
-            case 'rotateLeft':
-                if (!this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.add(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_START);
-                }
-                break;
-            case 'rotateRight':
-                if (!this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.add(actionKey);
-                    this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_START);
-                }
-                break;
-            case 'zoomIn':
-                this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN); // Se répète si la touche est maintenue
-                break;
-            case 'zoomOut':
-                this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT); // Se répète si la touche est maintenue
-                break;
-            // Les actions "coup unique" sont gérées dans handleKeyUp
+        // Actions continues : même chemin que les commandes tactiles (voir appuyerCommande).
+        if (InputController.estActionContinue(actionName)) {
+            this._demarrerActionContinue(actionName, actionKey);
+            return;
+        }
+        // Le zoom clavier part au keydown (et se répète si la touche est maintenue) ;
+        // les autres actions "coup unique" sont gérées dans handleKeyUp.
+        if (actionName === 'zoomIn' || actionName === 'zoomOut') {
+            this.executerActionPonctuelle(actionName);
         }
     }
     
@@ -767,41 +805,94 @@ class InputController {
 
         const actionKey = `${actionName}-${event.code || event.key}`;
 
+        if (estRelachementContinu) {
+            this._arreterActionContinue(actionName, actionKey);
+            return;
+        }
+        // Actions "coup unique" (le zoom, lui, est déjà parti au keydown).
+        if (actionName !== 'zoomIn' && actionName !== 'zoomOut') {
+            this.executerActionPonctuelle(actionName);
+        }
+    }
+    
+    /**
+     * Actions "maintenues" : un _START à l'appui, un _STOP au relâchement de la DERNIÈRE source.
+     * Les groupes réunissent les alias d'une même commande (thrustForward et boost).
+     * @param {string} actionName
+     * @returns {boolean}
+     */
+    static estActionContinue(actionName) {
+        return actionName === 'thrustForward' || actionName === 'boost' || actionName === 'thrustBackward'
+            || actionName === 'rotateLeft' || actionName === 'rotateRight';
+    }
+
+    /**
+     * Événements et groupe d'alias d'une action continue.
+     * @param {string} actionName
+     * @returns {?{start: string, stop: string, groupe: string[]}}
+     * @private
+     */
+    _descripteurActionContinue(actionName) {
         switch (actionName) {
             case 'thrustForward':
             case 'boost':
-                if (this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.delete(actionKey);
-                    if (!this._hasActiveSourceFor(['thrustForward', 'boost'])) {
-                        this.eventBus.emit(EVENTS.ROCKET.THRUST_FORWARD_STOP);
-                    }
-                }
-                break;
+                return { start: EVENTS.ROCKET.THRUST_FORWARD_START, stop: EVENTS.ROCKET.THRUST_FORWARD_STOP, groupe: ['thrustForward', 'boost'] };
             case 'thrustBackward':
-                if (this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.delete(actionKey);
-                    if (!this._hasActiveSourceFor(['thrustBackward'])) {
-                        this.eventBus.emit(EVENTS.ROCKET.THRUST_BACKWARD_STOP);
-                    }
-                }
-                break;
+                return { start: EVENTS.ROCKET.THRUST_BACKWARD_START, stop: EVENTS.ROCKET.THRUST_BACKWARD_STOP, groupe: ['thrustBackward'] };
             case 'rotateLeft':
-                if (this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.delete(actionKey);
-                    if (!this._hasActiveSourceFor(['rotateLeft'])) {
-                        this.eventBus.emit(EVENTS.ROCKET.ROTATE_LEFT_STOP);
-                    }
-                }
-                break;
+                return { start: EVENTS.ROCKET.ROTATE_LEFT_START, stop: EVENTS.ROCKET.ROTATE_LEFT_STOP, groupe: ['rotateLeft'] };
             case 'rotateRight':
-                if (this.activeKeyActions.has(actionKey)) {
-                    this.activeKeyActions.delete(actionKey);
-                    if (!this._hasActiveSourceFor(['rotateRight'])) {
-                        this.eventBus.emit(EVENTS.ROCKET.ROTATE_RIGHT_STOP);
-                    }
-                }
+                return { start: EVENTS.ROCKET.ROTATE_RIGHT_START, stop: EVENTS.ROCKET.ROTATE_RIGHT_STOP, groupe: ['rotateRight'] };
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Début d'une action continue pour UNE source (touche clavier, bouton tactile…).
+     * Émet le _START si cette source n'était pas déjà active (pas de ré-émission sur la
+     * répétition automatique du clavier).
+     * @param {string} actionName
+     * @param {string} actionKey - Clé unique de la source : `${action}-${code}` au clavier,
+     *   `${action}-tactile` pour l'écran tactile.
+     * @private
+     */
+    _demarrerActionContinue(actionName, actionKey) {
+        const d = this._descripteurActionContinue(actionName);
+        if (!d || this.activeKeyActions.has(actionKey)) return;
+        this.activeKeyActions.add(actionKey);
+        this.eventBus.emit(d.start);
+    }
+
+    /**
+     * Fin d'une action continue pour UNE source. Le _STOP n'est émis que si plus aucune autre
+     * source (alias clavier, manette, écran tactile) ne maintient la même commande.
+     * @param {string} actionName
+     * @param {string} actionKey
+     * @private
+     */
+    _arreterActionContinue(actionName, actionKey) {
+        const d = this._descripteurActionContinue(actionName);
+        if (!d || !this.activeKeyActions.has(actionKey)) return;
+        this.activeKeyActions.delete(actionKey);
+        if (!this._hasActiveSourceFor(d.groupe)) {
+            this.eventBus.emit(d.stop);
+        }
+    }
+
+    /**
+     * Déclenche une action "coup unique" (reset, pause, bascules d'affichage, zoom par pas…).
+     * Point d'entrée commun au clavier (handleKeyDown/handleKeyUp) et aux commandes tactiles.
+     * @param {string} actionName - Nom d'action de `DEFAULT_KEY_MAP` (resetRocket, toggleTraces…).
+     */
+    executerActionPonctuelle(actionName) {
+        switch (actionName) {
+            case 'zoomIn':
+                this.eventBus.emit(EVENTS.CAMERA.ZOOM_IN);
                 break;
-            // Actions "coup unique"
+            case 'zoomOut':
+                this.eventBus.emit(EVENTS.CAMERA.ZOOM_OUT);
+                break;
             case 'resetRocket':
                 this.eventBus.emit(EVENTS.ROCKET.RESET);
                 break;
@@ -818,7 +909,7 @@ class InputController {
                 this.eventBus.emit(EVENTS.RENDER.TOGGLE_TRACES);
                 break;
             case 'toggleAI':
-                console.log("[InputController] Émission de EVENTS.AI.TOGGLE_CONTROL due à KeyI (keyup)");
+                console.log("[InputController] Émission de EVENTS.AI.TOGGLE_CONTROL");
                 this.eventBus.emit(EVENTS.AI.TOGGLE_CONTROL);
                 break;
             case 'toggleAssistedControls':
@@ -837,7 +928,40 @@ class InputController {
                 break;
         }
     }
-    
+
+    /**
+     * Commandes tactiles : appui sur une commande MAINTENUE (poussée, rétro, rotation).
+     * Passe exactement par le même chemin que le clavier (activeKeyActions + _START), si bien
+     * que le comptage des sources, le relâchement au reset et à la perte de focus s'appliquent
+     * aussi au doigt.
+     * @param {string} actionName - 'thrustForward' | 'thrustBackward' | 'rotateLeft' | 'rotateRight'
+     * @param {string} [source='tactile'] - Identifiant de la source (sans '-' ni '_').
+     */
+    appuyerCommande(actionName, source = 'tactile') {
+        if (!InputController.estActionContinue(actionName)) return;
+        this._demarrerActionContinue(actionName, `${actionName}-${source}`);
+    }
+
+    /**
+     * Commandes tactiles : relâchement d'une commande maintenue (voir appuyerCommande).
+     * @param {string} actionName
+     * @param {string} [source='tactile']
+     */
+    relacherCommande(actionName, source = 'tactile') {
+        if (!InputController.estActionContinue(actionName)) return;
+        this._arreterActionContinue(actionName, `${actionName}-${source}`);
+    }
+
+    /**
+     * La commande est-elle actuellement maintenue par cette source ?
+     * @param {string} actionName
+     * @param {string} [source='tactile']
+     * @returns {boolean}
+     */
+    estCommandeActive(actionName, source = 'tactile') {
+        return this.activeKeyActions.has(`${actionName}-${source}`);
+    }
+
     /**
      * Met à jour l'état des entrées, principalement pour la manette de jeu (gamepad).
      * Cette méthode doit être appelée à chaque frame de la boucle de jeu principale.

@@ -2,13 +2,22 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- viewport-fit=cover : les commandes tactiles tiennent compte des encoches (env(safe-area-inset-*)). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Simulation de Fusée</title>
     <style>
+        html {
+            /* Pas de « tirer pour rafraîchir » ni de rebond de page sur tablette. */
+            overscroll-behavior: none;
+        }
         body {
             margin: 0;
             padding: 0;
             overflow: hidden;
+            overscroll-behavior: none;
+            /* Pas de double-tap zoom ; le pincement de la zone de jeu est géré par le jeu. */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
             background-color: #0a0a0a;
             display: flex;
             justify-content: center;
@@ -19,9 +28,21 @@
             display: block;
             border-radius: 8px;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-            position: absolute;
+            /* Boîte CSS liée à la fenêtre (et non à la taille du tampon de dessin) : lors d'une
+               rotation paysage -> portrait, l'ancien canvas plus large que le nouvel écran
+               débordait ; le navigateur mobile dézoomait alors la page (échelle 0,75 mesurée) et
+               innerWidth restait à l'ancienne largeur — le canvas ne se réduisait jamais. */
+            position: fixed;
             top: 0;
             left: 0;
+            width: 100%;
+            height: 100%;
+            /* Zone de jeu : aucun geste du navigateur (défilement, zoom de page) ; le glissement
+               à un doigt déplace la vue, le pincement à deux doigts zoome (InputController). */
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         #instructions {
             position: fixed;
@@ -99,6 +120,187 @@
         }
         #audioControls button:hover {
             background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* ----- Écran de démarrage : utilisable au doigt et sur petit écran ----- */
+        #instructions {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        #instructions .ligne-haut {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        #instructions .colonne-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 160px;
+            flex-shrink: 0;
+        }
+        #instructions .colonne-logo img {
+            width: 160px;
+            height: 160px;
+            margin-top: 5px;
+        }
+        #instructions .colonne-controles {
+            flex: 1 1 260px;
+            min-width: 0;
+        }
+        #instructions .ligne-depart {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            width: 100%;
+            margin-top: 10px;
+            /* Petit écran : le panneau défile, mais le choix du monde et « Prêt ! » restent
+               visibles en bas (collés), sans avoir à faire défiler jusqu'à eux. */
+            position: sticky;
+            bottom: -15px;               /* recouvre le padding bas du panneau */
+            padding: 8px 0 15px 0;
+            margin-bottom: -15px;
+            background: rgb(30, 30, 30);
+            z-index: 1;
+        }
+        #instructions select,
+        #instructions button {
+            min-height: 48px;
+            font-size: 16px; /* 16 px : Safari iOS ne zoome pas la page à la sélection */
+            touch-action: manipulation;
+        }
+        #instructions select {
+            padding: 4px 8px;
+            max-width: 100%;
+        }
+        #instructions #startButton {
+            padding: 6px 18px;
+            cursor: pointer;
+        }
+        #instructions .titre-tactile {
+            font-weight: bold;
+            text-align: left;
+            padding-top: 6px;
+            color: #9cf;
+        }
+        @media (max-width: 560px), (max-height: 560px) {
+            #instructions .colonne-logo { width: 100%; flex-direction: row; gap: 10px; }
+            #instructions .colonne-logo img { width: 64px; height: 64px; margin-top: 0; }
+            #instructions .colonne-logo p { text-align: left !important; margin: 2px 0 !important; }
+        }
+
+        /* ----- Commandes tactiles (controllers/TouchControlsController.js) ----- */
+        #commandesTactiles {
+            display: none;
+            position: fixed;
+            inset: 0;
+            pointer-events: none;         /* seuls les boutons captent les doigts */
+            z-index: 50;                  /* sous ⚙️ (100) et l'écran de démarrage (9999) */
+            font-family: Arial, sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body.commandes-tactiles #commandesTactiles { display: block; }
+        #commandesTactiles .groupe-tactile {
+            position: absolute;
+            display: flex;
+            gap: 14px;
+            pointer-events: none;
+        }
+        #commandesTactiles .bouton-tactile {
+            pointer-events: auto;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            min-width: 52px;
+            min-height: 52px;
+            padding: 2px 5px;
+            margin: 0;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.13);
+            border: 2px solid rgba(255, 255, 255, 0.45);
+            border-radius: 14px;
+            font-family: inherit;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.85;
+        }
+        #commandesTactiles .bouton-tactile .symbole { font-size: 22px; font-weight: bold; }
+        #commandesTactiles .bouton-tactile .legende { font-size: 10px; margin-top: 3px; opacity: 0.9; }
+        #commandesTactiles .bouton-tactile.actif {
+            background: rgba(120, 200, 255, 0.45);
+            border-color: rgba(170, 225, 255, 0.95);
+            opacity: 1;
+        }
+        /* Pouce gauche : rotation */
+        #commandesTactiles .groupe-rotation {
+            left: calc(16px + env(safe-area-inset-left, 0px));
+            bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        }
+        #commandesTactiles .bouton-rotation { width: 76px; height: 76px; border-radius: 50%; }
+        #commandesTactiles .bouton-rotation .symbole { font-size: 34px; }
+        /* Pouce droit : poussée (grand) au-dessus de rétro ; au-dessus de ⚙️ en bas à droite */
+        #commandesTactiles .groupe-poussee {
+            right: calc(16px + env(safe-area-inset-right, 0px));
+            bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+        #commandesTactiles .bouton-poussee { width: 88px; height: 88px; border-radius: 50%; }
+        #commandesTactiles .bouton-poussee .symbole { font-size: 34px; }
+        #commandesTactiles .bouton-retro { width: 68px; height: 60px; border-radius: 30px; }
+        /* Barre d'outils : en bas, entre les deux pouces ; passe sur deux lignes si besoin */
+        #commandesTactiles .barre-outils {
+            left: calc(200px + env(safe-area-inset-left, 0px));
+            right: calc(130px + env(safe-area-inset-right, 0px));
+            bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            flex-wrap: wrap-reverse;
+            justify-content: center;
+            align-content: flex-start;
+            gap: 6px;
+        }
+        #commandesTactiles .bouton-outil { min-width: 60px; }
+        /* Écran étroit (téléphone en portrait) : barre d'outils au-dessus des pouces */
+        @media (max-width: 600px) {
+            #commandesTactiles .barre-outils {
+                left: calc(8px + env(safe-area-inset-left, 0px));
+                right: calc(8px + env(safe-area-inset-right, 0px));
+                bottom: calc(230px + env(safe-area-inset-bottom, 0px));
+            }
+            #commandesTactiles .bouton-outil { min-width: 56px; }
+        }
+        /* Fenêtre très basse (téléphone en paysage, petit cadre) : boutons un peu plus compacts */
+        @media (max-height: 430px) {
+            #commandesTactiles .bouton-rotation { width: 64px; height: 64px; }
+            #commandesTactiles .bouton-poussee { width: 72px; height: 72px; }
+            #commandesTactiles .bouton-retro { height: 52px; }
+            /* ▼ à gauche de ▲, sur une seule rangée : la colonne montait jusqu'au cadre
+               Missions/Cargo dessiné en haut à droite. */
+            #commandesTactiles .groupe-poussee { gap: 10px; flex-direction: row-reverse; align-items: flex-end; }
+            #commandesTactiles .barre-outils { right: calc(180px + env(safe-area-inset-right, 0px)); }
+        }
+        /* Bouton ✋ (à côté de ⚙️) */
+        #audioControls #basculeTactile.actif { background: rgba(120, 200, 255, 0.45); } /* l'emporte sur :hover collant au doigt */
+        #basculeTactile.bascule-seule { position: fixed; right: 10px; bottom: 10px; z-index: 100; }
+        /* Doigt : cibles ⚙️ / ✋ / son agrandies */
+        @media (pointer: coarse) {
+            #audioControls button { min-width: 44px; min-height: 44px; font-size: 18px; }
+            #audioControls { bottom: calc(6px + env(safe-area-inset-bottom, 0px)); right: calc(6px + env(safe-area-inset-right, 0px)); }
         }
         .cargo-icons img {
             width: 16px;
@@ -436,6 +638,7 @@
     <!-- Contrôleur physique principal (maintenant réorganisé) -->
     <script src="controllers/PhysicsController.js"></script>
     <script src="controllers/InputController.js"></script>
+    <script src="controllers/TouchControlsController.js"></script>
     <script src="controllers/CameraController.js"></script>
     <script src="controllers/RenderingController.js"></script>
     <script src="controllers/ParticleController.js"></script>
