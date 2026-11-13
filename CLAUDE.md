@@ -186,9 +186,11 @@ the whole universe vanish behind the veil.)
 - Planetary rings rendered in two passes (back/front)
 - Particle effects for thrust and explosions — thrust emitters follow the thruster's actual `power`,
   not just `fuel > 0` (a refuel used to revive a ghost plume on a thruster at 0)
-- Force vectors (key `V`): thrust, velocity, `a=F/m`, mission start/target, and the resultant
-  gravitational attraction (label `g`, magenta) — the last one was documented but never drawn before
-  2026‑08‑25
+- Force vectors (key `V`, since 2026‑11‑14 `VectorsView.renderForcesPedagogiques`): named
+  attractions (« Attraction de la Terre »…, `PhysicsVectors.calculerAttractions`, same law/constant
+  as the real gravity) and thrust on ONE force scale (rocket weight on Earth's ground = 120 px),
+  velocity (dashed, fixed length) and mission direction. The old debug view (`g`, `a=F/m`,
+  `main`/`rear`, `Orig`/`Dest`) is no longer requested by `RenderingController` (code kept)
 - Gravity field visualization (key `G`: arrows or equipotential lines). ⚠️ The **arrow** mode encodes
   magnitude on a **log scale relative to the range actually present in the view**, not on absolute
   thresholds: the old thresholds were 2–7 orders of magnitude below real accelerations, so 100 % of
@@ -382,6 +384,7 @@ Here are the most important events flowing through the `EventBus`:
 - `RocketController.js` - Rocket-specific logic
 - `RenderingController.js` - View coordination (CRITICAL)
 - `InputController.js` - Keyboard/mouse/gamepad/touch input (one-finger pan + two-finger pinch zoom on the canvas)
+- `GuideDecouverteController.js` - « Mode Découverte » panel (4 challenges tied to the 3rd-grade gravitation lesson, validated from the live simulation; legend for V/G). Shows only ratios, never fake SI values. Emits `CAMERA_LEFT_MARGIN_CHANGED` so the camera centres the rocket in the free band (`CameraModel.appliquerCentre`)
 - `TouchControlsController.js` - On-screen touch buttons (HTML overlay `#commandesTactiles`, toggle ✋). Routes through `InputController.appuyerCommande` / `relacherCommande` / `executerActionPonctuelle` — the same path as the keyboard
 - `CollisionHandler.js` - Collision detection and response
 - `SynchronizationManager.js` - Physics ↔ Model sync

@@ -205,6 +205,64 @@ class PhysicsVectors {
     }
 
     /**
+     * Attraction gravitationnelle exercée par CHAQUE corps céleste sur la fusée, triée de la plus
+     * forte à la plus faible. Même loi et même constante que la gravité réellement appliquée par
+     * matter-attractors (F = G × M × m / d², d entre les centres, G = PHYSICS.G copiée dans le
+     * plugin) : ce n'est pas une approximation d'affichage. Mesuré au banc (Chrome, vrai
+     * Matter.js) : fusée immobile à d, 1,5 d, 2 d, 3 d, 4 d du centre de la Terre, rapports des
+     * accélérations dues à la Terre 2,252 / 4,005 / 9,014 / 16,024 pour 2,25 / 4 / 9 / 16.
+     *
+     * Les forces sont en UNITÉS DU JEU (ni newtons ni kilogrammes) : seuls les RAPPORTS ont un
+     * sens physique (« 4 fois plus faible »).
+     *
+     * @param {object} rocketModel - position {x, y} et mass
+     * @param {object} universeModel - celestialBodies[]
+     * @param {number} G - PHYSICS.G
+     * @return {Array<{nom: string, corps: object, fx: number, fy: number, force: number, distance: number}>}
+     */
+    static calculerAttractions(rocketModel, universeModel, G) {
+        const liste = [];
+        if (!rocketModel || !rocketModel.position || !universeModel || !Array.isArray(universeModel.celestialBodies)) return liste;
+        const m = rocketModel.mass || (typeof ROCKET !== 'undefined' ? ROCKET.MASS : 1);
+        for (const corps of universeModel.celestialBodies) {
+            if (!corps || !corps.position || !(corps.mass > 0)) continue;
+            const dx = corps.position.x - rocketModel.position.x;
+            const dy = corps.position.y - rocketModel.position.y;
+            const d2 = dx * dx + dy * dy;
+            if (!(d2 > 0) || !isFinite(d2)) continue;
+            const d = Math.sqrt(d2);
+            const force = G * corps.mass * m / d2;
+            liste.push({ nom: corps.name, corps, fx: force * dx / d, fy: force * dy / d, force, distance: d });
+        }
+        liste.sort((a, b) => b.force - a.force);
+        return liste;
+    }
+
+    /**
+     * Distance entre le centre d'un astre et le centre de la fusée posée debout à sa surface
+     * (rayon + demi-hauteur de la fusée). Sert de référence « au sol ».
+     * @param {object} corps
+     * @return {number}
+     */
+    static distanceAuSol(corps) {
+        const demiHauteur = (typeof ROCKET !== 'undefined' && ROCKET.HEIGHT) ? ROCKET.HEIGHT / 2 : 30;
+        return (corps && corps.radius > 0 ? corps.radius : 0) + demiHauteur;
+    }
+
+    /**
+     * Poids de la fusée posée sur un astre (attraction de cet astre seul, au sol), en unités du jeu.
+     * @param {object} corps
+     * @param {number} masseFusee
+     * @param {number} G
+     * @return {number}
+     */
+    static poidsAuSol(corps, masseFusee, G) {
+        if (!corps || !(corps.mass > 0)) return 0;
+        const d = PhysicsVectors.distanceAuSol(corps);
+        return G * corps.mass * masseFusee / (d * d);
+    }
+
+    /**
      * Un propulseur produit-il RÉELLEMENT de la poussée ? Reproduit les conditions d'annulation de
      * ThrusterPhysics.applyThrusterForce : réservoir vide, et couple latéral neutralisé au sol.
      *

@@ -37,7 +37,7 @@ class TouchControlsController {
         outils: [
             { id: 'tactile-trajectoire', action: 'toggleTraces', symbole: 'T', legende: 'Trajectoire', titre: 'Afficher/cacher la trajectoire (T)' },
             { id: 'tactile-gravite', action: 'toggleGravityField', symbole: 'G', legende: 'Gravité', titre: 'Champ de gravité : flèches, lignes, rien (G)' },
-            { id: 'tactile-vecteurs', action: 'toggleVectors', symbole: 'V', legende: 'Vecteurs', titre: 'Afficher/cacher les vecteurs (V)' },
+            { id: 'tactile-vecteurs', action: 'toggleVectors', symbole: 'V', legende: 'Forces', titre: 'Afficher/cacher les forces et la vitesse (V)' },
             { id: 'tactile-centrer', action: 'centerCamera', symbole: 'C', legende: 'Centrer', titre: 'Centrer la caméra sur la fusée (C)' },
             { id: 'tactile-zoom-moins', action: 'zoomOut', symbole: '−', legende: 'Zoom', titre: 'Zoom arrière (−), maintenir pour répéter', repetition: true },
             { id: 'tactile-zoom-plus', action: 'zoomIn', symbole: '+', legende: 'Zoom', titre: 'Zoom avant (+), maintenir pour répéter', repetition: true },

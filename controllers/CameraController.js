@@ -96,6 +96,19 @@ class CameraController {
             console.warn("EVENTS.SYSTEM.CANVAS_RESIZED ou EVENTS.RENDER.CANVAS_RESIZED n'est pas défini. CameraController ne s'abonnera pas à l'événement de redimensionnement du canvas.");
         }
 
+        // Panneau à gauche (guide « Découverte ») : centrer la vue dans la zone restée libre.
+        if (window.EVENTS && window.EVENTS.CAMERA && window.EVENTS.CAMERA.LEFT_MARGIN_CHANGED) {
+            window.controllerContainer.track(
+                this.eventBus.subscribe(window.EVENTS.CAMERA.LEFT_MARGIN_CHANGED, (data) => {
+                    if (!this.cameraModel || !data) return;
+                    const positif = (x) => { const n = Number(x); return Number.isFinite(n) && n > 0 ? n : 0; };
+                    this.cameraModel.margeGauche = positif(data.margeGauche);
+                    this.cameraModel.margeDroite = positif(data.margeDroite);
+                    this.cameraModel.appliquerCentre();
+                })
+            );
+        }
+
         // Recentrer caméra sur la fusée lors d'un reload d'univers
         if (window.EVENTS && window.EVENTS.UNIVERSE && window.EVENTS.UNIVERSE.STATE_UPDATED) {
             window.controllerContainer.track(
@@ -291,8 +304,8 @@ class CameraController {
         if (this.cameraModel && data) {
             this.cameraModel.width = data.width;
             this.cameraModel.height = data.height;
-            this.cameraModel.offsetX = data.width / 2;  // Centre de l'écran en X
-            this.cameraModel.offsetY = data.height / 2; // Centre de l'écran en Y
+            // Centre de l'écran, ou de la zone laissée libre par le guide « Découverte »
+            this.cameraModel.appliquerCentre();
             // console.log(`[CameraController] CameraModel dimensions updated: ${data.width}x${data.height}`);
         }
     }

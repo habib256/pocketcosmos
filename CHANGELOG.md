@@ -7,6 +7,103 @@ Voir aussi [PHYSICS.md](PHYSICS.md) (détails techniques), [TODO.md](TODO.md) (d
 
 ---
 
+## [Non publié] — Mode Découverte : la gravitation pour la classe de 3e — 2026‑11‑14
+
+> Objectif : rendre le jeu utilisable pour le chapitre de 3e « La gravitation universelle »
+> (programme de cycle 4) sans en faire un autre jeu. Deux apports : un guide de quatre défis et des
+> flèches de force lisibles par un élève. **La physique du jeu n'est pas modifiée.** Vérifié au banc
+> Chrome headless piloté par CDP (temps réel, vrai Matter.js) : 39/39 vérifications sur ordinateur
+> 1000×680 (clavier, souris), dans un `iframe` 1000×680 au doigt, en tablette 1024×768 au doigt,
+> 38/39 en 768×1024 (fusée rapide sous le panneau, voir Limites) ; non-régression des commandes
+> tactiles intacte (51/51/49/19/51/51 et premier doigt) ; mondes 2 et 3 et interface d'entraînement
+> IA sans erreur. Aucune erreur JavaScript, aucune requête hors de
+> l'origine locale. Textes relus par un relecteur indépendant (grille qualité du site), corrections
+> appliquées. ⚠️ **Aucun essai en classe ni sur une vraie tablette.**
+
+### Mesuré — la loi de gravité réellement simulée
+
+- Fusée immobile, moteurs coupés, placée à 1 ; 1,5 ; 2 ; 3 ; 4 fois la distance « au sol » du centre
+  de la Terre (750 u), pas de 1/60 s du vrai moteur : rapports des accélérations dues à la Terre
+  **2,252 / 4,005 / 9,014 / 16,024** pour 2,25 / 4 / 9 / 16 attendus. Accélération totale mesurée =
+  somme des G·M/d² de tous les astres à 0,2 % près. La loi en 1/d² du cours est donc bien celle du jeu.
+- **Écart avec la réalité, signalé à l'élève** : les astres du Monde 1 sont immobiles (`orbitSpeed`
+  0 pour la Terre) alors que le Soleil attire la fusée (19,75 u/s² au niveau de la Terre, 5,5 % du
+  poids au sol, 24 % de l'attraction terrestre à 2 fois la distance). En réalité la Terre et la fusée
+  « tombent » ensemble vers le Soleil. Conséquence mesurée : à la vitesse orbitale théorique, la
+  fusée s'écrase après 0,29 tour (r = 1000) ou 0,33 tour (r = 1300) ; sur 354 lancements idéaux
+  (5 altitudes × 5 vitesses × 8 positions × 2 sens), meilleur cas **1,04 tour**, 29 % dépassent un
+  demi-tour, 82 % un quart de tour. Une orbite complète moteurs coupés est donc pratiquement
+  impossible : la consigne « mets-toi en orbite » du site ne peut pas être réussie telle quelle.
+  Corriger cela toucherait la physique (terme « indirect » ou sphères d'influence) : non fait,
+  décision laissée au propriétaire.
+- Poids de la fusée posée sur la Lune = 64 % de son poids sur la Terre dans le jeu (16 % en réalité).
+- Poussée maximale / poids au sol = 1,547.
+
+### Ajouté — guide « Découverte » (`controllers/GuideDecouverteController.js`)
+
+- Panneau 🎯 **Défis** à gauche, sous les jauges, au-dessus des boutons du pouce gauche ;
+  repliable, ◀ ▶, boutons de 44 px minimum, au doigt, à la souris et au clavier (Tab, sans voler
+  la barre Espace : mesuré, Espace pousse toujours après des clics sur le guide). Replié d'office
+  sous 700×520 ; replié, il ne reste que le bouton 🎯 (la légende se replie avec lui). Un défi
+  réussi ouvre le panneau sur grand écran ; sur petit écran, il met seulement 🎯 en évidence. Largeur
+  290 px, réduite sur écran moyen (244 px en 768 de large) pour laisser libre le centre ± 120 px
+  de l'écran, où l'on pince et fait glisser la vue. Affiché seulement dans un monde qui a une Terre
+  et une Lune (Monde 1).
+- Quatre défis validés automatiquement d'après l'état réel de la simulation, chacun suivi d'une
+  explication reliée au cours : 1) décoller puis couper les moteurs → la fusée retombe (validé
+  quand la vitesse radiale devient négative) ; 2) monter à 2 fois la distance du décollage, avec
+  la mesure en direct « 1,6 fois … 2,5 fois plus faible » ; 3) un quart de tour de la Terre moteurs
+  coupés, sans contact, la Terre retenant la fusée (énergie mécanique par rapport à la Terre < 0,
+  sinon une fusée qui s'échappe en ligne presque droite compterait) ; 4) s'approcher de la Lune
+  (elle devient l'astre qui attire le plus) ou s'y poser. Bilan « À retenir » après les quatre.
+- Grandeurs : **uniquement des rapports** (« fois », « % »), jamais de mètres, km/h ou newtons.
+- Rien n'est enregistré ni transmis.
+
+### Modifié — touche V : forces lisibles (`VectorsView.renderForcesPedagogiques`)
+
+- Avant : « g » magenta (somme de toutes les attractions) **toujours à la même longueur** (saturé
+  à 120 px partout près de la Terre : 356 × 3000 ≫ 120), « a=F/m », « main »/« rear » en anglais,
+  « Orig »/« Dest » avec des distances sans unité. Illisible pour un élève, et la longueur ne
+  disait rien.
+- Après : « Attraction de la Terre », « Attraction de la Lune », « Attraction du Soleil »…
+  (`PhysicsVectors.calculerAttractions`, même loi et même constante que la gravité appliquée),
+  dirigées vers le centre de l'astre, et « Poussée », **sur une même échelle de force** : poids au
+  sol de la Terre = 120 px (mesuré : 120 / 30 / 13,3 px à 1 / 2 / 3 fois la distance, rapports
+  4,000 et 9,000, cos(direction, centre) = 1,000000). Poussée maximale ≈ 186 px : l'élève voit
+  qu'elle dépasse le poids. Attractions dessinées si ≥ 20 % de la plus forte (3 au plus) ; au-delà
+  de 200 px, « (flèche raccourcie) ». Point blanc = point d'application. « Vitesse » en pointillés
+  (longueur fixe), « Mission : Lune » en pointillés dorés. Contour sombre et libellés qui ne se
+  chevauchent pas.
+- Légende HTML sous le guide quand V est actif, et légende du champ de gravitation pour G
+  (flèches, puis lignes équipotentielles « hors programme du collège »).
+- Bouton tactile V : légende « Forces » (au lieu de « Vecteurs »). Tableau de l'écran de
+  démarrage : V et 🎯 décrits.
+
+### Modifié — caméra : la fusée reste dans la zone libre
+
+- La caméra suit la fusée avec un retard (`CAMERA_SMOOTHING` 2 : ≈ 200 px à 400 u/s). Avec le
+  panneau à gauche, une fusée rapide filant vers la gauche passait dessous (mesuré au défi 3).
+  `CameraModel.margeGauche` / `margeDroite` + `appliquerCentre()` : le centre de la vue est le
+  milieu de la bande libre entre le guide et les boutons ▲ ▼ (événement
+  `CAMERA_LEFT_MARGIN_CHANGED`, émis par le guide ; rien si la bande fait moins de 300 px ou si le
+  guide est replié). Mesuré pendant le défi 3 : le centre de la fusée n'est jamais passé sous le
+  panneau ni sous ▲ ▼.
+
+### Limites connues
+
+- Le défi 3 se limite à un quart de tour à cause de l'écart ci-dessus.
+- Le banc a « tourné » la fusée par programme au défi 3 (poussée et coupure au clavier réelles) :
+  la réussite d'un élève qui pilote seul la rotation n'a pas été mesurée.
+- En portrait 768×1024 avec les commandes tactiles, la bande libre est étroite (≈ 390 px) : mesuré
+  au défi 3 (orbite basse, ≈ 440 u/s, retard de caméra ≈ 220 px), le centre de la fusée est passé
+  sous le panneau déplié dans 11 relevés sur 21 (0 sur 21 en 1000×680 et 1024×768). Le retard de
+  la caméra (`CAMERA_SMOOTHING`) n'a pas été modifié ; l'élève peut replier le panneau (🎯).
+- Déplié, le panneau occupe une bande à gauche : on ne peut pas y commencer un glisser ou un
+  pincement de la vue (le centre de l'écran reste libre).
+- Pas de touche clavier dédiée au guide (Tab permet d'atteindre ses boutons).
+
+---
+
 ## [Non publié] — Commandes tactiles (tablettes) — 2026‑11‑14
 
 > Objectif : jouer en classe sur iPad et tablettes Android, y compris dans le cadre (`iframe`) du

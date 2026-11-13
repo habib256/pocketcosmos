@@ -76,7 +76,7 @@ Prenez les commandes ! Ce projet vous permet de piloter une fusée dans un mini-
 - **C** : Centrer la caméra sur la fusée 🎯
 - **+ / -** (ou Molette Souris) : Zoom avant / arrière 🔍
 - **T** : Afficher/masquer la trace de trajectoire
-- **V** : Afficher/masquer les vecteurs de force (pour debug)
+- **V** : Afficher/masquer les forces sur la fusée (attraction des astres, poussée) et la vitesse, avec une légende
 - **G** : Afficher/masquer le champ de gravité (flèches puis lignes équipotentielles)
 - **I** : Activer/désactiver le contrôle par l'IA 🤖
 - **P** ou **Echap** : Pause / Reprendre la simulation
@@ -120,6 +120,55 @@ Les boutons passent par le même chemin que le clavier (`InputController.appuyer
 `relacherCommande` / `executerActionPonctuelle`) : aucune règle de pilotage n'est dupliquée.
 Code : `controllers/TouchControlsController.js` (boutons) et `InputController.initTouchEvents`
 (glisser, pincer).
+
+
+## 🎓 Mode Découverte : la gravitation au collège (Monde 1)
+
+Pensé pour le chapitre de 3e « La gravitation universelle » (programme de cycle 4) : un panneau
+**🎯 Défis**, à gauche sous les jauges, propose quatre défis courts. Chacun est validé
+**automatiquement** d'après l'état réel de la simulation, puis une explication relie ce que l'élève
+vient de voir au cours.
+
+| Défi | Ce que fait l'élève | Validé quand… | Notion du cours |
+|---|---|---|---|
+| 1. Décoller… et retomber | décolle puis coupe les moteurs | moteurs coupés, la fusée redescend | interaction gravitationnelle à distance ; le poids, P = m × g |
+| 2. Plus loin, moins attirée | monte à 2 fois la distance au sol (centre de la Terre) | d ≥ 2 × d(sol) | F = G × (m₁ × m₂) / d² : distance × 2 → force ÷ 4 |
+| 3. Tomber autour de la Terre | accélère parallèlement au sol puis coupe les moteurs | un quart de tour de la Terre sans moteur ni contact, la Terre retenant la fusée (énergie < 0) | l'orbite : une chute qui « rate » la Terre (Newton) |
+| 4. Sur la Lune, moins attirée | s'approche tout près de la Lune ou s'y pose | la Lune devient l'astre qui attire le plus | le poids dépend de l'astre, pas la masse |
+
+- Pendant le défi 2, le panneau affiche en direct « Distance au centre de la Terre : 1,6 fois celle
+  du décollage. Attraction de la Terre : 2,5 fois plus faible qu'au décollage. » : **uniquement des
+  rapports**.
+  Les unités du jeu ne sont pas celles du Système international (système solaire miniature) ; aucune
+  valeur en mètres, km/h ou newtons n'est affichée.
+- Le panneau se replie (bouton 🎯, légende comprise), ◀ ▶ changent de défi ; boutons de 44 px au
+  moins, utilisables au doigt, à la souris et au clavier (Tab). Replié d'office sur un petit écran
+  (téléphone) ; plus étroit sur écran moyen pour laisser libre le centre, où l'on pince et glisse. Quand il est déplié,
+  la caméra centre la fusée dans la zone restée libre (entre le panneau et les boutons ▲ ▼).
+- **Touche V** (bouton « Forces ») : flèches nommées « Attraction de la Terre », « Attraction de la
+  Lune »… (dirigées vers le centre de l'astre) et « Poussée », partant du centre de la fusée et
+  dessinées **à la même échelle** : au sol de la Terre, l'attraction mesure 120 px ; à 2 fois la
+  distance, 30 px (4 fois moins). Une attraction n'est dessinée que si elle vaut au moins 20 % de la
+  plus forte. « Vitesse » (pointillés, longueur fixe) et la direction de la mission complètent. Une
+  légende s'affiche sous le panneau, ainsi qu'une légende du champ de gravitation (touche **G**).
+- Rien n'est enregistré ni transmis ; la progression repart de zéro à chaque chargement.
+- Le guide ne s'affiche pas dans les mondes 2 à 6 (ils n'ont ni Terre ni Lune) ; les flèches V y
+  fonctionnent (échelle : poids sur l'astre de départ).
+
+**Ce que la simulation fait réellement** (mesuré au banc Chrome + vrai Matter.js, voir CHANGELOG) :
+- la gravité appliquée à la fusée suit exactement F = G × M × m / d² (d entre les centres) :
+  rapports mesurés 2,252 / 4,005 / 9,014 / 16,024 à 1,5 / 2 / 3 / 4 fois la distance au sol, pour
+  2,25 / 4 / 9 / 16 attendus ;
+- **écart avec la réalité** : les astres du Monde 1 sont immobiles alors que le Soleil attire aussi
+  la fusée (≈ 5,5 % de son poids au sol). Une orbite complète moteurs coupés autour de la Terre est
+  donc pratiquement impossible : sur 354 lancements idéaux simulés (vitesse orbitale, 5 altitudes,
+  8 positions, 2 sens), le meilleur fait 1,04 tour, 29 % dépassent un demi-tour, 82 % un quart de
+  tour. C'est pourquoi le défi 3 demande un quart de tour, et son explication le dit à l'élève ;
+- dans le jeu, le poids de la fusée sur la Lune vaut 64 % de son poids sur Terre (16 % en réalité) :
+  l'explication du défi 4 donne les deux valeurs.
+
+Code : `controllers/GuideDecouverteController.js` (panneau, défis, légende),
+`VectorsView.renderForcesPedagogiques` (flèches), `PhysicsVectors.calculerAttractions`.
 
 ## 🔧 Technologies
 

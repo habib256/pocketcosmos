@@ -76,7 +76,10 @@ window.EVENTS = {
     CENTER_ON_ROCKET: 'CAMERA_CENTER_ON_ROCKET',
     START_DRAG: 'CAMERA_START_DRAG',
     DRAG: 'CAMERA_DRAG',
-    STOP_DRAG: 'CAMERA_STOP_DRAG'
+    STOP_DRAG: 'CAMERA_STOP_DRAG',
+    // { margeGauche, margeDroite } (px) : largeurs recouvertes par le guide « Découverte » (gauche)
+    // et par les commandes tactiles du pouce droit ; la caméra centre la fusée dans la zone libre.
+    LEFT_MARGIN_CHANGED: 'CAMERA_LEFT_MARGIN_CHANGED'
   },
   GAME: {
     TOGGLE_PAUSE: 'GAME_TOGGLE_PAUSE',

@@ -178,6 +178,12 @@ function initialiserApplication() {
         console.error("[main.js] Commandes tactiles indisponibles :", e);
     }
     const renderingController = new RenderingController(eventBus, canvas);
+    // Guide « Découverte » (défis du cours de 3e sur la gravitation) et légende des flèches V / G.
+    try {
+        window.guideDecouverte = new GuideDecouverteController(eventBus, renderingController);
+    } catch (e) {
+        console.error("[main.js] Guide « Découverte » indisponible :", e);
+    }
     const rocketAI = new RocketAI(eventBus);
     
     // Instancier le gestionnaire de missions.
@@ -330,11 +336,12 @@ function showInstructions() {
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>← / D</b></td><td style="border:1px solid #666; padding: 3px 6px;">Propulsion Latérale Droite</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>R</b></td><td style="border:1px solid #666; padding: 3px 6px;">Réinitialiser la Simulation</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>T</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher la Trajectoire</td></tr>
-                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>V</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher les Vecteurs</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>V</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher les forces (attraction, poussée) et la vitesse</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>G</b></td><td style="border:1px solid #666; padding: 3px 6px;">Afficher/Cacher Champ Gravité/Équipotentielles</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>+ / -</b></td><td style="border:1px solid #666; padding: 3px 6px;">Zoom Avant / Arrière (Molette aussi)</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>P / Échap</b></td><td style="border:1px solid #666; padding: 3px 6px;">Mettre en Pause / Reprendre</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>C</b></td><td style="border:1px solid #666; padding: 3px 6px;">Centrer la caméra sur la fusée</td></tr>
+                        <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>🎯</b></td><td style="border:1px solid #666; padding: 3px 6px;">Défis du cours (Monde 1, panneau à gauche)</td></tr>
                         <tr><td colspan="2" class="titre-tactile">Écran tactile (tablette) — boutons T, G, V, C, R comme au clavier</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>▲ / ▼</b></td><td style="border:1px solid #666; padding: 3px 6px;">Poussée / Rétro (garder le doigt appuyé)</td></tr>
                         <tr><td style="border:1px solid #666; padding: 3px 6px; text-align: center;"><b>↺ / ↻</b></td><td style="border:1px solid #666; padding: 3px 6px;">Tourner à gauche / à droite (garder appuyé)</td></tr>

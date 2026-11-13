@@ -188,6 +188,12 @@ class VectorsView {
         // zoom maxi (6). On projette donc uniquement les origines via camera.worldToScreen.
         const rocketScreen = camera.worldToScreen(rocketState.position.x, rocketState.position.y);
 
+        // --- Affichage « élève » des forces (touche V) ---
+        // Attractions nommées et poussée sur UNE MÊME échelle de force, vitesse en direction seule.
+        if (options.forcesPedagogiques) {
+            this.renderForcesPedagogiques(ctx, rocketState, rocketScreen, options);
+        }
+
         // --- Affichage des vecteurs relatifs à la fusée ---
         // Note: Les échelles et longueurs max sont souvent définies ici pour la lisibilité à l'écran,
         // elles peuvent différer des constantes RENDER qui sont parfois des facteurs généraux.
@@ -303,6 +309,178 @@ class VectorsView {
         }
 
         ctx.restore(); // Rétablir l'état du contexte (transformations, styles)
+    }
+
+    /**
+     * « de la Terre », « du Soleil », « d'Io », « de Mars » : complément du nom d'un astre.
+     * @param {string} nom
+     * @return {string}
+     * @static
+     */
+    static complementDuNom(nom) {
+        const n = String(nom || '');
+        const feminins = { 'Terre': 'de la Terre', 'Lune': 'de la Lune' };
+        if (feminins[n]) return feminins[n];
+        if (n === 'Soleil') return 'du Soleil';
+        return /^[AEIOUYÂÉÈÊÎÔÛaeiouyâéèêîôû]/.test(n) ? `d'${n}` : `de ${n}`;
+    }
+
+    /**
+     * Forces sur la fusée, lisibles par un élève (touche V) :
+     *  - « Attraction de la Terre » (et des autres astres dont l'attraction dépasse 20 % de la
+     *    plus forte) : flèche partant du centre de la fusée, dirigée vers le CENTRE de l'astre ;
+     *  - « Poussée » du moteur ;
+     * toutes à la MÊME échelle : `options.echelleForce` pixels par unité de force, choisie pour que
+     * le poids de la fusée au sol de la Terre mesure `VectorsView.LONGUEUR_REFERENCE` pixels. La
+     * longueur est donc proportionnelle à la valeur de la force (4 fois plus courte quand la
+     * distance double). Au-delà de `LONGUEUR_MAX`, la flèche est raccourcie et le dit.
+     *  - « Vitesse » : pointillés, longueur fixe (une vitesse n'est pas une force).
+     *  - Mission : direction de l'astre à atteindre, pointillés dorés.
+     * Les forces et longueurs dessinées sont gardées dans `this.dernieresFleches` (lecture seule,
+     * pour les tests et la légende).
+     * @private
+     */
+    renderForcesPedagogiques(ctx, rocketState, origine, options) {
+        const echelle = options.echelleForce > 0 ? options.echelleForce : 0;
+        const fleches = [];
+        const libelles = [];
+        const longueurPour = (force) => force * echelle;
+
+        // Mission : direction de la destination (sous les forces)
+        const cible = rocketState.missionTargetVector;
+        if (options.afficherMission && cible && cible.vector) {
+            const n = Math.hypot(cible.vector.x, cible.vector.y);
+            if (n > 0.01) {
+                libelles.push(this._dessinerFleche(ctx, origine, cible.vector.x / n, cible.vector.y / n, 60, 'rgba(255, 215, 0, 0.75)', `Mission : ${cible.name}`, { pointilles: true, epaisseur: 1.5 }));
+                fleches.push({ type: 'mission', nom: cible.name, longueur: 60 });
+            }
+        }
+
+        // Vitesse : direction du mouvement seulement
+        const v = rocketState.velocity;
+        if (options.afficherVitesse && v && !rocketState.isLanded && Math.hypot(v.x, v.y) > 1) {
+            const n = Math.hypot(v.x, v.y);
+            libelles.push(this._dessinerFleche(ctx, origine, v.x / n, v.y / n, 70, '#5FE3FF', 'Vitesse', { pointilles: true, epaisseur: 2 }));
+            fleches.push({ type: 'vitesse', longueur: 70, ux: v.x / n, uy: v.y / n });
+        }
+
+        if (echelle > 0) {
+            // Poussée (somme des propulseurs qui poussent réellement)
+            const p = rocketState.totalThrustVector;
+            if (p) {
+                const f = Math.hypot(p.x, p.y);
+                if (f > 0) {
+                    const l = longueurPour(f);
+                    const longueur = Math.min(l, VectorsView.LONGUEUR_MAX);
+                    libelles.push(this._dessinerFleche(ctx, origine, p.x / f, p.y / f, longueur, '#FF6A3D', l > VectorsView.LONGUEUR_MAX ? 'Poussée (flèche raccourcie)' : 'Poussée', { epaisseur: 3 }));
+                    fleches.push({ type: 'poussee', force: f, longueur, ux: p.x / f, uy: p.y / f });
+                }
+            }
+            // Attractions gravitationnelles nommées
+            const attractions = Array.isArray(options.attractions) ? options.attractions : [];
+            const plusForte = attractions.length ? attractions[0].force : 0;
+            attractions
+                .filter(a => a.force >= plusForte * VectorsView.SEUIL_ATTRACTION_AFFICHEE)
+                .slice(0, 3)
+                .forEach((a) => {
+                    const l = longueurPour(a.force);
+                    const longueur = Math.min(l, VectorsView.LONGUEUR_MAX);
+                    const libelle = `Attraction ${VectorsView.complementDuNom(a.nom)}` + (l > VectorsView.LONGUEUR_MAX ? ' (flèche raccourcie)' : '');
+                    libelles.push(this._dessinerFleche(ctx, origine, a.fx / a.force, a.fy / a.force, longueur, '#FF4FD8', libelle, { epaisseur: 3 }));
+                    fleches.push({ type: 'attraction', nom: a.nom, force: a.force, longueur, ux: a.fx / a.force, uy: a.fy / a.force });
+                });
+        }
+        this._dessinerPointApplication(ctx, origine);
+        // Libellés des forces d'abord (prioritaires), puis vitesse et mission
+        this._ecrireLibelles(ctx, libelles.slice().reverse(), origine);
+        this.dernieresFleches = fleches;
+    }
+
+    /**
+     * Flèche en coordonnées écran avec libellé lisible (contour sombre). Une flèche très courte
+     * garde une pointe proportionnée (jamais plus longue que la flèche elle-même).
+     * @private
+     */
+    _dessinerFleche(ctx, origine, ux, uy, longueur, couleur, libelle, { pointilles = false, epaisseur = 2 } = {}) {
+        const fx = origine.x + ux * longueur, fy = origine.y + uy * longueur;
+        const pointe = Math.max(4, Math.min(12, longueur * 0.6));
+        const angle = Math.atan2(uy, ux);
+        const tracer = (couleurTrait, largeur, avecTirets) => {
+            ctx.strokeStyle = couleurTrait;
+            ctx.lineWidth = largeur;
+            ctx.setLineDash(avecTirets ? [6, 5] : []);
+            ctx.beginPath();
+            ctx.moveTo(origine.x, origine.y);
+            ctx.lineTo(fx, fy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(fx - pointe * Math.cos(angle - Math.PI / 7), fy - pointe * Math.sin(angle - Math.PI / 7));
+            ctx.lineTo(fx - pointe * Math.cos(angle + Math.PI / 7), fy - pointe * Math.sin(angle + Math.PI / 7));
+            ctx.closePath();
+        };
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // Contour sombre : la flèche reste visible par-dessus la fusée et sur fond clair.
+        tracer('rgba(0, 0, 0, 0.8)', epaisseur + 3, false);
+        ctx.stroke();
+        tracer(couleur, epaisseur, pointilles);
+        ctx.fillStyle = couleur;
+        ctx.fill();
+        ctx.restore();
+        if (!libelle) return null;
+        // Libellé au-delà de la fusée même si la flèche est courte (sinon il masquerait la fusée).
+        const distanceLibelle = Math.max(longueur, VectorsView.DISTANCE_MIN_LIBELLE) + 8;
+        return { texte: libelle, couleur, x: origine.x + ux * distanceLibelle, y: origine.y + uy * distanceLibelle, ux, uy };
+    }
+
+    /** Point d'application des forces (centre de la fusée). @private */
+    _dessinerPointApplication(ctx, origine) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(origine.x, origine.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /**
+     * Écrit les libellés en évitant qu'ils se recouvrent (deux flèches de directions voisines,
+     * p. ex. « Attraction de la Terre » et « Mission : Lune » au décollage) : un libellé qui
+     * chevauche un précédent est décalé verticalement, en s'éloignant de la fusée.
+     * @private
+     */
+    _ecrireLibelles(ctx, libelles, origine) {
+        const places = [];
+        const hauteur = 16;
+        ctx.save();
+        ctx.font = 'bold 13px Arial, sans-serif';
+        ctx.textBaseline = 'middle';
+        for (const l of libelles) {
+            if (!l) continue;
+            const largeur = ctx.measureText(l.texte).width;
+            const alignement = l.ux >= 0.2 ? 'left' : (l.ux <= -0.2 ? 'right' : 'center');
+            const gauche = alignement === 'left' ? l.x : (alignement === 'right' ? l.x - largeur : l.x - largeur / 2);
+            let y = l.y + (l.uy >= 0.2 ? hauteur / 2 : (l.uy <= -0.2 ? -hauteur / 2 : 0));
+            const sens = (y >= origine.y) ? 1 : -1;
+            const boite = () => ({ g: gauche - 2, d: gauche + largeur + 2, h: y - hauteur / 2, b: y + hauteur / 2 });
+            for (let essai = 0; essai < 6 && places.some(p => { const q = boite(); return q.g < p.d && q.d > p.g && q.h < p.b && q.b > p.h; }); essai++) {
+                y += sens * hauteur;
+            }
+            places.push(boite());
+            ctx.textAlign = alignement;
+            ctx.lineWidth = 3.5;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.strokeText(l.texte, l.x, y);
+            ctx.fillStyle = l.couleur;
+            ctx.fillText(l.texte, l.x, y);
+        }
+        ctx.restore();
     }
 
     /**
@@ -678,6 +856,15 @@ class VectorsView {
         ctx.restore(); // Restaurer l'état du contexte
     }
 }
+
+/** Longueur (px) de la flèche du poids de la fusée posée sur la Terre : référence de l'échelle des forces. */
+VectorsView.LONGUEUR_REFERENCE = 120;
+/** Au-delà (px), une flèche de force est raccourcie et son libellé le signale (poussée maximale ≈ 186 px). */
+VectorsView.LONGUEUR_MAX = 200;
+/** Distance minimale (px) entre le centre de la fusée et un libellé (la fusée mesure 60 px au zoom 1). */
+VectorsView.DISTANCE_MIN_LIBELLE = 44;
+/** Une attraction n'est dessinée que si elle vaut au moins cette fraction de la plus forte. */
+VectorsView.SEUIL_ATTRACTION_AFFICHEE = 0.2;
 
 // Pas d'export car les fichiers sont chargés via <script> dans index.html
 // export default VectorsView; 

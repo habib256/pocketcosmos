@@ -365,15 +365,19 @@ class RenderingController {
             this.rocketView.render(ctx, finalRocketStateForView, camera);
         }
         // Afficher les vecteurs physiques de la fusée SI activé
-        if (this.vectorsView && this.showVectors) {
+        // Affichage « élève » (2026‑11‑14) : attractions nommées et poussée sur une même échelle
+        // de force, vitesse en direction seule, direction de la mission. Remplace l'ancien
+        // affichage de mise au point (« g » magenta toujours saturé à la même longueur, « a=F/m »,
+        // propulseurs « main »/« rear », « Orig »/« Dest » avec des distances sans unité), illisible
+        // pour un élève. Légende : GuideDecouverteController.
+        if (this.vectorsView && this.showVectors && rocketModel && universeModel) {
+            const forces = this.calculerForcesAffichees(rocketModel, universeModel);
             this.vectorsView.render(ctx, finalRocketStateForView, camera, {
-                showTotalThrustVector: true,
-                showVelocityVector: true,
-                showMissionStartVector: true,
-                showMissionTargetVector: true,
-                showThrustVector: true,
-                showTotalAccelerationVector: true,
-                showGravityVector: true
+                forcesPedagogiques: true,
+                attractions: forces.attractions,
+                echelleForce: forces.echelleForce,
+                afficherVitesse: true,
+                afficherMission: true
             });
         }
         // Afficher le champ de gravité selon le mode
@@ -390,6 +394,25 @@ class RenderingController {
         }
     }
     
+    /**
+     * Attractions exercées sur la fusée et échelle commune des flèches de force : le poids de la
+     * fusée posée sur l'astre de référence (la Terre, sinon l'astre de départ du monde, sinon
+     * l'astre qui attire le plus) mesure VectorsView.LONGUEUR_REFERENCE pixels.
+     * @param {RocketModel} rocketModel
+     * @param {UniverseModel} universeModel
+     * @return {{attractions: Array, echelleForce: number, reference: ?object}}
+     */
+    calculerForcesAffichees(rocketModel, universeModel) {
+        const attractions = PhysicsVectors.calculerAttractions(rocketModel, universeModel, PHYSICS.G);
+        const corps = universeModel.celestialBodies || [];
+        const nomDepart = universeModel.spawnInfo && universeModel.spawnInfo.hostName;
+        const reference = corps.find(c => c && c.name === 'Terre')
+            || (nomDepart && corps.find(c => c && c.name === nomDepart))
+            || (attractions[0] && attractions[0].corps) || null;
+        const poids = PhysicsVectors.poidsAuSol(reference, rocketModel.mass || ROCKET.MASS, PHYSICS.G);
+        return { attractions, echelleForce: poids > 0 ? VectorsView.LONGUEUR_REFERENCE / poids : 0, reference };
+    }
+
     // Mettre à jour la trace de la fusée
     updateTrace(rocketModel) {
         if (!this.traceView) {

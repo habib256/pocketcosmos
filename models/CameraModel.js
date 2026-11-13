@@ -55,6 +55,15 @@ class CameraModel {
          * N'est pas directement utilisée par la logique interne de CameraModel, mais essentielle pour calculer l'offsetY.
          */
         this.height = 600; // Valeur par défaut, devrait être mise à jour par le système de rendu.
+
+        /**
+         * @type {number} Largeur (px) recouverte à gauche par un panneau HTML (guide « Découverte »).
+         * `offsetX` vise alors le milieu de la zone LIBRE, pour que la fusée suivie ne passe pas
+         * sous le panneau. 0 = centre de l'écran (comportement d'origine).
+         */
+        this.margeGauche = 0;
+        /** @type {number} Idem à droite (commandes tactiles ▲ ▼ du pouce droit). */
+        this.margeDroite = 0;
         
         this.gameController = gameController; // AJOUT: Stocker la référence
     }
@@ -76,6 +85,17 @@ class CameraModel {
      * Doit être appelée à chaque frame de la boucle de jeu.
      * @param {number} deltaTime - Le temps écoulé depuis la dernière frame (en secondes).
      */
+    /**
+     * Recalcule le point de l'écran où se projette le centre de la caméra : milieu de la zone non
+     * recouverte par `margeGauche`, au milieu de la hauteur.
+     */
+    appliquerCentre() {
+        let g = Math.max(0, this.margeGauche || 0), d = Math.max(0, this.margeDroite || 0);
+        if (this.width - g - d < CameraModel.LARGEUR_LIBRE_MIN) { g = 0; d = 0; }  // trop étroit : centre de l'écran
+        this.offsetX = g + (this.width - g - d) / 2;
+        this.offsetY = this.height / 2;
+    }
+
     update(deltaTime) {
         // Log pour suivre l'état de la caméra à chaque update
         // console.log(`[CameraModel.update] Mode: ${this.mode}, Target:`, this.target ? this.target.name || this.target : null, `Position: {x: ${this.x}, y: ${this.y}}`);
@@ -227,4 +247,7 @@ class CameraModel {
             y: (screenY - this.offsetY) / safeZoom + this.y
         };
     }
-} 
+}
+
+/** Largeur libre minimale (px) pour tenir compte des panneaux latéraux. */
+CameraModel.LARGEUR_LIBRE_MIN = 300;
