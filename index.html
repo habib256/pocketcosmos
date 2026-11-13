@@ -127,12 +127,12 @@
         }, true);
     </script>
 
-    <!-- Bibliothèques externes -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- Bibliothèques embarquées (lib/, versions figées) : l’app fonctionne sans Internet -->
+    <script src="lib/matter.min.js"></script>
     <!-- Plugin Matter Attractors (ignorer le warning de compatibilité, il fonctionne quand même) -->
-    <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
+    <script src="lib/matter-attractors.min.js"></script>
     <!-- TensorFlow.js - avec fallback backend pour éviter SIGILL -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    <script src="lib/tf.min.js"></script>
     <script>
         // Forcer le backend CPU si WebGL échoue pour éviter les erreurs SIGILL
         (async function() {

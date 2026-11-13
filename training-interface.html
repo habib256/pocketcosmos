@@ -180,7 +180,7 @@
         }
     </style>
     <!-- TensorFlow.js - Version CPU pour éviter les erreurs SIGILL -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    <script src="lib/tf.min.js"></script>
     <script>
         // Forcer le backend CPU pour éviter les erreurs SIGILL avec WASM/WebGL
         (async function() {
@@ -216,12 +216,12 @@
         })();
     </script>
     <!-- Chart.js pour les graphiques -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="lib/chart.umd.min.js"></script>
     
     <!-- Bibliothèques physiques -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="lib/matter.min.js"></script>
     <!-- Plugin Matter Attractors -->
-    <script src="https://cdn.jsdelivr.net/npm/matter-attractors@0.1.6/build/matter-attractors.min.js"></script>
+    <script src="lib/matter-attractors.min.js"></script>
     
     <!-- Dépendances nécessaires pour l'entraînement -->
     <script src="constants.js"></script>
